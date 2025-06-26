@@ -13,7 +13,9 @@ export interface IStorage {
   // User operations
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
 
   // Integration operations
   getIntegrations(userId: number): Promise<Integration[]>;
@@ -52,6 +54,11 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     return user || undefined;
   }
+  
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db
@@ -59,6 +66,15 @@ export class DatabaseStorage implements IStorage {
       .values(insertUser)
       .returning();
     return user;
+  }
+  
+  async updateUser(id: number, data: Partial<User>): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set(data)
+      .where(eq(users.id, id))
+      .returning();
+    return user || undefined;
   }
 
   // Integration operations
@@ -125,17 +141,17 @@ export class DatabaseStorage implements IStorage {
 
   // Transaction operations
   async getTransactions(userId: number, limit?: number): Promise<Transaction[]> {
-    const baseQuery = db
+    let query = db
       .select()
       .from(transactions)
       .where(eq(transactions.userId, userId))
       .orderBy(desc(transactions.date));
 
     if (limit) {
-      return await baseQuery.limit(limit);
+      query = query.limit(limit);
     }
 
-    return await baseQuery;
+    return await query;
   }
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
@@ -149,17 +165,22 @@ export class DatabaseStorage implements IStorage {
   // Task operations
   async getTasks(userId: number, limit?: number): Promise<Task[]> {
     // Start building the query
-    const baseQuery = db
+    let query = db
       .select()
       .from(tasks)
-      .where(eq(tasks.userId, userId))
-      // Custom ordering (we'll order by multiple columns)
-      // 1. Completed tasks go last
-      // 2. Due date (earliest first)
-      .orderBy(tasks.completed, tasks.dueDate);
+      .where(eq(tasks.userId, userId));
+
+    // Custom ordering (we'll order by multiple columns)
+    // 1. Completed tasks go last
+    // 2. Due date (earliest first)
+    query = query.orderBy(tasks.completed, tasks.dueDate);
+
+    if (limit) {
+      query = query.limit(limit);
+    }
 
     // Execute query
-    const taskResults = limit ? await baseQuery.limit(limit) : await baseQuery;
+    const taskResults = await query;
 
     // Apply additional sorting for priority since SQL can't easily handle custom enum ordering
     return taskResults.sort((a, b) => {
@@ -201,17 +222,17 @@ export class DatabaseStorage implements IStorage {
 
   // AI Message operations
   async getAiMessages(userId: number, limit?: number): Promise<AiMessage[]> {
-    const baseQuery = db
+    let query = db
       .select()
       .from(aiMessages)
       .where(eq(aiMessages.userId, userId))
       .orderBy(desc(aiMessages.timestamp));
 
     if (limit) {
-      return await baseQuery.limit(limit);
+      query = query.limit(limit);
     }
 
-    return await baseQuery;
+    return await query;
   }
 
   async createAiMessage(insertMessage: InsertAiMessage): Promise<AiMessage> {

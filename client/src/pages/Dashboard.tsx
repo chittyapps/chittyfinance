@@ -7,7 +7,6 @@ import RecentTransactions from "@/components/dashboard/RecentTransactions";
 import FinancialTasks from "@/components/dashboard/FinancialTasks";
 import ChargeAutomation from "@/components/dashboard/ChargeAutomation";
 import GitHubRepositories from "@/components/dashboard/GitHubRepositories";
-import UseCases from "@/components/dashboard/UseCases";
 import { formatDate } from "@/lib/utils";
 
 export default function Dashboard() {
@@ -21,13 +20,13 @@ export default function Dashboard() {
       {/* Page Header */}
       <div className="px-4 sm:px-6 md:px-8">
         <h1 className="text-3xl font-bold gradient-text">
-          Chitty Services Dashboard
+          Chitty Services CFO Dashboard
         </h1>
         
-        <div className="mt-2 flex items-center text-sm text-muted-foreground">
+        <div className="mt-2 flex items-center text-sm text-zinc-400">
           {/* AI Assistant Status */}
           <div className="flex items-center">
-            <div className="h-2.5 w-2.5 rounded-full bg-orange-500 dark:bg-orange-400 pulse-connection mr-1.5"></div>
+            <div className="h-2.5 w-2.5 rounded-full bg-lime-400 pulse-connection mr-1.5"></div>
             <span>AI CFO Assistant Active</span>
           </div>
           <span className="mx-2">•</span>
@@ -61,9 +60,6 @@ export default function Dashboard() {
         <div className="mt-8">
           <GitHubRepositories />
         </div>
-
-        {/* Use Cases Section */}
-        <UseCases />
 
         {/* Recent Transactions and Tasks */}
         <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">

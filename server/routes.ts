@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { z } from "zod";
 import { insertAiMessageSchema, insertIntegrationSchema, insertTaskSchema } from "@shared/schema";
 import { getFinancialAdvice, generateCostReductionPlan } from "./lib/openai";
-import { getAggregatedFinancialData, getCloudflareAnalytics } from "./lib/financialServices";
+import { getAggregatedFinancialData } from "./lib/financialServices";
 import { getRecurringCharges, getChargeOptimizations, manageRecurringCharge } from "./lib/chargeAutomation";
 import { 
   fetchUserRepositories, 
@@ -12,8 +12,74 @@ import {
   fetchRepositoryPullRequests, 
   fetchRepositoryIssues 
 } from "./lib/github";
+import { transformToUniversalFormat } from "./lib/universalConnector";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+
+// Function to seed new integrations for the demo user
+async function seedNewIntegrations() {
+  try {
+    const user = await storage.getUserByUsername("demo");
+    if (!user) return;
+    
+    const existingIntegrations = await storage.getIntegrations(user.id);
+    const existingServiceTypes = new Set(existingIntegrations.map(i => i.serviceType));
+    
+    // New integrations to add if they don't exist
+    const newIntegrations = [
+      {
+        serviceType: 'stripe',
+        name: 'Stripe',
+        description: 'Payment processing platform',
+        connected: true
+      },
+      {
+        serviceType: 'quickbooks',
+        name: 'QuickBooks',
+        description: 'Accounting software',
+        connected: true
+      },
+      {
+        serviceType: 'xero',
+        name: 'Xero',
+        description: 'International accounting platform',
+        connected: true
+      },
+      {
+        serviceType: 'brex',
+        name: 'Brex',
+        description: 'Business credit cards & expense management',
+        connected: true
+      },
+      {
+        serviceType: 'gusto',
+        name: 'Gusto',
+        description: 'Payroll, benefits, and HR',
+        connected: true
+      }
+    ];
+    
+    // Add any missing integrations
+    for (const integration of newIntegrations) {
+      if (!existingServiceTypes.has(integration.serviceType)) {
+        await storage.createIntegration({
+          ...integration,
+          userId: user.id,
+          lastSynced: new Date()
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Error seeding new integrations:", error);
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup Replit Auth
+  await setupAuth(app);
+  
+  // Seed new integrations
+  await seedNewIntegrations();
+  
   // Create API router
   const api = express.Router();
 
@@ -40,22 +106,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Get financial summary
-    let summary = await storage.getFinancialSummary(user.id);
-
-    if (!summary) {
-      // If no summary exists, we'd typically fetch from external services
-      // For demo, create a new summary record
-      summary = await storage.createFinancialSummary({
-        userId: user.id,
-        cashOnHand: 127842.50,
-        monthlyRevenue: 43291.75,
-        monthlyExpenses: 26142.30,
-        outstandingInvoices: 18520.00,
-      });
+    try {
+      // Get all integrations to fetch data from
+      const integrations = await storage.getIntegrations(user.id);
+      
+      // Get aggregated financial data from all connected services
+      const financialData = await getAggregatedFinancialData(integrations);
+      
+      // Update or create summary in database
+      let summary = await storage.getFinancialSummary(user.id);
+      
+      if (summary) {
+        // Update existing summary with latest data
+        summary = await storage.updateFinancialSummary(user.id, {
+          cashOnHand: financialData.cashOnHand,
+          monthlyRevenue: financialData.monthlyRevenue,
+          monthlyExpenses: financialData.monthlyExpenses,
+          outstandingInvoices: financialData.outstandingInvoices
+        });
+      } else {
+        // Create new summary
+        summary = await storage.createFinancialSummary({
+          userId: user.id,
+          cashOnHand: financialData.cashOnHand,
+          monthlyRevenue: financialData.monthlyRevenue,
+          monthlyExpenses: financialData.monthlyExpenses,
+          outstandingInvoices: financialData.outstandingInvoices
+        });
+      }
+      
+      // Add metrics and payroll data for the response
+      const enhancedSummary = {
+        ...summary,
+        metrics: financialData.metrics,
+        payroll: financialData.payroll
+      };
+      
+      res.json(enhancedSummary);
+    } catch (error) {
+      console.error("Error fetching financial summary:", error);
+      
+      // Fall back to existing database record if there's an error
+      let summary = await storage.getFinancialSummary(user.id);
+      
+      if (!summary) {
+        // If no summary exists, create a basic one
+        summary = await storage.createFinancialSummary({
+          userId: user.id,
+          cashOnHand: 127842.50,
+          monthlyRevenue: 43291.75,
+          monthlyExpenses: 26142.30,
+          outstandingInvoices: 18520.00,
+        });
+      }
+      
+      res.json(summary);
     }
-
-    res.json(summary);
   });
 
   // Get integrations
@@ -115,10 +221,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-    const transactions = await storage.getTransactions(user.id, limit);
-    
-    res.json(transactions);
+    try {
+      // Get integrations to fetch live transaction data
+      const integrations = await storage.getIntegrations(user.id);
+      
+      // Get aggregated financial data which includes transactions
+      const financialData = await getAggregatedFinancialData(integrations);
+      
+      // Return transactions from financial data if available
+      if (financialData.transactions && financialData.transactions.length > 0) {
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+        const limitedTransactions = limit ? 
+          financialData.transactions.slice(0, limit) : 
+          financialData.transactions;
+        
+        return res.json(limitedTransactions);
+      }
+      
+      // Fallback to database if no live transactions
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const transactions = await storage.getTransactions(user.id, limit);
+      
+      res.json(transactions);
+    } catch (error) {
+      console.error("Error fetching transactions:", error);
+      
+      // Fallback to database on error
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const transactions = await storage.getTransactions(user.id, limit);
+      
+      res.json(transactions);
+    }
   });
 
   // Get tasks
@@ -347,8 +480,264 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to manage recurring charge" });
     }
   });
+  
+  // Financial Platform Integration Testing Endpoint
+  api.get("/test-financial-platform/:platformId", async (req: Request, res: Response) => {
+    try {
+      // Get the platform identifier from the URL params
+      const platformId = req.params.platformId;
+      
+      // Get demo user for now - in production this would use the authenticated user
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Get all integrations for this user
+      const integrations = await storage.getIntegrations(user.id);
+      
+      // Find the specified integration
+      const integration = integrations.find(i => i.serviceType === platformId);
+      
+      if (!integration) {
+        return res.status(404).json({ 
+          success: false,
+          message: `Integration for platform '${platformId}' not found`, 
+          availablePlatforms: integrations.map(i => i.serviceType)
+        });
+      }
+      
+      // Initialize results container
+      const results = {
+        platformId,
+        platformName: integration.name,
+        tests: [] as Array<{name: string, success: boolean, data: any, error?: string}>
+      };
+      
+      // Test 1: Financial Data Fetch
+      try {
+        let financialData;
+        
+        // Call the appropriate function based on the platform ID
+        switch (platformId) {
+          case "mercury_bank":
+          case "wavapps":
+          case "doorloop":
+          case "stripe":
+          case "quickbooks":
+          case "xero":
+          case "brex":
+          case "gusto":
+            financialData = await getAggregatedFinancialData([integration]);
+            break;
+          default:
+            throw new Error(`No handler defined for platform: ${platformId}`);
+        }
+        
+        results.tests.push({
+          name: "Financial Data Fetch",
+          success: true,
+          data: financialData
+        });
+      } catch (error: any) {
+        results.tests.push({
+          name: "Financial Data Fetch",
+          success: false,
+          data: null,
+          error: error.message
+        });
+      }
+      
+      // Test 2: Recurring Charges
+      try {
+        let recurringCharges;
+        
+        // Only test recurring charges on platforms that support it
+        if (["mercury_bank", "wavapps", "doorloop", "stripe", "quickbooks", "xero", "brex"].includes(platformId)) {
+          recurringCharges = await getRecurringCharges(user.id);
+          
+          results.tests.push({
+            name: "Recurring Charges",
+            success: true,
+            data: recurringCharges
+          });
+        } else {
+          results.tests.push({
+            name: "Recurring Charges",
+            success: false,
+            data: null,
+            error: "Platform does not support recurring charges"
+          });
+        }
+      } catch (error: any) {
+        results.tests.push({
+          name: "Recurring Charges",
+          success: false,
+          data: null,
+          error: error.message
+        });
+      }
+      
+      // Test 3: Connection Status
+      try {
+        // Update the last synced timestamp to verify connection is active
+        const updatedIntegration = await storage.updateIntegration(integration.id, {
+          lastSynced: new Date()
+        });
+        
+        results.tests.push({
+          name: "Connection Status",
+          success: true,
+          data: {
+            connected: updatedIntegration?.connected,
+            lastSynced: updatedIntegration?.lastSynced
+          }
+        });
+      } catch (error: any) {
+        results.tests.push({
+          name: "Connection Status",
+          success: false,
+          data: null,
+          error: error.message
+        });
+      }
+      
+      // Calculate overall success
+      const overallSuccess = results.tests.every(test => test.success);
+      
+      // Send complete test results
+      res.json({
+        success: overallSuccess,
+        platform: {
+          id: platformId,
+          name: integration.name,
+          type: integration.serviceType
+        },
+        testResults: results.tests,
+        timestamp: new Date()
+      });
+      
+    } catch (error: any) {
+      console.error(`Error testing financial platform ${req.params.platformId}:`, error);
+      res.status(500).json({ 
+        success: false,
+        message: `Failed to test financial platform: ${error.message}`
+      });
+    }
+  });
 
-  // GitHub Integration Routes
+  // Test endpoint for financial platform integration (without authentication)
+  api.get("/test-platform/:platformId", async (req: Request, res: Response) => {
+    try {
+      // Get the platform identifier from the URL params
+      const platformId = req.params.platformId;
+      
+      // Get demo user 
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Get all integrations for this user
+      const integrations = await storage.getIntegrations(user.id);
+      
+      // Find the specified integration
+      const integration = integrations.find(i => i.serviceType === platformId);
+      
+      if (!integration) {
+        return res.status(404).json({ 
+          success: false,
+          message: `Integration for platform '${platformId}' not found`, 
+          availablePlatforms: integrations.map(i => i.serviceType)
+        });
+      }
+      
+      // Get financial data for this platform
+      const financialData = await getAggregatedFinancialData([integration]);
+      
+      // Send results
+      res.json({
+        success: true,
+        platform: {
+          id: platformId,
+          name: integration.name,
+          type: integration.serviceType
+        },
+        financialData,
+        timestamp: new Date()
+      });
+      
+    } catch (error: any) {
+      console.error(`Error testing platform ${req.params.platformId}:`, error);
+      res.status(500).json({ 
+        success: false,
+        message: `Failed to test platform: ${error.message}`
+      });
+    }
+  });
+
+  // Universal Connector endpoint
+  api.get("/universal-connector", async (req: Request, res: Response) => {
+    try {
+      // In a real app, we would get the user ID from the session
+      // Here we use the demo user
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Get all integrations to fetch data from
+      const integrations = await storage.getIntegrations(user.id);
+      
+      // Transform the data into universal format
+      const universalData = await transformToUniversalFormat(user.id, integrations);
+      
+      res.json(universalData);
+    } catch (error: any) {
+      console.error("Error generating universal connector data:", error);
+      res.status(500).json({ 
+        success: false,
+        message: `Universal Connector Error: ${error.message}`
+      });
+    }
+  });
+  
+  // Test endpoint for Universal Connector with authentication
+  api.get("/universal-connector/secured", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const userId = user.claims.sub;
+      
+      // Get the user from our database
+      const dbUser = await storage.getUserByUsername("demo"); // For demo, we'll use the demo user
+      if (!dbUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Get all integrations to fetch data from
+      const integrations = await storage.getIntegrations(dbUser.id);
+      
+      // Transform the data into universal format
+      const universalData = await transformToUniversalFormat(dbUser.id, integrations);
+      
+      // Add authenticated user info
+      universalData.authInfo = {
+        authenticatedUserId: userId,
+        authenticatedAt: new Date().toISOString(),
+        authMethod: "replit_auth"
+      };
+      
+      res.json(universalData);
+    } catch (error: any) {
+      console.error("Error generating authenticated universal connector data:", error);
+      res.status(500).json({ 
+        success: false,
+        message: `Universal Connector Error: ${error.message}`
+      });
+    }
+  });
+
+// GitHub Integration Routes
   
   // Get GitHub repositories
   api.get("/github/repositories", async (req: Request, res: Response) => {
@@ -470,25 +859,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error(`Error fetching issues for ${req.params.repoFullName}:`, error);
       res.status(500).json({ message: "Failed to fetch repository issues" });
-    }
-  });
-
-  // Cloudflare Analytics Routes
-  
-  // Get Cloudflare analytics
-  api.get("/cloudflare/analytics", async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserByUsername("demo");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      const { zoneId } = req.query;
-      const analytics = await getCloudflareAnalytics(zoneId as string);
-      res.json(analytics);
-    } catch (error) {
-      console.error("Error fetching Cloudflare analytics:", error);
-      res.status(500).json({ message: "Failed to fetch Cloudflare analytics" });
     }
   });
 

@@ -22,13 +22,24 @@ export async function getFinancialAdvice({
 }: FinancialAdviceParams): Promise<string> {
   try {
     const basePrompt = `
-You are an AI CFO assistant, analyzing the following financial data:
+You are an AI CFO assistant with expertise in financial analysis. Analyze this data:
 - Cash on Hand: $${cashOnHand.toFixed(2)}
 - Monthly Revenue: $${monthlyRevenue.toFixed(2)}
 - Monthly Expenses: $${monthlyExpenses.toFixed(2)}
 - Outstanding Invoices: $${outstandingInvoices.toFixed(2)}
 
-Your job is to provide strategic financial advice based on this data.
+Consider key financial metrics:
+- Burn Rate: ${(monthlyExpenses / monthlyRevenue).toFixed(2)}
+- Runway: ${(cashOnHand / (monthlyExpenses - monthlyRevenue)).toFixed(1)} months
+- Collection Ratio: ${((outstandingInvoices / monthlyRevenue) * 30).toFixed(1)} days
+
+Provide:
+1. Strategic financial insights
+2. Risk assessment
+3. Growth opportunities
+4. Actionable recommendations
+
+Keep responses concise but comprehensive.
 `;
 
     const messages = [

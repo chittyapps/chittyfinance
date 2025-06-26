@@ -24,12 +24,12 @@ export default function Settings() {
     <div className="py-6">
       {/* Page Header */}
       <div className="px-4 sm:px-6 md:px-8">
-        <h1 className="text-2xl font-semibold gradient-text">
-          Make It Less Sh*tty
+        <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">
+          Settings
         </h1>
         
         <div className="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
-          <span>Tweak everything until it's just right. No sh*tty defaults here!</span>
+          <span>Configure your account, integrations, and preferences.</span>
         </div>
       </div>
 
@@ -45,9 +45,9 @@ export default function Settings() {
           <TabsContent value="profile" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Your Non-Sh*tty Profile</CardTitle>
+                <CardTitle>Profile Settings</CardTitle>
                 <CardDescription>
-                  Make yourself look good. We won't judge.
+                  Update your account information and preferences.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -73,7 +73,7 @@ export default function Settings() {
                       <Input id="role" defaultValue={user?.role} placeholder="Your role" />
                     </div>
                     <div className="pt-4">
-                      <Button className="bg-orange-500 hover:bg-orange-600 text-white">Make It Official</Button>
+                      <Button>Save Changes</Button>
                     </div>
                   </>
                 )}
@@ -84,9 +84,9 @@ export default function Settings() {
           <TabsContent value="integrations" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Your Money Connections</CardTitle>
+                <CardTitle>Service Integrations</CardTitle>
                 <CardDescription>
-                  Hook up all your financial sh*t in one place. We play nice with everyone.
+                  Manage connections to your financial services and productivity tools.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -111,18 +111,18 @@ export default function Settings() {
                         </div>
                         <div className="flex items-center space-x-4">
                           <div className="flex items-center space-x-2">
-                            <Switch id={`integration-${integration.id}`} checked={integration.connected ?? false} />
+                            <Switch id={`integration-${integration.id}`} checked={integration.connected} />
                             <Label htmlFor={`integration-${integration.id}`}>
                               {integration.connected ? "Connected" : "Disconnected"}
                             </Label>
                           </div>
-                          <Button variant="outline" size="sm" className="hover:bg-orange-50 dark:hover:bg-orange-950/30">Tweak It</Button>
+                          <Button variant="outline" size="sm">Configure</Button>
                         </div>
                       </div>
                     ))}
                     
-                    <Button className="mt-4 bg-orange-500 hover:bg-orange-600 text-white">
-                      Hook Up More Services
+                    <Button className="mt-4" variant="outline">
+                      Add New Integration
                     </Button>
                   </div>
                 )}
@@ -133,9 +133,9 @@ export default function Settings() {
           <TabsContent value="notifications" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Alert Settings That Don't Suck</CardTitle>
+                <CardTitle>Notification Preferences</CardTitle>
                 <CardDescription>
-                  We'll only bug you when it's actually important. Promise.
+                  Control when and how you want to be notified.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -144,7 +144,7 @@ export default function Settings() {
                     <div>
                       <h4 className="text-sm font-medium">Financial Alerts</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        We'll let you know when sh*t gets weird.
+                        Receive alerts for unusual financial activity.
                       </p>
                     </div>
                     <Switch id="financial-alerts" defaultChecked />
@@ -154,7 +154,7 @@ export default function Settings() {
                     <div>
                       <h4 className="text-sm font-medium">Invoice Reminders</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Never forget to get paid. That would be sh*tty.
+                        Get notified when invoices are coming due.
                       </p>
                     </div>
                     <Switch id="invoice-reminders" defaultChecked />
@@ -164,7 +164,7 @@ export default function Settings() {
                     <div>
                       <h4 className="text-sm font-medium">AI CFO Insights</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Your AI buddy's non-sh*tty money tips.
+                        Proactive financial advice from your AI assistant.
                       </p>
                     </div>
                     <Switch id="ai-insights" defaultChecked />
@@ -174,14 +174,14 @@ export default function Settings() {
                     <div>
                       <h4 className="text-sm font-medium">Account Activity</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Know when big sh*t happens in your accounts.
+                        Be notified about significant account activity.
                       </p>
                     </div>
                     <Switch id="account-activity" defaultChecked />
                   </div>
                   
                   <div className="pt-4">
-                    <Button className="bg-orange-500 hover:bg-orange-600 text-white">Lock It In</Button>
+                    <Button>Save Preferences</Button>
                   </div>
                 </div>
               </CardContent>

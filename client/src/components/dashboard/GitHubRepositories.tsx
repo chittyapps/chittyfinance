@@ -78,7 +78,7 @@ export default function GitHubRepositories() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <SiGithub className="w-5 h-5 text-orange-500 dark:text-orange-400" />
+              <SiGithub className="w-5 h-5 text-lime-400" />
               <CardTitle className="text-lg text-zinc-200">GitHub Repositories</CardTitle>
             </div>
           </div>
@@ -88,9 +88,9 @@ export default function GitHubRepositories() {
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center py-10">
           <AlertTriangle className="w-10 h-10 text-amber-500 mb-3" />
-          <p className="text-zinc-400 text-center mb-4">No repos yet! Time to code some non-sh*tty stuff 🚀</p>
-          <Button className="bg-orange-500 hover:bg-orange-600 text-black">
-            Hook Up Your GitHub
+          <p className="text-zinc-400 text-center mb-4">No GitHub repositories found</p>
+          <Button className="bg-lime-500 hover:bg-lime-600 text-black">
+            Connect GitHub Account
           </Button>
         </CardContent>
       </Card>
@@ -102,7 +102,7 @@ export default function GitHubRepositories() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <SiGithub className="w-5 h-5 text-orange-500 dark:text-orange-400" />
+            <SiGithub className="w-5 h-5 text-lime-400" />
             <CardTitle className="text-lg text-zinc-200">GitHub Repositories</CardTitle>
           </div>
           <Button variant="outline" size="sm" className="h-8 border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">
@@ -156,7 +156,7 @@ function RepoCard({ repo }: { repo: GitHubRepo }) {
     <Card className="bg-zinc-800/50 border-zinc-700 overflow-hidden">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center justify-between">
-          <a href={repo.url} target="_blank" rel="noreferrer" className="text-orange-500 dark:text-orange-400 hover:underline flex items-center">
+          <a href={repo.url} target="_blank" rel="noreferrer" className="text-lime-400 hover:underline flex items-center">
             {repo.name}
           </a>
           <div className="flex items-center gap-3 text-xs text-zinc-400">
@@ -218,7 +218,7 @@ function RepoCard({ repo }: { repo: GitHubRepo }) {
                 })}
               </div>
             ) : (
-              <div className="text-center text-zinc-500 py-4 text-xs">No commits yet. Ship it! 🚀</div>
+              <div className="text-center text-zinc-500 py-4 text-xs">No commits found</div>
             )}
           </TabsContent>
           <TabsContent value="prs" className="mt-2 max-h-56 overflow-y-auto p-1">
@@ -259,7 +259,7 @@ function RepoCard({ repo }: { repo: GitHubRepo }) {
                 ))}
               </div>
             ) : (
-              <div className="text-center text-zinc-500 py-4 text-xs">No PRs. Your code must be perfect! 😎</div>
+              <div className="text-center text-zinc-500 py-4 text-xs">No pull requests found</div>
             )}
           </TabsContent>
           <TabsContent value="issues" className="mt-2 max-h-56 overflow-y-auto p-1">
@@ -312,7 +312,7 @@ function RepoCard({ repo }: { repo: GitHubRepo }) {
                 ))}
               </div>
             ) : (
-              <div className="text-center text-zinc-500 py-4 text-xs">Zero issues. That's not sh*tty at all! 🎉</div>
+              <div className="text-center text-zinc-500 py-4 text-xs">No issues found</div>
             )}
           </TabsContent>
         </Tabs>
@@ -330,7 +330,7 @@ function RepositoriesSkeleton() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <SiGithub className="w-5 h-5 text-orange-500 dark:text-orange-400" />
+            <SiGithub className="w-5 h-5 text-lime-400" />
             <CardTitle className="text-lg text-zinc-200">GitHub Repositories</CardTitle>
           </div>
         </div>

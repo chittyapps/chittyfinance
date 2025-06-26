@@ -1,8 +1,19 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, real, varchar, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// User model
+// Session storage table for Replit Auth
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
+// User model - keep the existing structure
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -11,6 +22,10 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   role: text("role").notNull().default("user"),
   avatar: text("avatar"),
+  
+  // Store Replit Auth information in JSON for now
+  // This avoids altering the table structure
+  replitAuthData: jsonb("replit_auth_data"),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -20,6 +35,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   role: true,
   avatar: true,
+  replitAuthData: true,
 });
 
 // Service Integrations

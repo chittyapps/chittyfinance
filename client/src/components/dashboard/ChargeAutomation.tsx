@@ -105,7 +105,7 @@ export default function ChargeAutomation() {
   return (
     <Card className="card">
       <CardHeader className="card-header">
-        <CardTitle className="text-lg font-medium text-orange-500 dark:text-orange-400">Charge Automation</CardTitle>
+        <CardTitle className="text-lg font-medium text-lime-400">Charge Automation</CardTitle>
       </CardHeader>
       
       <Tabs defaultValue="recurring" onValueChange={setSelectedTab}>
@@ -113,17 +113,17 @@ export default function ChargeAutomation() {
           <TabsList className="grid w-full grid-cols-2 bg-zinc-800 p-1">
             <TabsTrigger 
               value="recurring" 
-              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-none text-muted-foreground"
+              className="data-[state=active]:bg-lime-400 data-[state=active]:text-black data-[state=active]:shadow-none text-zinc-300"
             >
               Recurring Charges
             </TabsTrigger>
             <TabsTrigger 
               value="optimizations"
-              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-none text-muted-foreground"
+              className="data-[state=active]:bg-lime-400 data-[state=active]:text-black data-[state=active]:shadow-none text-zinc-300"
             >
               Optimizations 
               {optimizations && optimizations.length > 0 && (
-                <Badge className="ml-2 bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-500/20">
+                <Badge className="ml-2 bg-zinc-900 text-lime-400 border border-lime-500/20">
                   {optimizations.length}
                 </Badge>
               )}
@@ -149,7 +149,7 @@ export default function ChargeAutomation() {
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex items-center">
-                        <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900/20 border border-orange-500/20 text-orange-500 dark:text-orange-400 flex items-center justify-center mr-3">
+                        <div className="h-10 w-10 rounded-full bg-zinc-900 border border-lime-500/20 text-lime-400 flex items-center justify-center mr-3">
                           <CreditCard className="h-5 w-5" />
                         </div>
                         <div>
@@ -162,7 +162,7 @@ export default function ChargeAutomation() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-orange-500 dark:text-orange-400">
+                        <p className="font-bold text-lime-400">
                           {formatCurrency(charge.amount)}
                         </p>
                         <p className="text-sm text-zinc-400">
@@ -173,7 +173,7 @@ export default function ChargeAutomation() {
                     
                     <div className="mt-3 pt-3 border-t border-zinc-700 flex justify-between items-center">
                       <div className="flex items-center text-sm text-zinc-400">
-                        <Calendar className="h-4 w-4 mr-1 text-orange-500 dark:text-orange-400" />
+                        <Calendar className="h-4 w-4 mr-1 text-lime-400" />
                         Next charge: {charge.nextChargeDate ? formatDate(charge.nextChargeDate) : 'Unknown'}
                       </div>
                       <Button 
@@ -190,7 +190,7 @@ export default function ChargeAutomation() {
                 ))
               ) : (
                 <div className="text-center py-12">
-                  <p className="text-muted-foreground">No recurring charges yet! Your wallet is safe... for now 😎</p>
+                  <p className="text-zinc-500">No recurring charges found.</p>
                 </div>
               )}
             </div>
@@ -199,7 +199,7 @@ export default function ChargeAutomation() {
           <TabsContent value="optimizations" className="m-0">
             <div className="mb-4 p-4 rounded-lg bg-zinc-800 border border-lime-500/10">
               <div className="flex items-center">
-                <DollarSign className="h-8 w-8 text-orange-500 dark:text-orange-400 mr-2" />
+                <DollarSign className="h-8 w-8 text-lime-400 mr-2" />
                 <div>
                   <h3 className="font-medium text-zinc-200">
                     Potential Monthly Savings
@@ -229,18 +229,20 @@ export default function ChargeAutomation() {
                         <h4 className="font-medium text-zinc-100">
                           {optimization.merchantName}
                         </h4>
-                        <p className="text-sm text-zinc-400 mt-1">
-                          <Badge className="mr-2 bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-500/20">
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge className="bg-zinc-900 text-lime-400 border border-lime-500/20">
                             {optimization.suggestedAction.toUpperCase()}
                           </Badge>
-                          {optimization.reasoning}
-                        </p>
+                          <p className="text-sm text-zinc-400">
+                            {optimization.reasoning}
+                          </p>
+                        </div>
                       </div>
                       <div className="text-right">
                         <p className="font-semibold text-zinc-300">
                           Current: {formatCurrency(optimization.currentAmount)}
                         </p>
-                        <p className="text-sm font-medium text-orange-500 dark:text-orange-400">
+                        <p className="text-sm font-medium text-lime-400">
                           Potential Savings: {formatCurrency(optimization.potentialSavings)}
                         </p>
                       </div>
@@ -248,7 +250,7 @@ export default function ChargeAutomation() {
                     
                     {optimization.alternativeOptions && optimization.alternativeOptions.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-zinc-700">
-                        <p className="text-sm font-medium text-orange-500 dark:text-orange-400 mb-1">
+                        <p className="text-sm font-medium text-lime-400 mb-1">
                           Alternative Options:
                         </p>
                         <ul className="list-disc list-inside text-sm text-zinc-400">
@@ -263,7 +265,7 @@ export default function ChargeAutomation() {
                       <Button 
                         variant="default" 
                         size="sm"
-                        className="mr-2 bg-orange-500 text-white hover:bg-orange-600"
+                        className="mr-2 bg-lime-400 text-black hover:bg-lime-500"
                       >
                         <CheckCircle className="h-4 w-4 mr-1" />
                         Apply Recommendation
@@ -280,7 +282,7 @@ export default function ChargeAutomation() {
                 ))
               ) : (
                 <div className="text-center py-12">
-                  <p className="text-muted-foreground">Everything's already un-sh*tty! You're doing great! 🎉</p>
+                  <p className="text-zinc-500">No optimization recommendations available.</p>
                 </div>
               )}
             </div>
@@ -292,7 +294,7 @@ export default function ChargeAutomation() {
       <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <AlertDialogContent className="bg-zinc-900 border border-zinc-700">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-orange-500 dark:text-orange-400">Cancel Subscription</AlertDialogTitle>
+            <AlertDialogTitle className="text-lime-400">Cancel Subscription</AlertDialogTitle>
             <AlertDialogDescription className="text-zinc-300">
               Are you sure you want to cancel your subscription to {selectedCharge?.merchantName}? 
               This action cannot be undone.
