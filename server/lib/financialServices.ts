@@ -20,7 +20,7 @@ export interface FinancialData {
 export async function fetchMercuryBankData(integration: Integration): Promise<Partial<FinancialData>> {
   // In a real implementation, this would connect to Mercury Bank API
   console.log(`Fetching data from Mercury Bank for integration ID ${integration.id}`);
-  
+
   // Return mock data for demo purposes
   return {
     cashOnHand: 127842.50,
@@ -49,7 +49,7 @@ export async function fetchMercuryBankData(integration: Integration): Promise<Pa
 export async function fetchWavAppsData(integration: Integration): Promise<Partial<FinancialData>> {
   // In a real implementation, this would connect to WavApps API
   console.log(`Fetching data from WavApps for integration ID ${integration.id}`);
-  
+
   // Return mock data for demo purposes
   return {
     monthlyRevenue: 43291.75,
@@ -80,7 +80,7 @@ export async function fetchWavAppsData(integration: Integration): Promise<Partia
 export async function fetchDoorLoopData(integration: Integration): Promise<Partial<FinancialData>> {
   // In a real implementation, this would connect to DoorLoop API
   console.log(`Fetching data from DoorLoop for integration ID ${integration.id}`);
-  
+
   // Return mock data for demo purposes
   return {
     monthlyRevenue: 12500.00, // Rental income

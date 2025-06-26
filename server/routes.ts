@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { z } from "zod";
 import { insertAiMessageSchema, insertIntegrationSchema, insertTaskSchema } from "@shared/schema";
 import { getFinancialAdvice, generateCostReductionPlan } from "./lib/openai";
-import { getAggregatedFinancialData } from "./lib/financialServices";
+import { getAggregatedFinancialData, getCloudflareAnalytics } from "./lib/financialServices";
 import { getRecurringCharges, getChargeOptimizations, manageRecurringCharge } from "./lib/chargeAutomation";
 import { 
   fetchUserRepositories, 
@@ -470,6 +470,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error(`Error fetching issues for ${req.params.repoFullName}:`, error);
       res.status(500).json({ message: "Failed to fetch repository issues" });
+    }
+  });
+
+  // Cloudflare Analytics Routes
+  
+  // Get Cloudflare analytics
+  api.get("/cloudflare/analytics", async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const { zoneId } = req.query;
+      const analytics = await getCloudflareAnalytics(zoneId as string);
+      res.json(analytics);
+    } catch (error) {
+      console.error("Error fetching Cloudflare analytics:", error);
+      res.status(500).json({ message: "Failed to fetch Cloudflare analytics" });
     }
   });
 
