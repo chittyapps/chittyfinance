@@ -1,30 +1,20 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, requireAuth } from "./auth";
 import { insertLoanSchema, insertPaymentSchema, insertTimelineEventSchema, insertCommunicationSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
-  await setupAuth(app);
+  setupAuth(app);
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
+  // User route already handled in auth.ts as /api/user
 
   // Dashboard routes
-  app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/dashboard/stats', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const stats = await storage.getUserDashboardStats(userId);
       res.json(stats);
     } catch (error) {
@@ -34,9 +24,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Loan routes
-  app.get('/api/loans', isAuthenticated, async (req: any, res) => {
+  app.get('/api/loans', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const loans = await storage.getUserLoans(userId);
       res.json(loans);
     } catch (error) {
@@ -45,10 +35,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/loans/:id', isAuthenticated, async (req: any, res) => {
+  app.get('/api/loans/:id', requireAuth, async (req: any, res) => {
     try {
       const loanId = req.params.id;
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const loan = await storage.getLoanById(loanId);
       
       if (!loan) {
@@ -67,9 +57,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/loans', isAuthenticated, async (req: any, res) => {
+  app.post('/api/loans', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const loanData = insertLoanSchema.parse({
         ...req.body,
         lenderId: userId,
@@ -96,10 +86,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/loans/:id', isAuthenticated, async (req: any, res) => {
+  app.put('/api/loans/:id', requireAuth, async (req: any, res) => {
     try {
       const loanId = req.params.id;
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       // Check if user owns this loan
       const existingLoan = await storage.getLoanById(loanId);
@@ -116,10 +106,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Payment routes
-  app.get('/api/loans/:id/payments', isAuthenticated, async (req: any, res) => {
+  app.get('/api/loans/:id/payments', requireAuth, async (req: any, res) => {
     try {
       const loanId = req.params.id;
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       // Check access to loan
       const loan = await storage.getLoanById(loanId);
@@ -135,9 +125,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/payments', isAuthenticated, async (req: any, res) => {
+  app.post('/api/payments', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const paymentData = insertPaymentSchema.parse(req.body);
 
       // Verify user has access to the loan
@@ -169,10 +159,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Timeline routes
-  app.get('/api/loans/:id/timeline', isAuthenticated, async (req: any, res) => {
+  app.get('/api/loans/:id/timeline', requireAuth, async (req: any, res) => {
     try {
       const loanId = req.params.id;
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       // Check access to loan
       const loan = await storage.getLoanById(loanId);
@@ -188,9 +178,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/timeline-events', isAuthenticated, async (req: any, res) => {
+  app.post('/api/timeline-events', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const eventData = insertTimelineEventSchema.parse({
         ...req.body,
         createdBy: userId,
@@ -214,10 +204,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Communication routes
-  app.get('/api/loans/:id/communications', isAuthenticated, async (req: any, res) => {
+  app.get('/api/loans/:id/communications', requireAuth, async (req: any, res) => {
     try {
       const loanId = req.params.id;
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       // Check access to loan
       const loan = await storage.getLoanById(loanId);
@@ -233,9 +223,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/communications', isAuthenticated, async (req: any, res) => {
+  app.post('/api/communications', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const communicationData = insertCommunicationSchema.parse({
         ...req.body,
         senderId: userId,
@@ -270,7 +260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI assistance routes (placeholder for future implementation)
-  app.post('/api/ai/suggest-rate', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ai/suggest-rate', requireAuth, async (req: any, res) => {
     try {
       // This would integrate with OpenAI/Anthropic APIs
       // For now, return a simple calculation based on loan amount and term
