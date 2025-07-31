@@ -150,7 +150,10 @@ export default function Dashboard() {
             <h1 className="text-4xl font-bold text-neutral-800 mb-2">
               Welcome back, {user.firstName || user.username}!
             </h1>
-            <p className="text-xl text-neutral-600">Here's what's happening with your {terms.creditorLower} relationships {seasonalTheme.treeStage}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xl text-neutral-600">Here's what's happening with your {terms.creditorLower} relationships</p>
+              <span dangerouslySetInnerHTML={{ __html: seasonalTheme.treeStage }}></span>
+            </div>
           </div>
 
           {/* Dashboard Stats */}

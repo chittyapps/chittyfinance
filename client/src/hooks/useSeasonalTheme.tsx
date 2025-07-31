@@ -79,34 +79,35 @@ function getSeasonalTheme(season: Season, treeGrowthLevel: number): SeasonalThem
 }
 
 function getTreeStage(season: Season, growthLevel: number): string {
+  // Use Font Awesome icons instead of emojis for better cross-platform compatibility
   const stages = {
     spring: [
-      "🌱", // 0-20: seedling
-      "🌿", // 21-40: small plant
-      "🌳", // 41-60: small tree
-      "🌲", // 61-80: growing tree
-      "🌲🌸" // 81-100: flowering tree
+      '<i class="fas fa-seedling text-green-500"></i>', // 0-20: seedling
+      '<i class="fas fa-leaf text-green-600"></i>', // 21-40: small plant
+      '<i class="fas fa-tree text-green-700"></i>', // 41-60: small tree
+      '<i class="fas fa-tree text-green-800"></i>', // 61-80: growing tree
+      '<i class="fas fa-tree text-pink-500"></i>' // 81-100: flowering tree
     ],
     summer: [
-      "🌱", // 0-20: seedling
-      "🌿", // 21-40: leafy plant
-      "🌳", // 41-60: full green tree
-      "🌳🍃", // 61-80: lush tree
-      "🌳🌺" // 81-100: fruit tree
+      '<i class="fas fa-seedling text-yellow-500"></i>', // 0-20: seedling
+      '<i class="fas fa-leaf text-yellow-600"></i>', // 21-40: leafy plant
+      '<i class="fas fa-tree text-yellow-700"></i>', // 41-60: full green tree
+      '<i class="fas fa-tree text-yellow-800"></i>', // 61-80: lush tree
+      '<i class="fas fa-tree text-orange-500"></i>' // 81-100: fruit tree
     ],
     fall: [
-      "🌱", // 0-20: seedling
-      "🌿", // 21-40: changing plant
-      "🍂", // 41-60: tree with falling leaves
-      "🌳🍁", // 61-80: colorful tree
-      "🌳🍎" // 81-100: harvest tree
+      '<i class="fas fa-seedling text-orange-500"></i>', // 0-20: seedling
+      '<i class="fas fa-leaf text-orange-600"></i>', // 21-40: changing plant
+      '<i class="fas fa-tree text-orange-700"></i>', // 41-60: tree with falling leaves
+      '<i class="fas fa-tree text-red-600"></i>', // 61-80: colorful tree
+      '<i class="fas fa-tree text-red-800"></i>' // 81-100: harvest tree
     ],
     winter: [
-      "🌱", // 0-20: hardy seedling
-      "❄️🌿", // 21-40: frost-resistant plant
-      "🌲", // 41-60: evergreen
-      "🌲❄️", // 61-80: snow-covered tree
-      "🌲⭐" // 81-100: majestic winter tree
+      '<i class="fas fa-seedling text-blue-400"></i>', // 0-20: hardy seedling
+      '<i class="fas fa-leaf text-blue-500"></i>', // 21-40: frost-resistant plant
+      '<i class="fas fa-tree text-blue-600"></i>', // 41-60: evergreen
+      '<i class="fas fa-tree text-blue-700"></i>', // 61-80: snow-covered tree
+      '<i class="fas fa-tree text-indigo-600"></i>' // 81-100: majestic winter tree
     ]
   };
 

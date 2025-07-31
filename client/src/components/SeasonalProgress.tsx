@@ -17,8 +17,7 @@ export default function SeasonalProgress() {
         </CardTitle>
       </CardHeader>
       <CardContent className="text-center space-y-4">
-        <div className="text-6xl mb-4">
-          {seasonalTheme.treeStage}
+        <div className="text-6xl mb-4" dangerouslySetInnerHTML={{ __html: seasonalTheme.treeStage }}>
         </div>
         <div>
           <h4 className="font-semibold text-neutral-800 capitalize">
