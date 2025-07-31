@@ -11,6 +11,8 @@ import LoanDetails from "@/pages/LoanDetails";
 import CreateLoan from "@/pages/CreateLoan";
 import Community from "@/pages/Community";
 import Settings from "@/pages/Settings";
+import TaxImplications from "@/pages/TaxImplications";
+import LoanStatements from "@/pages/LoanStatements";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -40,6 +42,8 @@ function Router() {
           <Route path="/create-loan" component={CreateLoan} />
           <Route path="/community" component={Community} />
           <Route path="/settings" component={Settings} />
+          <Route path="/tax-implications" component={TaxImplications} />
+          <Route path="/loans/:id/statements" component={LoanStatements} />
         </>
       )}
       <Route component={NotFound} />

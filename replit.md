@@ -111,3 +111,29 @@ The application follows a monorepo structure with shared types between client an
 - Premium feature callouts for certified mail, AI notices, and official registration
 
 The app now provides a highly personalized experience where users can customize terminology to match their lending relationships (formal bank-style vs. family/friend casual) and enjoy seasonal gamification that rewards consistent payment behavior.
+
+## Recent Changes (January 31, 2025 - Continued)
+
+### Statement Generation & Tax Calculation System Implementation
+- Added comprehensive automated 30-day statement generation system (`statementService.ts`)
+- Created `Statement` and `TaxImplication` database tables with full relations
+- Implemented automated cron job system (`cronService.ts`) for periodic statement generation every 30 days
+- Built `TaxImplications` frontend page with comprehensive tax calculation display including:
+  - Interest income/paid tracking
+  - Estimated tax liability calculations
+  - Bad debt write-off calculations
+  - Deductible interest estimates
+- Created `LoanStatements` frontend page with:
+  - Automated statement viewing and download
+  - Payment performance tracking
+  - Premium feature callouts (certified mail, AI notices, official registration)
+- Added statement generation API routes (`/api/statements/*`) with authentication protection
+- Added tax calculation API routes (`/api/tax/implications/*`) with yearly breakdown support
+- Enhanced utility functions (`formatCurrency`, `formatDate`) for proper financial data display
+- Implemented storage operations for statements and tax calculations in `DatabaseStorage`
+
+### Legal Compliance Enhancement
+- Added comprehensive legal disclaimers throughout statement and tax pages
+- Clear messaging that platform is not a bank with no tax guarantees
+- Attorney consultation recommendations for tax advice
+- Premium feature distinctions for certified/official documentation

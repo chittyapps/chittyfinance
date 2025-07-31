@@ -5,6 +5,8 @@ import {
   timelineEvents,
   communications,
   documents,
+  statements,
+  taxImplications,
   type User,
   type InsertUser,
   type InsertLoan,
@@ -19,6 +21,10 @@ import {
   type Communication,
   type InsertDocument,
   type Document,
+  type InsertStatement,
+  type Statement,
+  type InsertTaxImplication,
+  type TaxImplication,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, sql, count } from "drizzle-orm";
@@ -64,6 +70,18 @@ export interface IStorage {
     avgInterestRate: number;
     onTimeRate: number;
   }>;
+
+  // Statement operations
+  createStatement(statement: InsertStatement): Promise<Statement>;
+  getStatementForPeriod(loanId: string, startDate: Date, endDate: Date): Promise<Statement | undefined>;
+  getLoanStatements(loanId: string): Promise<Statement[]>;
+  getActiveLoans(): Promise<Loan[]>;
+  getLoanWithPayments(loanId: string): Promise<LoanWithRelations | undefined>;
+  
+  // Tax calculation operations
+  createTaxImplication(taxImplication: InsertTaxImplication): Promise<TaxImplication>;
+  getTaxImplication(userId: string, taxYear: number): Promise<TaxImplication | undefined>;
+  getPaymentsByYear(loanId: string, year: number): Promise<Payment[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -325,6 +343,83 @@ export class DatabaseStorage implements IStorage {
       avgInterestRate: Number(avgRateResult.avgRate) || 0,
       onTimeRate,
     };
+  }
+
+  // Statement operations
+  async createStatement(statement: InsertStatement): Promise<Statement> {
+    const [newStatement] = await db.insert(statements).values(statement).returning();
+    return newStatement;
+  }
+
+  async getStatementForPeriod(loanId: string, startDate: Date, endDate: Date): Promise<Statement | undefined> {
+    const [statement] = await db
+      .select()
+      .from(statements)
+      .where(
+        and(
+          eq(statements.loanId, loanId),
+          eq(statements.statementPeriodStart, startDate),
+          eq(statements.statementPeriodEnd, endDate)
+        )
+      );
+    return statement;
+  }
+
+  async getLoanStatements(loanId: string): Promise<Statement[]> {
+    return await db
+      .select()
+      .from(statements)
+      .where(eq(statements.loanId, loanId))
+      .orderBy(desc(statements.statementDate));
+  }
+
+  async getActiveLoans(): Promise<Loan[]> {
+    return await db
+      .select()
+      .from(loans)
+      .where(eq(loans.status, 'active'));
+  }
+
+  async getLoanWithPayments(loanId: string): Promise<LoanWithRelations | undefined> {
+    const loan = await this.getLoanById(loanId);
+    if (!loan) return undefined;
+    
+    const loanPayments = await this.getLoanPayments(loanId);
+    return {
+      ...loan,
+      payments: loanPayments
+    };
+  }
+
+  // Tax calculation operations
+  async createTaxImplication(taxImplication: InsertTaxImplication): Promise<TaxImplication> {
+    const [newTaxImplication] = await db.insert(taxImplications).values(taxImplication).returning();
+    return newTaxImplication;
+  }
+
+  async getTaxImplication(userId: string, taxYear: number): Promise<TaxImplication | undefined> {
+    const [taxImplication] = await db
+      .select()
+      .from(taxImplications)
+      .where(
+        and(
+          eq(taxImplications.userId, userId),
+          eq(taxImplications.taxYear, taxYear)
+        )
+      );
+    return taxImplication;
+  }
+
+  async getPaymentsByYear(loanId: string, year: number): Promise<Payment[]> {
+    return await db
+      .select()
+      .from(payments)
+      .where(
+        and(
+          eq(payments.loanId, loanId),
+          sql`EXTRACT(YEAR FROM ${payments.paymentDate}) = ${year}`
+        )
+      );
   }
 }
 

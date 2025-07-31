@@ -65,7 +65,11 @@ app.use((req, res, next) => {
     port,
     host: "0.0.0.0",
     reusePort: true,
-  }, () => {
+  }, async () => {
     log(`serving on port ${port}`);
+    
+    // Start the automated statement generation cron service
+    const { cronService } = await import("./cronService");
+    cronService.start();
   });
 })();

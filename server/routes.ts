@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import { insertLoanSchema, insertPaymentSchema, insertTimelineEventSchema, insertCommunicationSchema } from "@shared/schema";
 import { z } from "zod";
+import { statementService, taxCalculationService } from "./statementService";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -307,6 +308,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error calculating suggested rate:", error);
       res.status(500).json({ message: "Failed to calculate suggested rate" });
+    }
+  });
+
+  // Statement routes
+  app.post('/api/statements/generate/:loanId', requireAuth, async (req: any, res) => {
+    try {
+      const loanId = req.params.loanId;
+      const statement = await statementService.generateStatement(loanId);
+      res.json(statement);
+    } catch (error) {
+      console.error("Error generating statement:", error);
+      res.status(500).json({ message: "Failed to generate statement" });
+    }
+  });
+
+  app.get('/api/statements/:loanId', requireAuth, async (req: any, res) => {
+    try {
+      const loanId = req.params.loanId;
+      const statements = await storage.getLoanStatements(loanId);
+      res.json(statements);
+    } catch (error) {
+      console.error("Error fetching statements:", error);
+      res.status(500).json({ message: "Failed to fetch statements" });
+    }
+  });
+
+  // Bulk statement generation (for admin/cron)
+  app.post('/api/statements/generate-all', requireAuth, async (req: any, res) => {
+    try {
+      await statementService.generateAllStatements();
+      res.json({ message: "All statements generated successfully" });
+    } catch (error) {
+      console.error("Error generating all statements:", error);
+      res.status(500).json({ message: "Failed to generate statements" });
+    }
+  });
+
+  // Tax calculation routes
+  app.get('/api/tax/implications/:year?', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const year = req.params.year ? parseInt(req.params.year) : new Date().getFullYear();
+      
+      const taxImplications = await taxCalculationService.calculateTaxImplications(userId, year);
+      res.json(taxImplications);
+    } catch (error) {
+      console.error("Error calculating tax implications:", error);
+      res.status(500).json({ message: "Failed to calculate tax implications" });
     }
   });
 

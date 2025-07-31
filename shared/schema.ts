@@ -73,6 +73,7 @@ export const timelineEventTypeEnum = pgEnum('timeline_event_type', [
   'document_added',
   'rate_changed',
   'terms_amended',
+  'statement_generated',
   'loan_completed',
   'dispute_opened',
   'dispute_resolved'
@@ -223,6 +224,86 @@ export const documentsRelations = relations(documents, ({ one }) => ({
   }),
 }));
 
+// Statement status enum
+export const statementStatusEnum = pgEnum('statement_status', [
+  'draft',
+  'generated',
+  'sent',
+  'viewed'
+]);
+
+// Periodic statements table
+export const statements = pgTable("statements", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  loanId: uuid("loan_id").notNull(),
+  statementPeriodStart: timestamp("statement_period_start").notNull(),
+  statementPeriodEnd: timestamp("statement_period_end").notNull(),
+  statementDate: timestamp("statement_date").defaultNow(),
+  
+  // Financial summary
+  beginningBalance: decimal("beginning_balance", { precision: 10, scale: 2 }).notNull(),
+  endingBalance: decimal("ending_balance", { precision: 10, scale: 2 }).notNull(),
+  totalPaymentsReceived: decimal("total_payments_received", { precision: 10, scale: 2 }).default("0"),
+  totalInterestAccrued: decimal("total_interest_accrued", { precision: 10, scale: 2 }).default("0"),
+  totalFeesCharged: decimal("total_fees_charged", { precision: 10, scale: 2 }).default("0"),
+  
+  // Payment details
+  numberOfPayments: integer("number_of_payments").default(0),
+  onTimePayments: integer("on_time_payments").default(0),
+  latePayments: integer("late_payments").default(0),
+  missedPayments: integer("missed_payments").default(0),
+  
+  // Statement metadata
+  status: statementStatusEnum("status").default("draft"),
+  sentAt: timestamp("sent_at"),
+  viewedAt: timestamp("viewed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Tax implications table
+export const taxImplications = pgTable("tax_implications", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  taxYear: integer("tax_year").notNull(),
+  
+  // Lender tax implications
+  totalInterestIncome: decimal("total_interest_income", { precision: 10, scale: 2 }).default("0"),
+  totalBadDebtWrite: decimal("total_bad_debt_write", { precision: 10, scale: 2 }).default("0"),
+  
+  // Borrower tax implications  
+  totalInterestPaid: decimal("total_interest_paid", { precision: 10, scale: 2 }).default("0"),
+  totalDeductibleInterest: decimal("total_deductible_interest", { precision: 10, scale: 2 }).default("0"),
+  
+  // Summary estimates
+  estimatedTaxLiability: decimal("estimated_tax_liability", { precision: 10, scale: 2 }).default("0"),
+  estimatedTaxSavings: decimal("estimated_tax_savings", { precision: 10, scale: 2 }).default("0"),
+  
+  // Notes and disclaimers
+  calculationNotes: text("calculation_notes"),
+  disclaimerShown: boolean("disclaimer_shown").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Statement relations
+export const statementsRelations = relations(statements, ({ one }) => ({
+  loan: one(loans, {
+    fields: [statements.loanId],
+    references: [loans.id],
+  }),
+}));
+
+// Tax implications relations
+export const taxImplicationsRelations = relations(taxImplications, ({ one }) => ({
+  user: one(users, {
+    fields: [taxImplications.userId],
+    references: [users.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertLoanSchema = createInsertSchema(loans).omit({
   id: true,
@@ -251,6 +332,18 @@ export const insertDocumentSchema = createInsertSchema(documents).omit({
   createdAt: true,
 });
 
+export const insertStatementSchema = createInsertSchema(statements).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertTaxImplicationSchema = createInsertSchema(taxImplications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // User schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -276,6 +369,10 @@ export type InsertCommunication = z.infer<typeof insertCommunicationSchema>;
 export type Communication = typeof communications.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 export type Document = typeof documents.$inferSelect;
+export type InsertStatement = z.infer<typeof insertStatementSchema>;
+export type Statement = typeof statements.$inferSelect;
+export type InsertTaxImplication = z.infer<typeof insertTaxImplicationSchema>;
+export type TaxImplication = typeof taxImplications.$inferSelect;
 
 // Extended types with relations
 export type LoanWithRelations = Loan & {
