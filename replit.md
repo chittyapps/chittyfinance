@@ -82,3 +82,32 @@ The application is designed for deployment on Replit with the following consider
 6. **Session Storage**: PostgreSQL-backed sessions for persistence across deployments
 
 The application follows a monorepo structure with shared types between client and server, enabling type safety across the full stack while maintaining clear separation of concerns.
+
+## Recent Changes (January 31, 2025)
+
+### Dynamic Naming System Implementation
+- Added `creditorTerm` and `debtorTerm` columns to users table with defaults "Lender" and "Borrower"
+- Created `useDynamicTerms` hook for customizable terminology throughout the app
+- Users can now customize how they refer to money providers (Lender/Creditor/Helper) and receivers (Borrower/Debtor/Friend)
+- Updated Dashboard and other components to use dynamic terms instead of hardcoded "loan" language
+
+### Seasonal Gamification Features
+- Added `seasonalTheme` and `treeGrowthLevel` columns to users table
+- Created `useSeasonalTheme` hook that provides seasonal colors, gradients, and tree growth visualization
+- Implemented four seasons (spring, summer, fall, winter) with unique color schemes and motivational messages
+- Tree growth system that visualizes payment performance with emoji progression (🌱 → 🌳 → 🌲⭐)
+- App background and UI elements dynamically change based on user's selected season
+
+### User Settings & Customization
+- Built comprehensive Settings page (`/settings`) for term and seasonal preference management
+- Created `SeasonalProgress` component showing tree growth and motivational messaging
+- Added `LegalDisclaimer` component with clear disclaimers about not being a bank
+- Implemented settings API route (`PUT /api/user/settings`) for preference updates
+
+### Legal Compliance Features
+- Added comprehensive legal disclaimers throughout the app
+- Clear messaging that platform is not a bank with no loan guarantees
+- Disclaimers about use at own risk and attorney consultation recommendations
+- Premium feature callouts for certified mail, AI notices, and official registration
+
+The app now provides a highly personalized experience where users can customize terminology to match their lending relationships (formal bank-style vs. family/friend casual) and enjoy seasonal gamification that rewards consistent payment behavior.
