@@ -9,7 +9,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   setupAuth(app);
 
-  // User route already handled in auth.ts as /api/user
+  // User settings route
+  app.put('/api/user/settings', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { creditorTerm, debtorTerm, seasonalTheme } = req.body;
+
+      const updatedUser = await storage.updateUserSettings(userId, {
+        creditorTerm,
+        debtorTerm,
+        seasonalTheme,
+      });
+
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user settings:", error);
+      res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
 
   // Dashboard routes
   app.get('/api/dashboard/stats', requireAuth, async (req: any, res) => {

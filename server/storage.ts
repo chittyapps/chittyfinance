@@ -28,6 +28,11 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserSettings(userId: string, settings: {
+    creditorTerm?: string;
+    debtorTerm?: string;
+    seasonalTheme?: string;
+  }): Promise<User>;
 
   // Loan operations
   createLoan(loan: InsertLoan): Promise<Loan>;
@@ -77,6 +82,22 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .insert(users)
       .values(userData)
+      .returning();
+    return user;
+  }
+
+  async updateUserSettings(userId: string, settings: {
+    creditorTerm?: string;
+    debtorTerm?: string;
+    seasonalTheme?: string;
+  }): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({
+        ...settings,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
       .returning();
     return user;
   }

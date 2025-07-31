@@ -36,6 +36,12 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  // Dynamic naming preferences
+  creditorTerm: varchar("creditor_term").default("Lender"),
+  debtorTerm: varchar("debtor_term").default("Borrower"),
+  // Seasonal progress settings
+  seasonalTheme: varchar("seasonal_theme").default("spring"), // spring, summer, fall, winter
+  treeGrowthLevel: integer("tree_growth_level").default(0), // 0-100
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

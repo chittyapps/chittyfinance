@@ -10,6 +10,7 @@ import Dashboard from "@/pages/Dashboard";
 import LoanDetails from "@/pages/LoanDetails";
 import CreateLoan from "@/pages/CreateLoan";
 import Community from "@/pages/Community";
+import Settings from "@/pages/Settings";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -38,6 +39,7 @@ function Router() {
           <Route path="/loans/:id" component={LoanDetails} />
           <Route path="/create-loan" component={CreateLoan} />
           <Route path="/community" component={Community} />
+          <Route path="/settings" component={Settings} />
         </>
       )}
       <Route component={NotFound} />

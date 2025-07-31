@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useSeasonalTheme } from "@/hooks/useSeasonalTheme";
+import { useDynamicTerms } from "@/hooks/useDynamicTerms";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import DashboardStats from "@/components/DashboardStats";
@@ -14,6 +16,8 @@ export default function Dashboard() {
   const { user, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const seasonalTheme = useSeasonalTheme();
+  const terms = useDynamicTerms();
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -85,12 +89,12 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className={`min-h-screen bg-gradient-to-br ${seasonalTheme.backgroundColor}`}>
       {/* Navigation */}
       <nav className="glass-morphism fixed top-0 left-0 right-0 z-50 px-4 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-primary to-accent rounded-lg flex items-center justify-center">
+            <div className={`w-8 h-8 bg-gradient-to-r ${seasonalTheme.gradientFrom} ${seasonalTheme.gradientTo} rounded-lg flex items-center justify-center`}>
               <i className="fas fa-handshake text-white text-sm"></i>
             </div>
             <span className="text-xl font-bold text-neutral-800">Close Lender</span>
@@ -109,15 +113,21 @@ export default function Dashboard() {
             >
               Community
             </button>
+            <button 
+              onClick={() => setLocation("/settings")}
+              className="text-neutral-600 hover:text-primary transition-colors"
+            >
+              Settings
+            </button>
           </div>
 
           <div className="flex items-center space-x-3">
             <Button
               onClick={handleCreateLoan}
-              className="hero-gradient text-white hover:shadow-lg transform hover:scale-105 transition-all duration-300"
+              className={`bg-gradient-to-r ${seasonalTheme.gradientFrom} ${seasonalTheme.gradientTo} text-white hover:shadow-lg transform hover:scale-105 transition-all duration-300`}
             >
               <i className="fas fa-plus mr-2"></i>
-              New Loan
+              New {terms.creditor} Agreement
             </Button>
             <button className="p-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition-all">
               <i className="fas fa-bell text-neutral-600"></i>
@@ -138,9 +148,9 @@ export default function Dashboard() {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-neutral-800 mb-2">
-              Welcome back, {user.firstName || user.email}!
+              Welcome back, {user.firstName || user.username}!
             </h1>
-            <p className="text-xl text-neutral-600">Here's what's happening with your loans</p>
+            <p className="text-xl text-neutral-600">Here's what's happening with your {terms.creditorLower} relationships {seasonalTheme.treeStage}</p>
           </div>
 
           {/* Dashboard Stats */}
@@ -151,7 +161,7 @@ export default function Dashboard() {
             {/* Recent Loans */}
             <Card className="loan-card">
               <CardHeader>
-                <CardTitle className="text-2xl font-bold text-neutral-800">Recent Loans</CardTitle>
+                <CardTitle className="text-2xl font-bold text-neutral-800">Recent {terms.creditor} Activity</CardTitle>
               </CardHeader>
               <CardContent>
                 {loansLoading ? (
