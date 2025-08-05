@@ -77,6 +77,7 @@ export function setupAuth(app: Express) {
     secret: process.env.SESSION_SECRET || "default-session-secret-for-dev",
     resave: false,
     saveUninitialized: false,
+    name: 'connect.sid',
     cookie: {
       httpOnly: true,
       secure: false, // Set to true in production with HTTPS
