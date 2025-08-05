@@ -11,7 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/utils";
-import { FileText, Brain, AlertTriangle, CheckCircle, Upload } from "lucide-react";
+import { FileText, Brain, AlertTriangle, CheckCircle, Upload, ArrowLeft, Plus, Trash2, Loader2 } from "lucide-react";
+import { Link } from "wouter";
 import type { UploadResult } from "@uppy/core";
 
 interface ExtractedTerms {
@@ -39,12 +40,20 @@ interface ValidationResult {
   warnings: string[];
 }
 
+interface ProcessedDocument {
+  id: string;
+  url: string;
+  name: string;
+  extractedTerms: ExtractedTerms | null;
+  validation: ValidationResult | null;
+  isProcessing: boolean;
+  error?: string;
+}
+
 export default function AIDocumentProcessor() {
-  const [documentUrl, setDocumentUrl] = useState<string>("");
-  const [extractedTerms, setExtractedTerms] = useState<ExtractedTerms | null>(null);
-  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [documents, setDocuments] = useState<ProcessedDocument[]>([]);
   const [borrowerEmail, setBorrowerEmail] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentProcessingId, setCurrentProcessingId] = useState<string | null>(null);
 
   // Get upload URL mutation
   const getUploadUrlMutation = useMutation({

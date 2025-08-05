@@ -13,7 +13,7 @@ import Community from "@/pages/Community";
 import Settings from "@/pages/Settings";
 import TaxImplications from "@/pages/TaxImplications";
 import LoanStatements from "@/pages/LoanStatements";
-import AIDocumentProcessor from "@/pages/AIDocumentProcessor";
+import AIDocumentProcessor from "@/pages/AIDocumentProcessorNew";
 import TestAuth from "@/pages/TestAuth";
 
 function Router() {
