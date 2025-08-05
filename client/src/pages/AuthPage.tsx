@@ -138,6 +138,7 @@ export default function AuthPage() {
                               placeholder="Enter your username"
                               {...field}
                               disabled={loginMutation.isPending}
+                              data-testid="input-login-username"
                             />
                           </FormControl>
                           <FormMessage />
@@ -231,6 +232,7 @@ export default function AuthPage() {
                               placeholder="Choose a username"
                               {...field}
                               disabled={registerMutation.isPending}
+                              data-testid="input-username"
                             />
                           </FormControl>
                           <FormMessage />
