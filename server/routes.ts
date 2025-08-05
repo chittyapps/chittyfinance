@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import express from "express";
+import path from "path";
 import { storage } from "./storage";
 import { setupAuth, requireAuth } from "./auth";
 import { insertLoanSchema, insertPaymentSchema, insertTimelineEventSchema, insertCommunicationSchema } from "@shared/schema";
@@ -7,6 +9,14 @@ import { z } from "zod";
 import { statementService, taxCalculationService } from "./statementService";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Serve static files
+  app.use('/static', express.static('server/public'));
+  
+  // Simple signup page route
+  app.get('/simple-signup', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'simple-signup.html'));
+  });
+
   // Auth middleware
   setupAuth(app);
 
