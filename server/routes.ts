@@ -14,7 +14,137 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Simple signup page route
   app.get('/simple-signup', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'simple-signup.html'));
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Signup - Close Lender</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .success {
+            color: green;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .error {
+            color: red;
+            text-align: center;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h1>Create Account</h1>
+        <form id="signupForm">
+            <input type="text" id="username" placeholder="Username (3+ characters)" required>
+            <input type="password" id="password" placeholder="Password (6+ characters)" required>
+            <input type="email" id="email" placeholder="Email (optional)">
+            <input type="text" id="firstName" placeholder="First Name (optional)">
+            <button type="submit">Create Account</button>
+        </form>
+        <div id="message"></div>
+        <p style="text-align: center; margin-top: 20px;">
+            <a href="/" style="color: #667eea;">Back to main app</a>
+        </p>
+    </div>
+
+    <script>
+        document.getElementById('signupForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const email = document.getElementById('email').value;
+            const firstName = document.getElementById('firstName').value;
+            
+            if (username.length < 3) {
+                document.getElementById('message').innerHTML = '<div class="error">Username must be at least 3 characters</div>';
+                return;
+            }
+            
+            if (password.length < 6) {
+                document.getElementById('message').innerHTML = '<div class="error">Password must be at least 6 characters</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password,
+                        email: email || undefined,
+                        firstName: firstName || undefined
+                    }),
+                });
+                
+                if (response.ok) {
+                    const user = await response.json();
+                    document.getElementById('message').innerHTML = '<div class="success">Account created successfully! Redirecting...</div>';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1500);
+                } else {
+                    const error = await response.json();
+                    document.getElementById('message').innerHTML = '<div class="error">' + (error.error || 'Registration failed') + '</div>';
+                }
+            } catch (error) {
+                document.getElementById('message').innerHTML = '<div class="error">Network error. Please try again.</div>';
+            }
+        });
+    </script>
+</body>
+</html>`);
   });
 
   // Auth middleware
