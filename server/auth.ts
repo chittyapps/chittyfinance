@@ -6,8 +6,6 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
-import { db } from "./db";
-import { sql } from "drizzle-orm";
 
 declare global {
   namespace Express {
@@ -31,58 +29,15 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
-  // Custom session store using our database
-  class DatabaseSessionStore extends session.Store {
-    async get(sid: string, callback: (err: any, session?: session.SessionData | null) => void) {
-      try {
-        const result = await db.execute(sql`SELECT sess FROM sessions WHERE sid = ${sid} AND expire > NOW()`);
-        const sessionData = result.rows[0]?.sess;
-        const session = sessionData ? (typeof sessionData === 'string' ? JSON.parse(sessionData) : sessionData) : null;
-        callback(null, session);
-      } catch (error) {
-        console.error('Session get error:', error);
-        callback(error);
-      }
-    }
-
-    async set(sid: string, session: session.SessionData, callback?: (err?: any) => void) {
-      try {
-        const expire = new Date(Date.now() + (session.cookie?.maxAge || 24 * 60 * 60 * 1000));
-        const sessionJson = JSON.stringify(session);
-        await db.execute(sql`
-          INSERT INTO sessions (sid, sess, expire) 
-          VALUES (${sid}, ${sessionJson}, ${expire})
-          ON CONFLICT (sid) DO UPDATE SET sess = ${sessionJson}, expire = ${expire}
-        `);
-        callback?.();
-      } catch (error) {
-        console.error('Session set error:', error);
-        callback?.(error);
-      }
-    }
-
-    async destroy(sid: string, callback?: (err?: any) => void) {
-      try {
-        await db.execute(sql`DELETE FROM sessions WHERE sid = ${sid}`);
-        callback?.();
-      } catch (error) {
-        console.error('Session destroy error:', error);
-        callback?.(error);
-      }
-    }
-  }
-
   const sessionSettings: session.SessionOptions = {
-    store: new DatabaseSessionStore(),
     secret: process.env.SESSION_SECRET || "default-session-secret-for-dev",
     resave: false,
     saveUninitialized: false,
-    name: 'connect.sid',
     cookie: {
       httpOnly: true,
-      secure: false, // Set to true in production with HTTPS
+      secure: false,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax', // Allow cross-site requests for same domain
+      sameSite: 'lax',
     },
   };
 
