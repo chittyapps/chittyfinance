@@ -359,6 +359,122 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Document upload and AI processing routes
+  app.post("/api/documents/upload", requireAuth, async (req: any, res) => {
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const uploadURL = await objectStorageService.getDocumentUploadURL();
+      res.json({ uploadURL });
+    } catch (error) {
+      console.error("Error getting document upload URL:", error);
+      res.status(500).json({ error: "Failed to get upload URL" });
+    }
+  });
+
+  app.post("/api/documents/process", requireAuth, async (req: any, res) => {
+    try {
+      const { documentUrl } = req.body;
+      if (!documentUrl) {
+        return res.status(400).json({ error: "Document URL is required" });
+      }
+
+      const { ObjectStorageService } = await import("./objectStorage");
+      const { documentProcessor } = await import("./documentProcessor");
+      
+      const objectStorageService = new ObjectStorageService();
+      
+      // Download document content for AI processing
+      const documentText = await objectStorageService.getDocumentText(documentUrl);
+      
+      // Extract loan terms using AI
+      const extractedTerms = await documentProcessor.extractLoanTerms(documentText);
+      
+      // Validate the extracted terms
+      const validation = documentProcessor.validateTerms(extractedTerms);
+      
+      // Calculate missing parameters
+      const calculatedTerms = documentProcessor.calculateMissingParameters(extractedTerms);
+      
+      // Merge extracted and calculated terms
+      const finalTerms = { ...extractedTerms, ...calculatedTerms };
+
+      res.json({
+        terms: finalTerms,
+        validation,
+        documentUrl
+      });
+    } catch (error) {
+      console.error("Error processing document:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: `Failed to process document: ${errorMessage}` });
+    }
+  });
+
+  app.post("/api/loans/create-from-document", requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { extractedTerms, documentUrl, borrowerEmail } = req.body;
+
+      if (!extractedTerms || !documentUrl) {
+        return res.status(400).json({ error: "Extracted terms and document URL are required" });
+      }
+
+      // Find or validate borrower
+      let borrower;
+      if (borrowerEmail) {
+        borrower = await storage.getUserByEmail(borrowerEmail);
+        if (!borrower) {
+          return res.status(400).json({ error: "Borrower not found. They must register first." });
+        }
+      }
+
+      // Create loan with AI-extracted data
+      const loanData = {
+        lenderId: userId,
+        borrowerId: borrower?.id || extractedTerms.borrowerId,
+        amount: extractedTerms.amount?.toString() || "0",
+        interestRate: extractedTerms.interestRate?.toString() || "0",
+        termMonths: extractedTerms.termMonths || 12,
+        monthlyPayment: extractedTerms.monthlyPayment?.toString() || "0",
+        remainingBalance: extractedTerms.amount?.toString() || "0",
+        purpose: extractedTerms.purpose || "Personal loan",
+        paymentFrequency: extractedTerms.paymentFrequency || "monthly",
+        earlyPayoffPenalty: extractedTerms.earlyPayoffPenalty?.toString(),
+        earlyPayoffTerms: extractedTerms.earlyPayoffTerms,
+        specialTerms: extractedTerms.specialTerms?.join('; '),
+        collateralDescription: extractedTerms.collateralDescription,
+        documentUrl,
+        aiProcessed: true,
+        aiExtractedData: extractedTerms,
+        startDate: extractedTerms.startDate ? new Date(extractedTerms.startDate) : new Date(),
+        endDate: extractedTerms.endDate ? new Date(extractedTerms.endDate) : undefined,
+        latePaymentPenalty: extractedTerms.latePaymentPenalty?.toString() || "0",
+      };
+
+      const loan = await storage.createLoan(loanData);
+      
+      // Create timeline event for AI document processing
+      await storage.createTimelineEvent({
+        loanId: loan.id,
+        type: 'document_added',
+        description: `Loan terms automatically extracted from uploaded document using AI (${extractedTerms.confidence ? Math.round(extractedTerms.confidence * 100) : 0}% confidence)`,
+        amount: extractedTerms.amount?.toString(),
+        metadata: {
+          documentUrl,
+          aiConfidence: extractedTerms.confidence,
+          extractedFields: Object.keys(extractedTerms).filter(key => extractedTerms[key as keyof typeof extractedTerms] != null)
+        }
+      });
+
+      res.status(201).json(loan);
+    } catch (error) {
+      console.error("Error creating loan from document:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: `Failed to create loan: ${errorMessage}` });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

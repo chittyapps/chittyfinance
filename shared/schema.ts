@@ -96,6 +96,15 @@ export const loans = pgTable("loans", {
   nextPaymentDate: timestamp("next_payment_date"),
   earlyPaymentBonus: decimal("early_payment_bonus", { precision: 5, scale: 2 }).default('0'),
   latePaymentPenalty: decimal("late_payment_penalty", { precision: 5, scale: 2 }).default('0'),
+  // AI Document Processing fields
+  paymentFrequency: varchar("payment_frequency").default("monthly").notNull(), // weekly, biweekly, monthly
+  earlyPayoffPenalty: decimal("early_payoff_penalty", { precision: 5, scale: 2 }), // percentage penalty
+  earlyPayoffTerms: text("early_payoff_terms"), // description of early payoff conditions
+  specialTerms: text("special_terms"), // any special requirements or conditions
+  collateralDescription: text("collateral_description"), // collateral details
+  documentUrl: varchar("document_url"), // uploaded document reference
+  aiProcessed: boolean("ai_processed").default(false), // whether AI has processed the document
+  aiExtractedData: jsonb("ai_extracted_data"), // raw AI extraction results
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

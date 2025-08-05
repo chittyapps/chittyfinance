@@ -13,6 +13,7 @@ import Community from "@/pages/Community";
 import Settings from "@/pages/Settings";
 import TaxImplications from "@/pages/TaxImplications";
 import LoanStatements from "@/pages/LoanStatements";
+import AIDocumentProcessor from "@/pages/AIDocumentProcessor";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -44,6 +45,7 @@ function Router() {
           <Route path="/settings" component={Settings} />
           <Route path="/tax-implications" component={TaxImplications} />
           <Route path="/loans/:id/statements" component={LoanStatements} />
+          <Route path="/ai-document-processor" component={AIDocumentProcessor} />
         </>
       )}
       <Route component={NotFound} />

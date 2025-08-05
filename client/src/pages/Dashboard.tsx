@@ -114,6 +114,12 @@ export default function Dashboard() {
               Community
             </button>
             <button 
+              onClick={() => setLocation("/ai-document-processor")}
+              className="text-neutral-600 hover:text-primary transition-colors"
+            >
+              AI Processor
+            </button>
+            <button 
               onClick={() => setLocation("/settings")}
               className="text-neutral-600 hover:text-primary transition-colors"
             >
