@@ -39,6 +39,7 @@ export default function AuthPage() {
       username: "",
       password: "",
     },
+    mode: "onChange",
   });
 
   const registerForm = useForm<RegisterForm>({
@@ -51,6 +52,7 @@ export default function AuthPage() {
       firstName: "",
       lastName: "",
     },
+    mode: "onChange",
   });
 
   const loginMutation = useMutation({
@@ -136,9 +138,13 @@ export default function AuthPage() {
                           <FormControl>
                             <Input
                               placeholder="Enter your username"
-                              {...field}
+                              value={field.value || ""}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              name={field.name}
                               disabled={loginMutation.isPending}
                               data-testid="input-login-username"
+                              autoComplete="username"
                             />
                           </FormControl>
                           <FormMessage />
@@ -230,9 +236,13 @@ export default function AuthPage() {
                           <FormControl>
                             <Input
                               placeholder="Choose a username"
-                              {...field}
+                              value={field.value || ""}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              name={field.name}
                               disabled={registerMutation.isPending}
                               data-testid="input-username"
+                              autoComplete="username"
                             />
                           </FormControl>
                           <FormMessage />

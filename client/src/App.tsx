@@ -14,6 +14,7 @@ import Settings from "@/pages/Settings";
 import TaxImplications from "@/pages/TaxImplications";
 import LoanStatements from "@/pages/LoanStatements";
 import AIDocumentProcessor from "@/pages/AIDocumentProcessor";
+import TestAuth from "@/pages/TestAuth";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -35,7 +36,10 @@ function Router() {
   return (
     <Switch>
       {!isAuthenticated ? (
-        <Route path="/" component={AuthPage} />
+        <>
+          <Route path="/" component={AuthPage} />
+          <Route path="/test-auth" component={TestAuth} />
+        </>
       ) : (
         <>
           <Route path="/" component={Dashboard} />
