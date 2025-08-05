@@ -40,7 +40,12 @@ export default function Dashboard() {
     retry: false,
   });
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery<{
+    totalLent: number;
+    activeLoans: number;
+    avgInterestRate: number;
+    onTimeRate: number;
+  }>({
     queryKey: ["/api/dashboard/stats"],
     enabled: !!user,
     retry: false,
