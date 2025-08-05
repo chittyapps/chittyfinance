@@ -6,6 +6,8 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 
 declare global {
   namespace Express {
@@ -29,7 +31,44 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
+  // Custom session store using our database
+  class DatabaseSessionStore extends session.Store {
+    async get(sid: string, callback: (err: any, session?: session.SessionData | null) => void) {
+      try {
+        const result = await db.execute(sql`SELECT sess FROM sessions WHERE sid = ${sid} AND expire > NOW()`);
+        const session = result.rows[0]?.sess as session.SessionData || null;
+        callback(null, session);
+      } catch (error) {
+        callback(error);
+      }
+    }
+
+    async set(sid: string, session: session.SessionData, callback?: (err?: any) => void) {
+      try {
+        const expire = new Date(Date.now() + (session.cookie?.maxAge || 24 * 60 * 60 * 1000));
+        await db.execute(sql`
+          INSERT INTO sessions (sid, sess, expire) 
+          VALUES (${sid}, ${JSON.stringify(session)}, ${expire})
+          ON CONFLICT (sid) DO UPDATE SET sess = ${JSON.stringify(session)}, expire = ${expire}
+        `);
+        callback?.();
+      } catch (error) {
+        callback?.(error);
+      }
+    }
+
+    async destroy(sid: string, callback?: (err?: any) => void) {
+      try {
+        await db.execute(sql`DELETE FROM sessions WHERE sid = ${sid}`);
+        callback?.();
+      } catch (error) {
+        callback?.(error);
+      }
+    }
+  }
+
   const sessionSettings: session.SessionOptions = {
+    store: new DatabaseSessionStore(),
     secret: process.env.SESSION_SECRET || "default-session-secret-for-dev",
     resave: false,
     saveUninitialized: false,
