@@ -36,9 +36,11 @@ export function setupAuth(app: Express) {
     async get(sid: string, callback: (err: any, session?: session.SessionData | null) => void) {
       try {
         const result = await db.execute(sql`SELECT sess FROM sessions WHERE sid = ${sid} AND expire > NOW()`);
-        const session = result.rows[0]?.sess as session.SessionData || null;
+        const sessionData = result.rows[0]?.sess;
+        const session = sessionData ? (typeof sessionData === 'string' ? JSON.parse(sessionData) : sessionData) : null;
         callback(null, session);
       } catch (error) {
+        console.error('Session get error:', error);
         callback(error);
       }
     }
@@ -46,13 +48,15 @@ export function setupAuth(app: Express) {
     async set(sid: string, session: session.SessionData, callback?: (err?: any) => void) {
       try {
         const expire = new Date(Date.now() + (session.cookie?.maxAge || 24 * 60 * 60 * 1000));
+        const sessionJson = JSON.stringify(session);
         await db.execute(sql`
           INSERT INTO sessions (sid, sess, expire) 
-          VALUES (${sid}, ${JSON.stringify(session)}, ${expire})
-          ON CONFLICT (sid) DO UPDATE SET sess = ${JSON.stringify(session)}, expire = ${expire}
+          VALUES (${sid}, ${sessionJson}, ${expire})
+          ON CONFLICT (sid) DO UPDATE SET sess = ${sessionJson}, expire = ${expire}
         `);
         callback?.();
       } catch (error) {
+        console.error('Session set error:', error);
         callback?.(error);
       }
     }
@@ -62,6 +66,7 @@ export function setupAuth(app: Express) {
         await db.execute(sql`DELETE FROM sessions WHERE sid = ${sid}`);
         callback?.();
       } catch (error) {
+        console.error('Session destroy error:', error);
         callback?.(error);
       }
     }
