@@ -29,130 +29,77 @@ export default function PaymentTracker({ loan, onRecordPayment }: PaymentTracker
   ).length || 0;
 
   return (
-    <Card className="glass-morphism border-0 shadow-xl">
+    <Card className="border">
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xl font-bold text-neutral-800 flex items-center gap-2">
-            <i className="fas fa-chart-line text-primary"></i>
-            {isLender ? "Your Investment Progress" : "Your Loan Progress"}
-          </CardTitle>
-          <Badge variant={loan.status === 'active' ? 'default' : 'secondary'}>
-            {loan.status}
-          </Badge>
-        </div>
+        <CardTitle className="text-lg font-semibold">
+          Payment Progress
+        </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Payment Progress */}
+      <CardContent className="space-y-4">
         <div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium text-neutral-600">
-              {isLender ? "Amount Received" : "Amount Paid"}
-            </span>
-            <span className="text-sm text-neutral-500">
-              ${totalPaid.toLocaleString()} / ${loan.amount.toLocaleString()}
-            </span>
+          <div className="flex justify-between mb-2">
+            <span className="text-sm">Amount Paid</span>
+            <span className="text-sm">${totalPaid.toLocaleString()} / ${loan.amount.toLocaleString()}</span>
           </div>
-          <Progress value={progressPercentage} className="h-3" />
-          <p className="text-xs text-neutral-500 mt-1">
-            {progressPercentage.toFixed(1)}% complete
-          </p>
+          <Progress value={progressPercentage} className="h-2" />
         </div>
 
-        {/* Key Numbers */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="p-3 bg-gradient-to-br from-primary/5 to-primary/10 rounded-lg">
-            <p className="text-xs text-neutral-500 mb-1">Remaining Balance</p>
-            <p className="text-lg font-bold text-neutral-800">
-              ${remainingBalance.toLocaleString()}
-            </p>
+          <div className="p-3 border rounded">
+            <p className="text-xs text-gray-600">Remaining</p>
+            <p className="font-semibold">${remainingBalance.toLocaleString()}</p>
           </div>
-          <div className="p-3 bg-gradient-to-br from-green-500/5 to-green-500/10 rounded-lg">
-            <p className="text-xs text-neutral-500 mb-1">Interest Rate</p>
-            <p className="text-lg font-bold text-green-600">
-              {loan.interestRate}% APR
-            </p>
+          <div className="p-3 border rounded">
+            <p className="text-xs text-gray-600">Interest Rate</p>
+            <p className="font-semibold">{loan.interestRate}%</p>
           </div>
         </div>
 
-        {/* Next Payment Info */}
         {nextPaymentDue && (
-          <div className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <i className="fas fa-calendar text-blue-600"></i>
-              <h4 className="font-semibold text-blue-800">Next Payment Due</h4>
-            </div>
-            <p className="text-blue-700 font-medium">
+          <div className="p-3 bg-blue-50 rounded border">
+            <p className="text-sm font-medium">Next Payment Due</p>
+            <p className="text-sm">
               ${parseFloat(nextPaymentDue.amount).toLocaleString()} on {nextPaymentDue.scheduledDate ? new Date(nextPaymentDue.scheduledDate).toLocaleDateString() : 'TBD'}
             </p>
           </div>
         )}
 
-        {/* Overdue Alerts */}
         {overduePayments > 0 && (
-          <div className="p-4 bg-gradient-to-r from-red-50 to-red-100 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <i className="fas fa-exclamation-triangle text-red-600"></i>
-              <h4 className="font-semibold text-red-800">Overdue Payments</h4>
-            </div>
-            <p className="text-red-700">
+          <div className="p-3 bg-red-50 rounded border">
+            <p className="text-sm font-medium text-red-800">Overdue Payments</p>
+            <p className="text-sm text-red-700">
               {overduePayments} payment{overduePayments > 1 ? 's' : ''} overdue
             </p>
           </div>
         )}
 
-        {/* Action Buttons */}
-        <div className="flex gap-3">
-          {isLender && (
-            <>
-              <Button 
-                onClick={onRecordPayment}
-                className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white"
-              >
-                <i className="fas fa-check mr-2"></i>
-                Record Payment Received
-              </Button>
-            </>
-          )}
-          {isBorrower && nextPaymentDue && (
-            <Button 
-              className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white"
-            >
-              <i className="fas fa-credit-card mr-2"></i>
-              Make Payment
-            </Button>
-          )}
-          <Button variant="outline" className="flex-1">
-            <i className="fas fa-history mr-2"></i>
-            Payment History
+        {isLender && onRecordPayment && (
+          <Button onClick={onRecordPayment} className="w-full">
+            Record Payment
           </Button>
-        </div>
+        )}
 
-        {/* Quick Stats */}
-        <div className="border-t pt-4">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-xs text-neutral-500">Total Payments</p>
-              <p className="font-semibold text-neutral-800">
-                {loan.payments?.filter(p => p.status === 'completed').length || 0}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-neutral-500">On Time</p>
-              <p className="font-semibold text-green-600">
-                {loan.payments?.filter(p => 
-                  p.status === 'completed' && p.paidDate && p.scheduledDate &&
-                  new Date(p.paidDate) <= new Date(p.scheduledDate)
-                ).length || 0}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-neutral-500">
-                {isLender ? "Interest Earned" : "Interest Paid"}
-              </p>
-              <p className="font-semibold text-primary">
-                ${((totalPaid - parseFloat(loan.amount.toString())) > 0 ? (totalPaid - parseFloat(loan.amount.toString())) : 0).toLocaleString()}
-              </p>
-            </div>
+        <div className="grid grid-cols-3 gap-4 pt-4 border-t">
+          <div className="text-center">
+            <p className="text-xs text-gray-600">Total Payments</p>
+            <p className="font-semibold">
+              {loan.payments?.filter(p => p.status === 'completed').length || 0}
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-gray-600">On Time</p>
+            <p className="font-semibold">
+              {loan.payments?.filter(p => 
+                p.status === 'completed' && p.paidDate && p.scheduledDate &&
+                new Date(p.paidDate) <= new Date(p.scheduledDate)
+              ).length || 0}
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-gray-600">Interest</p>
+            <p className="font-semibold">
+              ${((totalPaid - parseFloat(loan.amount.toString())) > 0 ? (totalPaid - parseFloat(loan.amount.toString())) : 0).toLocaleString()}
+            </p>
           </div>
         </div>
       </CardContent>

@@ -299,26 +299,35 @@ export default function LoanDetails() {
           )}
           
           {/* Header */}
-          <div className="mb-8 text-center">
-            <h1 className="text-4xl font-bold text-neutral-800 mb-2">
-              {isLender ? "Your Investment" : "Your Loan"} with {otherParty.firstName || otherParty.email}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-neutral-800 mb-2">
+              {loan.purpose || 'Loan'} - {formatCurrency(loan.amount)}
             </h1>
-            <p className="text-xl text-neutral-600">
-              {isLender 
-                ? 'Track payments and earnings from your loan' 
-                : 'See your progress and payment schedule'
-              }
+            <p className="text-lg text-neutral-600">
+              {isLender ? `Lending to ${otherParty.firstName || otherParty.email}` : `Borrowing from ${otherParty.firstName || otherParty.email}`}
             </p>
           </div>
 
-          {/* Loan Terms - Clear and Simple */}
-          <div className="mb-8">
-            <LoanTermsCard loan={loan} />
-          </div>
-
-          {/* Payment History */}
-          <div className="mb-8">
-            <SimplePaymentHistory loan={loan} />
+          {/* Basic Loan Info */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white p-4 rounded-lg border">
+              <p className="text-sm text-neutral-600">Amount</p>
+              <p className="text-xl font-bold text-neutral-800">{formatCurrency(loan.amount)}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <p className="text-sm text-neutral-600">Interest Rate</p>
+              <p className="text-xl font-bold text-neutral-800">{loan.interestRate}%</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <p className="text-sm text-neutral-600">Status</p>
+              <p className="text-xl font-bold text-neutral-800 capitalize">{loan.status}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <p className="text-sm text-neutral-600">Created</p>
+              <p className="text-xl font-bold text-neutral-800">
+                {new Date(loan.createdAt).toLocaleDateString()}
+              </p>
+            </div>
           </div>
 
           {/* Quick Actions */}
