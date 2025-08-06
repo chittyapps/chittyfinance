@@ -2,11 +2,12 @@
 
 ## Overview
 
-Close Lender is a full-stack web application for managing personal loans between friends, family members, and community members. The platform provides professional loan management tools with a focus on personal relationships rather than corporate lending. It features loan creation, payment tracking, timeline visualization, and communication tools.
+Close Lender is a full-stack web application that empowers individuals to become their own bank through peer-to-peer lending. The platform makes it as easy as possible for everyday people to lend money, earn interest, and manage loans with friends, family, and community members. It transforms personal lending from complicated paperwork into simple, professional banking tools that anyone can use.
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+Core focus: Make individual banking as simple as possible - help people be their own bank through peer-to-peer lending.
 
 ## System Architecture
 

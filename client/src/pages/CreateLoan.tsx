@@ -67,8 +67,22 @@ export default function CreateLoan() {
         <div className="max-w-4xl mx-auto">
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-neutral-800 mb-4">Create a New Loan</h1>
-            <p className="text-xl text-neutral-600">Set up a professional loan agreement with guided AI assistance</p>
+            <h1 className="text-4xl font-bold text-neutral-800 mb-4">Start Your Lending Journey</h1>
+            <p className="text-xl text-neutral-600">Lend money to someone you trust and earn interest - it's that simple</p>
+            <div className="mt-4 flex justify-center flex-wrap gap-4 text-sm text-neutral-500">
+              <span className="flex items-center gap-1">
+                <i className="fas fa-clock text-primary"></i>
+                Takes 2 minutes
+              </span>
+              <span className="flex items-center gap-1">
+                <i className="fas fa-shield-alt text-primary"></i>
+                Legally protected
+              </span>
+              <span className="flex items-center gap-1">
+                <i className="fas fa-chart-line text-primary"></i>
+                You set the terms
+              </span>
+            </div>
           </div>
 
           {/* Process Steps */}

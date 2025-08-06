@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import DashboardStats from "@/components/DashboardStats";
 import LoanCard from "@/components/LoanCard";
+import BankingGuide from "@/components/BankingGuide";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect } from "react";
@@ -125,6 +126,12 @@ export default function Dashboard() {
               AI Processor
             </button>
             <button 
+              onClick={() => setLocation("/timeline-export")}
+              className="text-neutral-600 hover:text-primary transition-colors"
+            >
+              Legal Timeline
+            </button>
+            <button 
               onClick={() => setLocation("/settings")}
               className="text-neutral-600 hover:text-primary transition-colors"
             >
@@ -137,8 +144,8 @@ export default function Dashboard() {
               onClick={handleCreateLoan}
               className={`bg-gradient-to-r ${seasonalTheme.gradientFrom} ${seasonalTheme.gradientTo} text-white hover:shadow-lg transform hover:scale-105 transition-all duration-300`}
             >
-              <i className="fas fa-plus mr-2"></i>
-              New {terms.creditor} Agreement
+              <i className="fas fa-university mr-2"></i>
+              Start Lending
             </Button>
             <button className="p-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition-all">
               <i className="fas fa-bell text-neutral-600"></i>
@@ -159,13 +166,34 @@ export default function Dashboard() {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-neutral-800 mb-2">
-              Welcome back, {user.firstName || user.username}!
+              Your Personal Bank
             </h1>
             <div className="flex items-center gap-2">
-              <p className="text-xl text-neutral-600">Here's what's happening with your {terms.creditorLower} relationships</p>
+              <p className="text-xl text-neutral-600">Welcome back, {user.firstName || user.username}! Lend money, earn interest, build wealth</p>
               <span dangerouslySetInnerHTML={{ __html: seasonalTheme.treeStage }}></span>
             </div>
+            <div className="mt-3 flex flex-wrap gap-4 text-sm text-neutral-500">
+              <span className="flex items-center gap-1">
+                <i className="fas fa-university text-primary"></i>
+                Banking made simple
+              </span>
+              <span className="flex items-center gap-1">
+                <i className="fas fa-users text-primary"></i>
+                Peer-to-peer lending
+              </span>
+              <span className="flex items-center gap-1">
+                <i className="fas fa-chart-line text-primary"></i>
+                Earn while helping others
+              </span>
+            </div>
           </div>
+
+          {/* Banking Guide for New Users */}
+          {(!loans || loans.length === 0) && (
+            <div className="mb-8">
+              <BankingGuide />
+            </div>
+          )}
 
           {/* Dashboard Stats */}
           <DashboardStats stats={stats} isLoading={statsLoading} />
@@ -194,10 +222,11 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <div className="text-center py-8">
-                    <i className="fas fa-handshake text-4xl text-neutral-400 mb-4"></i>
-                    <p className="text-neutral-600 mb-4">No loans yet</p>
+                    <i className="fas fa-university text-4xl text-neutral-400 mb-4"></i>
+                    <p className="text-neutral-600 mb-4">Ready to be your own bank?</p>
+                    <p className="text-sm text-neutral-500 mb-4">Start lending money to friends and family, earn interest, and help them achieve their goals</p>
                     <Button onClick={handleCreateLoan} className="hero-gradient text-white">
-                      Create Your First Loan
+                      Start Your Banking Journey
                     </Button>
                   </div>
                 )}
