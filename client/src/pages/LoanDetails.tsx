@@ -11,6 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/queryClient";
 import Timeline from "@/components/Timeline";
+import PaymentTracker from "@/components/PaymentTracker";
+import QuickPaymentForm from "@/components/QuickPaymentForm";
+import LoanTermsCard from "@/components/LoanTermsCard";
+import SimplePaymentHistory from "@/components/SimplePaymentHistory";
 import type { LoanWithRelations } from "@shared/schema";
 
 export default function LoanDetails() {
@@ -271,57 +275,51 @@ export default function LoanDetails() {
       {/* Main Content */}
       <div className="pt-20 pb-16 px-4">
         <div className="max-w-7xl mx-auto">
-          {/* Header */}
+          
+          {/* Payment Tracking */}
           <div className="mb-8">
+            <PaymentTracker 
+              loan={loan} 
+              onRecordPayment={() => setShowPaymentForm(true)} 
+            />
+          </div>
+
+          {/* Quick Payment Form */}
+          {showPaymentForm && (
+            <div className="mb-8">
+              <QuickPaymentForm
+                loanId={loan.id}
+                onSuccess={() => {
+                  setShowPaymentForm(false);
+                  queryClient.invalidateQueries({ queryKey: ["/api/loans", id] });
+                }}
+                onCancel={() => setShowPaymentForm(false)}
+              />
+            </div>
+          )}
+          
+          {/* Header */}
+          <div className="mb-8 text-center">
             <h1 className="text-4xl font-bold text-neutral-800 mb-2">
-              {otherParty.firstName || otherParty.email}'s {loan.purpose || 'Loan'}
+              {isLender ? "Your Investment" : "Your Loan"} with {otherParty.firstName || otherParty.email}
             </h1>
             <p className="text-xl text-neutral-600">
-              {isLender ? 'You are the lender' : 'You are the borrower'}
+              {isLender 
+                ? 'Track payments and earnings from your loan' 
+                : 'See your progress and payment schedule'
+              }
             </p>
           </div>
 
-          {/* Loan Overview */}
-          <Card className="loan-card mb-8">
-            <CardHeader>
-              <CardTitle>Loan Overview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <p className="text-sm text-neutral-600 mb-1">Original Amount</p>
-                  <p className="text-2xl font-bold text-neutral-800">{formatCurrency(loan.amount)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-neutral-600 mb-1">Remaining Balance</p>
-                  <p className="text-2xl font-bold text-neutral-800">{formatCurrency(loan.remainingBalance)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-neutral-600 mb-1">Monthly Payment</p>
-                  <p className="text-2xl font-bold text-neutral-800">{formatCurrency(loan.monthlyPayment)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-neutral-600 mb-1">Interest Rate</p>
-                  <p className="text-xl font-semibold text-neutral-800">{loan.interestRate}% APR</p>
-                </div>
-                <div>
-                  <p className="text-sm text-neutral-600 mb-1">Term</p>
-                  <p className="text-xl font-semibold text-neutral-800">{loan.termMonths} months</p>
-                </div>
-                <div>
-                  <p className="text-sm text-neutral-600 mb-1">Status</p>
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                    loan.status === 'active' ? 'bg-emerald-100 text-emerald-800' :
-                    loan.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                    loan.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    {loan.status.charAt(0).toUpperCase() + loan.status.slice(1)}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Loan Terms - Clear and Simple */}
+          <div className="mb-8">
+            <LoanTermsCard loan={loan} />
+          </div>
+
+          {/* Payment History */}
+          <div className="mb-8">
+            <SimplePaymentHistory loan={loan} />
+          </div>
 
           {/* Quick Actions */}
           {(showPaymentForm || showMessageForm) && (
