@@ -14,6 +14,7 @@ import Settings from "@/pages/Settings";
 import TaxImplications from "@/pages/TaxImplications";
 import LoanStatements from "@/pages/LoanStatements";
 import AIDocumentProcessor from "@/pages/AIDocumentProcessorNew";
+import TimelineExport from "@/pages/TimelineExport";
 import TestAuth from "@/pages/TestAuth";
 
 function Router() {
@@ -50,6 +51,7 @@ function Router() {
           <Route path="/tax-implications" component={TaxImplications} />
           <Route path="/loans/:id/statements" component={LoanStatements} />
           <Route path="/ai-document-processor" component={AIDocumentProcessor} />
+          <Route path="/timeline-export" component={TimelineExport} />
         </>
       )}
       <Route component={NotFound} />

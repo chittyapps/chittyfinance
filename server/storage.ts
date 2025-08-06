@@ -45,24 +45,29 @@ export interface IStorage {
   createLoan(loan: InsertLoan): Promise<Loan>;
   getUserLoans(userId: string): Promise<LoanWithRelations[]>;
   getLoanById(loanId: string): Promise<LoanWithRelations | undefined>;
+  getLoanWithRelations(loanId: string): Promise<LoanWithRelations | undefined>;
   updateLoan(loanId: string, updates: Partial<Loan>): Promise<Loan>;
 
   // Payment operations
   createPayment(payment: InsertPayment): Promise<Payment>;
   getLoanPayments(loanId: string): Promise<Payment[]>;
+  getPaymentsByLoan(loanId: string): Promise<Payment[]>;
   updatePayment(paymentId: string, updates: Partial<Payment>): Promise<Payment>;
 
   // Timeline operations
   createTimelineEvent(event: InsertTimelineEvent): Promise<TimelineEvent>;
   getLoanTimeline(loanId: string): Promise<TimelineEventWithUser[]>;
+  getTimelineEvents(loanId: string): Promise<TimelineEventWithUser[]>;
 
   // Communication operations
   createCommunication(communication: InsertCommunication): Promise<Communication>;
   getLoanCommunications(loanId: string): Promise<Communication[]>;
+  getCommunicationsByLoan(loanId: string): Promise<Communication[]>;
 
   // Document operations
   createDocument(document: InsertDocument): Promise<Document>;
   getLoanDocuments(loanId: string): Promise<Document[]>;
+  getDocumentsByLoan(loanId: string): Promise<Document[]>;
 
   // Dashboard statistics
   getUserDashboardStats(userId: string): Promise<{
@@ -196,6 +201,10 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  async getLoanWithRelations(loanId: string): Promise<LoanWithRelations | undefined> {
+    return this.getLoanById(loanId);
+  }
+
   async updateLoan(loanId: string, updates: Partial<Loan>): Promise<Loan> {
     const [updatedLoan] = await db
       .update(loans)
@@ -220,6 +229,10 @@ export class DatabaseStorage implements IStorage {
       .from(payments)
       .where(eq(payments.loanId, loanId))
       .orderBy(desc(payments.scheduledDate));
+  }
+
+  async getPaymentsByLoan(loanId: string): Promise<Payment[]> {
+    return this.getLoanPayments(loanId);
   }
 
   async updatePayment(paymentId: string, updates: Partial<Payment>): Promise<Payment> {
@@ -254,6 +267,10 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  async getTimelineEvents(loanId: string): Promise<TimelineEventWithUser[]> {
+    return this.getLoanTimeline(loanId);
+  }
+
   // Communication operations
   async createCommunication(communication: InsertCommunication): Promise<Communication> {
     const [newCommunication] = await db
@@ -271,6 +288,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(communications.createdAt));
   }
 
+  async getCommunicationsByLoan(loanId: string): Promise<Communication[]> {
+    return this.getLoanCommunications(loanId);
+  }
+
   // Document operations
   async createDocument(document: InsertDocument): Promise<Document> {
     const [newDocument] = await db
@@ -286,6 +307,10 @@ export class DatabaseStorage implements IStorage {
       .from(documents)
       .where(eq(documents.loanId, loanId))
       .orderBy(desc(documents.createdAt));
+  }
+
+  async getDocumentsByLoan(loanId: string): Promise<Document[]> {
+    return this.getLoanDocuments(loanId);
   }
 
   // Dashboard statistics

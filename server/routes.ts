@@ -615,6 +615,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Timeline events endpoint for frontend queries
+  app.get("/api/timeline/:loanId", requireAuth, async (req: any, res) => {
+    try {
+      const loanId = req.params.loanId;
+      const userId = req.user.id;
+      
+      // Check if user has access to this loan
+      const loan = await storage.getLoanById(loanId);
+      if (!loan || (loan.lenderId !== userId && loan.borrowerId !== userId)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const events = await storage.getTimelineEvents(loanId);
+      res.json(events);
+    } catch (error) {
+      console.error("Timeline fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch timeline" });
+    }
+  });
+
+  // Timeline export endpoints
+  app.post("/api/timeline/export", requireAuth, async (req: any, res) => {
+    try {
+      const { loanId, ...settings } = req.body;
+      
+      // Get loan with all related data
+      const loan = await storage.getLoanWithRelations(loanId);
+      if (!loan) {
+        return res.status(404).json({ error: "Loan not found" });
+      }
+      
+      // Check if user has access to this loan
+      if (loan.lenderId !== req.user.id && loan.borrowerId !== req.user.id) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Get timeline events
+      const events = await storage.getTimelineEvents(loanId);
+      const payments = settings.includePaymentHistory ? await storage.getPaymentsByLoan(loanId) : [];
+      const communications = settings.includeCommunications ? await storage.getCommunicationsByLoan(loanId) : [];
+      const documents = settings.includeDocuments ? await storage.getDocumentsByLoan(loanId) : [];
+      
+      const timelineData = { loan, events, payments, communications, documents };
+      
+      const { TimelineExportService } = await import("./timelineExport");
+      const html = TimelineExportService.generateHTML(timelineData, settings);
+      
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `attachment; filename="timeline-${loanId}.html"`);
+      res.send(html);
+    } catch (error) {
+      console.error("Timeline export error:", error);
+      res.status(500).json({ error: "Export failed" });
+    }
+  });
+
+  app.post("/api/timeline/preview", requireAuth, async (req: any, res) => {
+    try {
+      const { loanId, ...settings } = req.body;
+      
+      // Get loan with all related data
+      const loan = await storage.getLoanWithRelations(loanId);
+      if (!loan) {
+        return res.status(404).json({ error: "Loan not found" });
+      }
+      
+      // Check if user has access to this loan
+      if (loan.lenderId !== req.user.id && loan.borrowerId !== req.user.id) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Get timeline events
+      const events = await storage.getTimelineEvents(loanId);
+      const payments = settings.includePaymentHistory ? await storage.getPaymentsByLoan(loanId) : [];
+      const communications = settings.includeCommunications ? await storage.getCommunicationsByLoan(loanId) : [];
+      const documents = settings.includeDocuments ? await storage.getDocumentsByLoan(loanId) : [];
+      
+      const timelineData = { loan, events, payments, communications, documents };
+      
+      const { TimelineExportService } = await import("./timelineExport");
+      const html = TimelineExportService.generateHTML(timelineData, settings);
+      
+      res.json({ html });
+    } catch (error) {
+      console.error("Timeline preview error:", error);
+      res.status(500).json({ error: "Preview failed" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
