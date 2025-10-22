@@ -63,8 +63,7 @@ async function seedNewIntegrations() {
       if (!existingServiceTypes.has(integration.serviceType)) {
         await storage.createIntegration({
           ...integration,
-          userId: user.id,
-          lastSynced: new Date()
+          userId: user.id
         });
       }
     }
@@ -759,7 +758,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: "GitHub",
           description: "Source Code & Development",
           connected: true,
-          lastSynced: new Date(),
           credentials: {}
         });
         
