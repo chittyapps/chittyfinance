@@ -250,8 +250,10 @@
 
   /* Sticky contextual guidance */
   .sticky-guide {
-    @apply sticky top-4 z-10 bg-sky/10 border border-sky/20 rounded-xl p-4;
-    @apply text-sm text-foreground/80;
+    @apply sticky top-4 z-10 rounded-xl p-4 text-sm;
+    background-color: hsl(var(--sky) / 0.1);
+    border: 1px solid hsl(var(--sky) / 0.2);
+    color: hsl(var(--foreground) / 0.8);
   }
 
   /* Task checklist widget - executive function support */
@@ -296,6 +298,21 @@
 
   .fade-slide-in {
     animation: fadeSlideIn 0.3s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   /* Celebration animation */

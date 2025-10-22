@@ -8,11 +8,9 @@ import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import ConnectAccounts from "@/pages/ConnectAccounts";
 import NotFound from "@/pages/not-found";
-import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { User } from "@shared/schema";
 
-// Create auth context for the application
 export const AuthContext = createContext<{
   user: User | null;
   isAuthenticated: boolean;
@@ -25,23 +23,22 @@ export const AuthContext = createContext<{
 
 function Router() {
   const [location] = useLocation();
-  const showSidebar = location !== "/login" && location !== "/register" && location !== "/connect-accounts";
+  const showLayout = location !== "/login";
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {showSidebar && <Sidebar />}
-      <div className="flex flex-col flex-1 w-0 overflow-hidden">
-        {showSidebar && <Header />}
-        <main className="flex-1 relative overflow-y-auto focus:outline-none">
-          <Switch>
-            <Route path="/" component={Dashboard} />
-            <Route path="/settings" component={Settings} />
-            <Route path="/login" component={Login} />
-            <Route path="/connect-accounts" component={ConnectAccounts} />
-            <Route component={NotFound} />
-          </Switch>
-        </main>
-      </div>
+    <div className="min-h-screen bg-background">
+      {showLayout && <Header />}
+      <main className="pb-safe">
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/properties" component={Dashboard} />
+          <Route path="/automations" component={ConnectAccounts} />
+          <Route path="/settings" component={Settings} />
+          <Route path="/login" component={Login} />
+          <Route path="/connect-accounts" component={ConnectAccounts} />
+          <Route component={NotFound} />
+        </Switch>
+      </main>
       <Toaster />
     </div>
   );
@@ -52,7 +49,6 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Attempt to get the user session
     fetch("/api/session")
       .then(res => {
         if (!res.ok) {
@@ -73,8 +69,11 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-zinc-950">
-        <div className="animate-spin w-8 h-8 border-4 border-lime-500 border-t-transparent rounded-full"></div>
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading your portfolio...</p>
+        </div>
       </div>
     );
   }

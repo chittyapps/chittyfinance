@@ -1,70 +1,91 @@
-import { Bell, MoreVertical } from "lucide-react";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Input } from "@/components/ui/input";
+import { Bell, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/utils";
+import Navigation from "./Navigation";
+import { useQuery } from "@tanstack/react-query";
+import { User as UserType } from "@shared/schema";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function Header() {
-  const currentDate = formatDate(new Date());
-  return (
-    <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between py-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold">Dashboard</h2>
-          <span className="text-sm text-muted-foreground">{currentDate}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <ThemeToggle />
-          <Button variant="outline" size="icon">
-            <Bell className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </header>
-  );
+  const { data: user } = useQuery<UserType>({
+    queryKey: ["/api/session"],
+  });
 
   return (
-    <header className="relative z-10 flex flex-shrink-0 h-16 bg-zinc-900 border-b border-zinc-800 shadow-lg">
-      <div className="flex justify-between flex-1 px-4">
-        <div className="flex flex-1 items-center">
-          {/* Chitty Services Logo */}
-          <div className="flex items-center mr-6">
-            <img 
-              src="/assets/SERVICES.png" 
-              alt="Chitty Services Logo" 
-              className="h-10 w-auto"
-            />
-            <div className="ml-2">
-              <span className="text-lg font-bold gradient-text">Chitty Services</span>
-            </div>
-          </div>
-          
-          <div className="flex w-full md:ml-0">
-            <div className="relative w-full text-zinc-400 focus-within:text-lime-400">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <svg className="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+    <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-md">
+      <div className="container-apple">
+        <div className="flex h-16 items-center justify-between">
+          {/* Logo and Brand */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <span className="text-primary-foreground font-bold text-sm">P</span>
               </div>
-              <Input 
-                className="block w-full h-full pl-10 pr-3 py-2 text-zinc-200 bg-zinc-800 border-zinc-700 rounded-md focus:border-lime-500 focus:ring-lime-500 focus:ring-opacity-20 sm:text-sm" 
-                placeholder="Search financial data..." 
-              />
+              <h1 className="text-lg font-semibold tracking-tight" data-testid="text-app-name">
+                Portfolio
+              </h1>
             </div>
           </div>
-        </div>
-        
-        <div className="ml-4 flex items-center md:ml-6">
-          <ThemeToggle />
-          
-          <button className="ml-3 p-1 rounded-full text-zinc-400 hover:text-lime-400 focus:outline-none transition-colors">
-            <Bell className="h-6 w-6" />
-          </button>
-          
-          <div className="ml-3 relative">
-            <button className="flex max-w-xs bg-zinc-800 border border-zinc-700 rounded-full p-1 text-sm hover:border-lime-500 transition-colors">
-              <MoreVertical className="h-6 w-6 text-zinc-300" />
-            </button>
+
+          {/* Center Navigation */}
+          <Navigation />
+
+          {/* Right Actions */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative"
+              data-testid="button-notifications"
+            >
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full" />
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  data-testid="button-user-menu"
+                >
+                  {user?.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt={user.displayName}
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-5 h-5" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none" data-testid="text-user-name">
+                      {user?.displayName || "Guest"}
+                    </p>
+                    <p className="text-xs text-muted-foreground" data-testid="text-user-email">
+                      {user?.email || "Not signed in"}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem data-testid="menu-item-profile">Profile</DropdownMenuItem>
+                <DropdownMenuItem data-testid="menu-item-billing">Billing</DropdownMenuItem>
+                <DropdownMenuItem data-testid="menu-item-preferences">Preferences</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem data-testid="menu-item-logout">Log out</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
