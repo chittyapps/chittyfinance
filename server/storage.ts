@@ -9,7 +9,8 @@ import {
   financialSummaries, type FinancialSummary, type InsertFinancialSummary,
   transactions, type Transaction, type InsertTransaction,
   tasks, type Task, type InsertTask,
-  aiMessages, type AiMessage, type InsertAiMessage
+  aiMessages, type AiMessage, type InsertAiMessage,
+  jurisdictionRules, type JurisdictionRule, type InsertJurisdictionRule
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, inArray, isNull } from "drizzle-orm";
@@ -68,6 +69,10 @@ export interface IStorage {
   // AI Message operations
   getAiMessages(userId: number, limit?: number): Promise<AiMessage[]>;
   createAiMessage(message: InsertAiMessage): Promise<AiMessage>;
+  
+  // Jurisdiction Rules operations
+  getJurisdictionRules(region: string, ruleType?: string): Promise<JurisdictionRule[]>;
+  createJurisdictionRule(rule: InsertJurisdictionRule): Promise<JurisdictionRule>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -433,6 +438,23 @@ export class DatabaseStorage implements IStorage {
       .values(insertMessage)
       .returning();
     return message;
+  }
+
+  // Jurisdiction Rules operations
+  async getJurisdictionRules(region: string, ruleType?: string): Promise<JurisdictionRule[]> {
+    if (ruleType) {
+      return await db.select().from(jurisdictionRules).where(
+        and(eq(jurisdictionRules.region, region), eq(jurisdictionRules.ruleType, ruleType), eq(jurisdictionRules.active, true))
+      );
+    }
+    return await db.select().from(jurisdictionRules).where(
+      and(eq(jurisdictionRules.region, region), eq(jurisdictionRules.active, true))
+    );
+  }
+
+  async createJurisdictionRule(insertRule: InsertJurisdictionRule): Promise<JurisdictionRule> {
+    const [rule] = await db.insert(jurisdictionRules).values(insertRule).returning();
+    return rule;
   }
 }
 

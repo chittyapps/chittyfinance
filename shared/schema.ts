@@ -14,7 +14,7 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User model
+// User model with context awareness
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -24,9 +24,14 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("user"),
   avatar: text("avatar"),
   replitAuthData: jsonb("replit_auth_data"),
+  // Context awareness
+  timezone: text("timezone").default("America/Los_Angeles"),
+  locale: text("locale").default("en-US"),
+  currency: text("currency").default("USD"),
+  preferences: jsonb("preferences"), // UI preferences, notification settings, etc.
 });
 
-// Businesses/Properties - Multi-business support
+// Businesses/Properties - Multi-business support with jurisdiction awareness
 export const businesses = pgTable("businesses", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
@@ -34,6 +39,13 @@ export const businesses = pgTable("businesses", {
   name: text("name").notNull(),
   type: text("type").notNull(), // 'portfolio', 'property', 'rental', 'commercial', etc.
   address: text("address"),
+  // Jurisdiction awareness
+  country: text("country").default("US"),
+  state: text("state"), // State/province code
+  city: text("city"),
+  zipCode: text("zip_code"),
+  jurisdiction: text("jurisdiction"), // Legal jurisdiction identifier
+  taxRegion: text("tax_region"), // Tax authority region
   settings: jsonb("settings"), // Cascading settings (inherit from parent if null)
   metadata: jsonb("metadata"), // Flexible data (sq ft, units, purchase price, etc.)
   active: boolean("active").default(true),
@@ -144,6 +156,45 @@ export const aiMessages = pgTable("ai_messages", {
   timestamp: timestamp("timestamp").defaultNow(),
 });
 
+// Jurisdiction Rules - Tax and regulatory rules by region
+export const jurisdictionRules = pgTable("jurisdiction_rules", {
+  id: serial("id").primaryKey(),
+  region: text("region").notNull(), // e.g., "US-CA", "US-NY", "CA-ON"
+  ruleType: text("rule_type").notNull(), // 'tax', 'regulation', 'compliance'
+  name: text("name").notNull(),
+  description: text("description"),
+  config: jsonb("config").notNull(), // Rule configuration (tax rates, thresholds, formulas)
+  effectiveDate: timestamp("effective_date"),
+  expiryDate: timestamp("expiry_date"),
+  active: boolean("active").default(true),
+});
+
+// Webhooks - External system connectivity
+export const webhooks = pgTable("webhooks", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  events: text("events").array(), // Events to trigger on: ['transaction.created', 'task.completed']
+  secret: text("secret"), // Webhook signing secret
+  active: boolean("active").default(true),
+  lastTriggered: timestamp("last_triggered"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// API Keys - For external connections
+export const apiKeys = pgTable("api_keys", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  key: text("key").notNull().unique(), // Hashed API key
+  permissions: text("permissions").array(), // ['read:businesses', 'write:transactions']
+  lastUsed: timestamp("last_used"),
+  expiresAt: timestamp("expires_at"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations for better querying
 export const businessesRelations = relations(businesses, ({ one, many }) => ({
   user: one(users, {
@@ -172,6 +223,9 @@ export const insertFinancialSummarySchema = createInsertSchema(financialSummarie
 export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, date: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, completedAt: true });
 export const insertAiMessageSchema = createInsertSchema(aiMessages).omit({ id: true, timestamp: true });
+export const insertJurisdictionRuleSchema = createInsertSchema(jurisdictionRules).omit({ id: true });
+export const insertWebhookSchema = createInsertSchema(webhooks).omit({ id: true, createdAt: true, lastTriggered: true });
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({ id: true, createdAt: true, lastUsed: true });
 
 // Type definitions
 export type User = typeof users.$inferSelect;
@@ -206,3 +260,12 @@ export type InsertTask = z.infer<typeof insertTaskSchema>;
 
 export type AiMessage = typeof aiMessages.$inferSelect;
 export type InsertAiMessage = z.infer<typeof insertAiMessageSchema>;
+
+export type JurisdictionRule = typeof jurisdictionRules.$inferSelect;
+export type InsertJurisdictionRule = z.infer<typeof insertJurisdictionRuleSchema>;
+
+export type Webhook = typeof webhooks.$inferSelect;
+export type InsertWebhook = z.infer<typeof insertWebhookSchema>;
+
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
