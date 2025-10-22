@@ -14,7 +14,6 @@ import {
 } from "./lib/github";
 import { transformToUniversalFormat } from "./lib/universalConnector";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { miniAgents } from "./lib/miniAgents";
 
 // Function to seed new integrations for the demo user
 async function seedNewIntegrations() {
@@ -64,7 +63,8 @@ async function seedNewIntegrations() {
       if (!existingServiceTypes.has(integration.serviceType)) {
         await storage.createIntegration({
           ...integration,
-          userId: user.id
+          userId: user.id,
+          lastSynced: new Date()
         });
       }
     }
@@ -759,6 +759,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: "GitHub",
           description: "Source Code & Development",
           connected: true,
+          lastSynced: new Date(),
           credentials: {}
         });
         
@@ -858,132 +859,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error(`Error fetching issues for ${req.params.repoFullName}:`, error);
       res.status(500).json({ message: "Failed to fetch repository issues" });
-    }
-  });
-
-  // Mini AI Agents Endpoints
-  
-  // Get cash flow analysis
-  api.get("/agents/cashflow", async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserByUsername("demo");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const analysis = await miniAgents.analyzeCashFlow({ 
-        userId: user.id,
-        period: "last 30 days"
-      });
-      
-      res.json({ analysis });
-    } catch (error) {
-      console.error("Error getting cash flow analysis:", error);
-      res.status(500).json({ message: "Failed to analyze cash flow" });
-    }
-  });
-
-  // Get expense optimization
-  api.get("/agents/expenses", async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserByUsername("demo");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const optimization = await miniAgents.optimizeExpenses({ 
-        userId: user.id,
-        data: { target: "10" }
-      });
-      
-      res.json({ optimization });
-    } catch (error) {
-      console.error("Error getting expense optimization:", error);
-      res.status(500).json({ message: "Failed to optimize expenses" });
-    }
-  });
-
-  // Get property analysis
-  api.get("/agents/property/:businessId", async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserByUsername("demo");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const businessId = parseInt(req.params.businessId);
-      if (isNaN(businessId)) {
-        return res.status(400).json({ message: "Invalid business ID" });
-      }
-
-      const analysis = await miniAgents.analyzeProperty({ 
-        userId: user.id,
-        businessId
-      });
-      
-      res.json({ analysis });
-    } catch (error) {
-      console.error("Error getting property analysis:", error);
-      res.status(500).json({ message: "Failed to analyze property" });
-    }
-  });
-
-  // Get full portfolio analysis
-  api.get("/agents/portfolio", async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserByUsername("demo");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const analysis = await miniAgents.analyzePortfolio(user.id);
-      res.json(analysis);
-    } catch (error) {
-      console.error("Error getting portfolio analysis:", error);
-      res.status(500).json({ message: "Failed to analyze portfolio" });
-    }
-  });
-
-  // Businesses Endpoints
-  
-  // Get all businesses
-  api.get("/businesses", async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserByUsername("demo");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const businesses = await storage.getBusinesses(user.id);
-      res.json(businesses);
-    } catch (error) {
-      console.error("Error getting businesses:", error);
-      res.status(500).json({ message: "Failed to fetch businesses" });
-    }
-  });
-
-  // Get business by ID
-  api.get("/businesses/:id", async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserByUsername("demo");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const businessId = parseInt(req.params.id);
-      if (isNaN(businessId)) {
-        return res.status(400).json({ message: "Invalid business ID" });
-      }
-
-      const business = await storage.getBusiness(businessId);
-      if (!business || business.userId !== user.id) {
-        return res.status(404).json({ message: "Business not found" });
-      }
-
-      res.json(business);
-    } catch (error) {
-      console.error("Error getting business:", error);
-      res.status(500).json({ message: "Failed to fetch business" });
     }
   });
 

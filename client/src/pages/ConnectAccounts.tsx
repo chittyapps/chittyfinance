@@ -1,311 +1,313 @@
-import { useState } from "react";
+import React, { useState, useContext } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { 
-  Building2, 
-  CreditCard, 
-  DollarSign, 
-  BarChart4, 
-  Home, 
-  Users,
-  CheckCircle2,
-  ArrowRight,
-  Sparkles
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
+import { Building, CreditCard, DollarSign, BarChart4, Home, CreditCard as CreditCardIcon } from "lucide-react";
+import { AuthContext } from "../App";
 
-interface Service {
-  id: string;
+// Service connection card component
+interface ServiceCardProps {
   name: string;
-  category: "banking" | "accounting" | "property" | "payments";
   description: string;
-  benefits: string[];
-  trustScore: number;
   icon: React.ReactNode;
+  connected: boolean;
+  onConnect: () => void;
 }
 
-const services: Service[] = [
-  {
-    id: "mercury",
-    name: "Mercury Bank",
-    category: "banking",
-    description: "Banking for startups and property businesses",
-    benefits: ["Real-time cash flow tracking", "Automated categorization", "Multi-property accounts"],
-    trustScore: 98,
-    icon: <Building2 className="w-5 h-5" />
-  },
-  {
-    id: "stripe",
-    name: "Stripe",
-    category: "payments",
-    description: "Online payments and tenant billing",
-    benefits: ["Accept rent payments online", "Recurring billing automation", "Payment analytics"],
-    trustScore: 99,
-    icon: <CreditCard className="w-5 h-5" />
-  },
-  {
-    id: "quickbooks",
-    name: "QuickBooks",
-    category: "accounting",
-    description: "Accounting software for property managers",
-    benefits: ["Expense tracking", "Financial reporting", "Tax preparation"],
-    trustScore: 95,
-    icon: <BarChart4 className="w-5 h-5" />
-  },
-  {
-    id: "doorloop",
-    name: "DoorLoop",
-    category: "property",
-    description: "Property management platform",
-    benefits: ["Tenant management", "Maintenance tracking", "Lease management"],
-    trustScore: 92,
-    icon: <Home className="w-5 h-5" />
-  }
-];
+function ServiceCard({ name, description, icon, connected, onConnect }: ServiceCardProps) {
+  return (
+    <Card className="border border-zinc-800 bg-zinc-900 hover:border-lime-500/50 transition duration-300">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 flex items-center justify-center rounded-full bg-zinc-800 text-lime-400">
+              {icon}
+            </div>
+            <div>
+              <h3 className="text-lg font-medium text-zinc-200">{name}</h3>
+              <p className="text-sm text-zinc-400">{description}</p>
+            </div>
+          </div>
+          <Button 
+            variant={connected ? "outline" : "default"}
+            className={connected ? "border-lime-500 text-lime-500" : "bg-lime-500 text-black hover:bg-lime-600"}
+            onClick={onConnect}
+          >
+            {connected ? "Connected" : "Connect"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function ConnectAccounts() {
-  const [currentStep, setCurrentStep] = useState(1);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const { user, isAuthenticated, isLoading } = useContext(AuthContext);
+  const [activeTab, setActiveTab] = useState("banking");
+  const [loading, setLoading] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [connectedServices, setConnectedServices] = useState<string[]>([
+    "mercury_bank", "doorloop" // Default connected services
+  ]);
 
-  const categories = [
-    { id: "banking", label: "Banking", icon: <Building2 className="w-6 h-6" />, description: "Connect your business bank accounts" },
-    { id: "accounting", label: "Accounting", icon: <BarChart4 className="w-6 h-6" />, description: "Sync your accounting software" },
-    { id: "property", label: "Property Management", icon: <Home className="w-6 h-6" />, description: "Connect property management tools" },
-    { id: "payments", label: "Payments", icon: <CreditCard className="w-6 h-6" />, description: "Set up payment processing" }
-  ];
+  // Redirect to login if not authenticated
+  React.useEffect(() => {
+    if (!isAuthenticated && !loading) {
+      setLocation("/login");
+    }
+  }, [isAuthenticated, loading, setLocation]);
 
-  const handleCategorySelect = (categoryId: string) => {
-    setSelectedCategory(categoryId);
-    setCurrentStep(2);
+  const handleConnect = async (serviceType: string) => {
+    if (!apiKey && !connectedServices.includes(serviceType)) {
+      toast({
+        title: "API Key Required",
+        description: "Please enter an API key to connect this service.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Connect to the service
+      const response = await apiRequest("POST", "/api/integrations", {
+        serviceType,
+        name: getServiceName(serviceType),
+        description: getServiceDescription(serviceType),
+        connected: true,
+        lastSynced: new Date(),
+        credentials: {
+          apiKey: apiKey || "demo-key"
+        }
+      });
+
+      if (response.ok) {
+        // Add to connected services
+        if (!connectedServices.includes(serviceType)) {
+          setConnectedServices([...connectedServices, serviceType]);
+        }
+
+        toast({
+          title: "Connection Successful",
+          description: `Successfully connected to ${getServiceName(serviceType)}.`,
+        });
+
+        // Clear API key field
+        setApiKey("");
+      } else {
+        throw new Error("Failed to connect");
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Failed",
+        description: "There was an error connecting to this service. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleServiceSelect = (service: Service) => {
-    setSelectedService(service);
-    setCurrentStep(3);
+  // Helper functions to get service information
+  const getServiceName = (serviceType: string): string => {
+    const names: Record<string, string> = {
+      "mercury_bank": "Mercury Bank",
+      "stripe": "Stripe Payments",
+      "quickbooks": "QuickBooks",
+      "xero": "Xero Accounting",
+      "wavapps": "WavApps",
+      "doorloop": "DoorLoop",
+      "brex": "Brex",
+      "gusto": "Gusto Payroll"
+    };
+    return names[serviceType] || serviceType;
   };
 
-  const handleConnect = () => {
-    window.location.href = `/api/integrations/connect/${selectedService?.id}`;
+  const getServiceDescription = (serviceType: string): string => {
+    const descriptions: Record<string, string> = {
+      "mercury_bank": "Business Banking Platform",
+      "stripe": "Payment Processing",
+      "quickbooks": "Accounting Software",
+      "xero": "Global Accounting Platform",
+      "wavapps": "Financial Software",
+      "doorloop": "Property Management",
+      "brex": "Business Credit & Expenses",
+      "gusto": "Payroll & HR"
+    };
+    return descriptions[serviceType] || "";
   };
 
-  const filteredServices = selectedCategory 
-    ? services.filter(s => s.category === selectedCategory)
-    : services;
+  const getServiceIcon = (serviceType: string, size = 24) => {
+    switch (serviceType) {
+      case "mercury_bank":
+        return <Building size={size} />;
+      case "stripe":
+        return <CreditCard size={size} />;
+      case "quickbooks":
+        return <BarChart4 size={size} />;
+      case "wavapps":
+        return <BarChart4 size={size} />;
+      case "brex":
+        return <CreditCardIcon size={size} />;
+      case "doorloop":
+        return <Home size={size} />;
+      case "xero":
+        return <BarChart4 size={size} />;
+      case "gusto":
+        return <DollarSign size={size} />;
+      default:
+        return <CreditCard size={size} />;
+    }
+  };
+
+  // If loading or not authenticated, show loading state
+  if (loading || !isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+        <div className="animate-spin w-8 h-8 border-4 border-lime-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
-    <div className="container-apple py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-semibold tracking-tight mb-2" data-testid="text-connect-title">
-          Connect Services
-        </h1>
-        <p className="text-muted-foreground">
-          Connect your financial services to get started
-        </p>
-      </div>
-
-      {/* Progress Steps */}
-      <div className="flex items-center justify-center gap-4 mb-12">
-        {[1, 2, 3].map((step) => (
-          <div key={step} className="flex items-center gap-4">
-            <div className="flex flex-col items-center">
-              <div
-                className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center font-medium transition-all duration-200",
-                  currentStep >= step
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground"
-                )}
-                data-testid={`step-indicator-${step}`}
-              >
-                {currentStep > step ? <CheckCircle2 className="w-5 h-5" /> : step}
-              </div>
-              <p className="text-xs mt-2 font-medium">
-                {step === 1 && "Category"}
-                {step === 2 && "Service"}
-                {step === 3 && "Connect"}
-              </p>
-            </div>
-            {step < 3 && (
-              <ArrowRight className="w-4 h-4 text-muted-foreground" />
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Step 1: Select Category */}
-      {currentStep === 1 && (
-        <div className="max-w-4xl mx-auto fade-slide-in">
-          <h2 className="text-2xl font-semibold mb-2 text-center">Choose a Category</h2>
-          <p className="text-muted-foreground text-center mb-8">
-            Select the type of service you want to connect
-          </p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => handleCategorySelect(category.id)}
-                className="apple-card p-6 text-left interactive-card"
-                data-testid={`category-${category.id}`}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
-                    {category.icon}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold mb-1">{category.label}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {category.description}
-                    </p>
-                  </div>
-                  <ArrowRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-2" />
-                </div>
-              </button>
-            ))}
-          </div>
+    <div className="min-h-screen bg-zinc-950 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-10">
+          <h1 className="text-3xl font-bold text-zinc-100">Connect Your Accounts</h1>
+          <p className="mt-2 text-zinc-400">Link your financial services to get AI-powered insights and recommendations</p>
         </div>
-      )}
 
-      {/* Step 2: Select Service */}
-      {currentStep === 2 && (
-        <div className="max-w-4xl mx-auto fade-slide-in">
-          <Button
-            variant="ghost"
-            onClick={() => setCurrentStep(1)}
-            className="mb-6"
-            data-testid="button-back"
-          >
-            ← Back to Categories
-          </Button>
-          
-          <h2 className="text-2xl font-semibold mb-2">Select a Service</h2>
-          <p className="text-muted-foreground mb-8">
-            Choose from our trusted partners
-          </p>
+        <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 bg-zinc-900 border border-zinc-800">
+            <TabsTrigger value="banking" className="data-[state=active]:bg-lime-500 data-[state=active]:text-black">
+              Banking
+            </TabsTrigger>
+            <TabsTrigger value="accounting" className="data-[state=active]:bg-lime-500 data-[state=active]:text-black">
+              Accounting
+            </TabsTrigger>
+            <TabsTrigger value="payments" className="data-[state=active]:bg-lime-500 data-[state=active]:text-black">
+              Payments & Payroll
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Banking Integrations */}
+          <TabsContent value="banking" className="space-y-4">
+            <ServiceCard
+              name="Mercury Bank"
+              description="Business Banking Platform"
+              icon={getServiceIcon("mercury_bank", 28)}
+              connected={connectedServices.includes("mercury_bank")}
+              onConnect={() => handleConnect("mercury_bank")}
+            />
+            <ServiceCard
+              name="Brex"
+              description="Business Credit & Expenses"
+              icon={getServiceIcon("brex", 28)}
+              connected={connectedServices.includes("brex")}
+              onConnect={() => handleConnect("brex")}
+            />
+          </TabsContent>
+
+          {/* Accounting Integrations */}
+          <TabsContent value="accounting" className="space-y-4">
+            <ServiceCard
+              name="QuickBooks"
+              description="Accounting Software"
+              icon={getServiceIcon("quickbooks", 28)}
+              connected={connectedServices.includes("quickbooks")}
+              onConnect={() => handleConnect("quickbooks")}
+            />
+            <ServiceCard
+              name="Xero"
+              description="Global Accounting Platform"
+              icon={getServiceIcon("xero", 28)}
+              connected={connectedServices.includes("xero")}
+              onConnect={() => handleConnect("xero")}
+            />
+            <ServiceCard
+              name="WavApps"
+              description="Financial Software"
+              icon={getServiceIcon("wavapps", 28)}
+              connected={connectedServices.includes("wavapps")}
+              onConnect={() => handleConnect("wavapps")}
+            />
+            <ServiceCard
+              name="DoorLoop"
+              description="Property Management"
+              icon={getServiceIcon("doorloop", 28)}
+              connected={connectedServices.includes("doorloop")}
+              onConnect={() => handleConnect("doorloop")}
+            />
+          </TabsContent>
+
+          {/* Payments & Payroll Integrations */}
+          <TabsContent value="payments" className="space-y-4">
+            <ServiceCard
+              name="Stripe"
+              description="Payment Processing"
+              icon={getServiceIcon("stripe", 28)}
+              connected={connectedServices.includes("stripe")}
+              onConnect={() => handleConnect("stripe")}
+            />
+            <ServiceCard
+              name="Gusto"
+              description="Payroll & HR"
+              icon={getServiceIcon("gusto", 28)}
+              connected={connectedServices.includes("gusto")}
+              onConnect={() => handleConnect("gusto")}
+            />
+          </TabsContent>
+        </Tabs>
+
+        <div className="mt-10 pt-6 border-t border-zinc-800">
+          <div className="mb-6">
+            <h2 className="text-lg font-medium text-zinc-200">API Key for Connection</h2>
+            <p className="text-sm text-zinc-500">Enter the API key for the service you're connecting</p>
+          </div>
           
           <div className="space-y-4">
-            {filteredServices.map((service) => (
-              <button
-                key={service.id}
-                onClick={() => handleServiceSelect(service)}
-                className="apple-card p-6 w-full text-left interactive-card"
-                data-testid={`service-${service.id}`}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center">
-                      {service.icon}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold mb-1">{service.name}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {service.description}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
-                    {service.trustScore}% Trust Score
-                  </Badge>
-                </div>
-                
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Key Benefits:</p>
-                  <ul className="space-y-1">
-                    {service.benefits.map((benefit, index) => (
-                      <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                        <span>{benefit}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: Connect */}
-      {currentStep === 3 && selectedService && (
-        <div className="max-w-2xl mx-auto fade-slide-in">
-          <Button
-            variant="ghost"
-            onClick={() => setCurrentStep(2)}
-            className="mb-6"
-            data-testid="button-back-services"
-          >
-            ← Back to Services
-          </Button>
-          
-          <div className="apple-card p-8">
-            <div className="text-center mb-8">
-              <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                {selectedService.icon}
-              </div>
-              <h2 className="text-2xl font-semibold mb-2">
-                Connect {selectedService.name}
-              </h2>
-              <p className="text-muted-foreground">
-                You're about to connect your {selectedService.name} account
-              </p>
+            <div>
+              <Label htmlFor="api-key" className="text-zinc-300">API Key</Label>
+              <Input 
+                id="api-key" 
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Enter your API key" 
+                className="bg-zinc-900 border-zinc-700 text-zinc-200"
+              />
+              <p className="mt-1 text-xs text-zinc-500">For demo purposes, you can leave this empty.</p>
             </div>
-
-            <div className="space-md mb-8">
-              <div className="apple-card p-4 bg-muted/50">
-                <div className="flex items-start gap-3">
-                  <Sparkles className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium mb-1">What happens next?</p>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• You'll be redirected to {selectedService.name}</li>
-                      <li>• Sign in securely to authorize access</li>
-                      <li>• We'll sync your data automatically</li>
-                      <li>• Your data is encrypted and secure</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                <CheckCircle2 className="w-4 h-4 text-primary" />
-                <span>256-bit encryption • SOC 2 Type II certified</span>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <Button
+            
+            <div className="flex justify-between">
+              <Button 
                 variant="outline"
-                onClick={() => setCurrentStep(2)}
-                className="flex-1"
-                data-testid="button-cancel"
+                onClick={() => setLocation("/")}
+                className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
               >
-                Cancel
+                Return to Dashboard
               </Button>
-              <Button
-                onClick={handleConnect}
-                className="primary-cta flex-1"
-                data-testid="button-connect"
+              
+              <Button 
+                onClick={() => {
+                  toast({
+                    title: "Accounts Connected",
+                    description: "Your financial accounts have been successfully connected.",
+                  });
+                  setLocation("/");
+                }}
+                className="bg-lime-500 text-black hover:bg-lime-600"
               >
-                Connect {selectedService.name}
-                <ArrowRight className="w-4 h-4 ml-2" />
+                Finish Setup
               </Button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sticky Guidance */}
-      <div className="sticky-guide mt-12" data-testid="card-connect-guidance">
-        <div className="flex items-start gap-3">
-          <Users className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'hsl(var(--sky))' }} />
-          <div>
-            <p className="font-medium mb-1">Need help?</p>
-            <p className="text-muted-foreground">
-              Our integrations are designed to work seamlessly with your existing workflow. 
-              All connections are secure and you can disconnect at any time from Settings.
-            </p>
           </div>
         </div>
       </div>

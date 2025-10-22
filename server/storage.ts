@@ -1,19 +1,13 @@
 import { 
   users, type User, type InsertUser,
-  businesses, type Business, type InsertBusiness,
-  tags, type Tag, type InsertTag,
-  entityTags, type EntityTag, type InsertEntityTag,
-  aiAgentTemplates, type AiAgentTemplate, type InsertAiAgentTemplate,
-  reportTemplates, type ReportTemplate, type InsertReportTemplate,
   integrations, type Integration, type InsertIntegration,
   financialSummaries, type FinancialSummary, type InsertFinancialSummary,
   transactions, type Transaction, type InsertTransaction,
   tasks, type Task, type InsertTask,
-  aiMessages, type AiMessage, type InsertAiMessage,
-  jurisdictionRules, type JurisdictionRule, type InsertJurisdictionRule
+  aiMessages, type AiMessage, type InsertAiMessage
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, inArray, isNull } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -23,28 +17,6 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
 
-  // Business operations
-  getBusinesses(userId: number, parentId?: number | null): Promise<Business[]>;
-  getBusiness(id: number): Promise<Business | undefined>;
-  getBusinessWithSettings(businessId: number): Promise<Business & { cascadedSettings: any }>;
-  createBusiness(business: InsertBusiness): Promise<Business>;
-  updateBusiness(id: number, data: Partial<Business>): Promise<Business | undefined>;
-  
-  // Tag operations
-  getTags(userId: number): Promise<Tag[]>;
-  createTag(tag: InsertTag): Promise<Tag>;
-  addEntityTag(entityTag: InsertEntityTag): Promise<EntityTag>;
-  getEntityTags(entityType: string, entityId: number): Promise<Tag[]>;
-  
-  // AI Agent Template operations
-  getAiAgentTemplates(type?: string): Promise<AiAgentTemplate[]>;
-  getAiAgentTemplate(id: number): Promise<AiAgentTemplate | undefined>;
-  createAiAgentTemplate(template: InsertAiAgentTemplate): Promise<AiAgentTemplate>;
-  
-  // Report Template operations
-  getReportTemplates(userId?: number): Promise<ReportTemplate[]>;
-  createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate>;
-
   // Integration operations
   getIntegrations(userId: number): Promise<Integration[]>;
   getIntegration(id: number): Promise<Integration | undefined>;
@@ -52,16 +24,16 @@ export interface IStorage {
   updateIntegration(id: number, integration: Partial<Integration>): Promise<Integration | undefined>;
   
   // Financial summary operations
-  getFinancialSummary(userId: number, businessId?: number | null): Promise<FinancialSummary | undefined>;
+  getFinancialSummary(userId: number): Promise<FinancialSummary | undefined>;
   createFinancialSummary(summary: InsertFinancialSummary): Promise<FinancialSummary>;
-  updateFinancialSummary(userId: number, summary: Partial<FinancialSummary>, businessId?: number | null): Promise<FinancialSummary | undefined>;
+  updateFinancialSummary(userId: number, summary: Partial<FinancialSummary>): Promise<FinancialSummary | undefined>;
   
   // Transaction operations
-  getTransactions(userId: number, businessId?: number | null, limit?: number): Promise<Transaction[]>;
+  getTransactions(userId: number, limit?: number): Promise<Transaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
   
   // Task operations
-  getTasks(userId: number, businessId?: number | null, limit?: number): Promise<Task[]>;
+  getTasks(userId: number, limit?: number): Promise<Task[]>;
   getTask(id: number): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, task: Partial<Task>): Promise<Task | undefined>;
@@ -69,10 +41,6 @@ export interface IStorage {
   // AI Message operations
   getAiMessages(userId: number, limit?: number): Promise<AiMessage[]>;
   createAiMessage(message: InsertAiMessage): Promise<AiMessage>;
-  
-  // Jurisdiction Rules operations
-  getJurisdictionRules(region: string, ruleType?: string): Promise<JurisdictionRule[]>;
-  createJurisdictionRule(rule: InsertJurisdictionRule): Promise<JurisdictionRule>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -109,151 +77,6 @@ export class DatabaseStorage implements IStorage {
     return user || undefined;
   }
 
-  // Business operations
-  async getBusinesses(userId: number, parentId?: number | null): Promise<Business[]> {
-    if (parentId === undefined) {
-      return await db.select().from(businesses).where(eq(businesses.userId, userId));
-    }
-    
-    if (parentId === null) {
-      return await db.select().from(businesses).where(
-        and(eq(businesses.userId, userId), isNull(businesses.parentId))
-      );
-    }
-    
-    return await db.select().from(businesses).where(
-      and(eq(businesses.userId, userId), eq(businesses.parentId, parentId))
-    );
-  }
-
-  async getBusiness(id: number): Promise<Business | undefined> {
-    const [business] = await db.select().from(businesses).where(eq(businesses.id, id));
-    return business || undefined;
-  }
-
-  async createBusiness(insertBusiness: InsertBusiness): Promise<Business> {
-    const [business] = await db.insert(businesses).values(insertBusiness).returning();
-    return business;
-  }
-
-  async updateBusiness(id: number, data: Partial<Business>): Promise<Business | undefined> {
-    const [business] = await db
-      .update(businesses)
-      .set(data)
-      .where(eq(businesses.id, id))
-      .returning();
-    return business || undefined;
-  }
-
-  // Tag operations
-  async getTags(userId: number): Promise<Tag[]> {
-    return await db.select().from(tags).where(eq(tags.userId, userId));
-  }
-
-  async createTag(insertTag: InsertTag): Promise<Tag> {
-    const [tag] = await db.insert(tags).values(insertTag).returning();
-    return tag;
-  }
-
-  async addEntityTag(insertEntityTag: InsertEntityTag): Promise<EntityTag> {
-    const [entityTag] = await db.insert(entityTags).values(insertEntityTag).returning();
-    return entityTag;
-  }
-
-  async getEntityTags(entityType: string, entityId: number): Promise<Tag[]> {
-    const result = await db
-      .select({ tag: tags })
-      .from(entityTags)
-      .innerJoin(tags, eq(entityTags.tagId, tags.id))
-      .where(and(eq(entityTags.entityType, entityType), eq(entityTags.entityId, entityId)));
-    
-    return result.map(r => r.tag);
-  }
-
-  // AI Agent Template operations (with cascading from parent templates)
-  async getAiAgentTemplates(type?: string): Promise<AiAgentTemplate[]> {
-    if (type) {
-      return await db.select().from(aiAgentTemplates).where(
-        and(eq(aiAgentTemplates.type, type), eq(aiAgentTemplates.active, true))
-      );
-    }
-    return await db.select().from(aiAgentTemplates).where(eq(aiAgentTemplates.active, true));
-  }
-
-  async getAiAgentTemplate(id: number): Promise<AiAgentTemplate | undefined> {
-    const [template] = await db.select().from(aiAgentTemplates).where(eq(aiAgentTemplates.id, id));
-    return template || undefined;
-  }
-
-  // Get AI agent template with cascaded properties from parent
-  async getAiAgentTemplateWithCascading(id: number): Promise<AiAgentTemplate & { cascadedPrompt: string }> {
-    const template = await this.getAiAgentTemplate(id);
-    if (!template) {
-      throw new Error("Template not found");
-    }
-
-    let cascadedPrompt = template.systemPrompt;
-    
-    // If has parent, cascade from parent first
-    if (template.parentId) {
-      const parent = await this.getAiAgentTemplateWithCascading(template.parentId);
-      // Parent prompt provides base, child prompt extends it
-      cascadedPrompt = `${parent.cascadedPrompt}\n\nAdditional context: ${template.systemPrompt}`;
-    }
-
-    return { ...template, cascadedPrompt };
-  }
-
-  async createAiAgentTemplate(insertTemplate: InsertAiAgentTemplate): Promise<AiAgentTemplate> {
-    const [template] = await db.insert(aiAgentTemplates).values(insertTemplate).returning();
-    return template;
-  }
-
-  // Report Template operations (with cascading from global to user-specific)
-  async getReportTemplates(userId?: number): Promise<ReportTemplate[]> {
-    // Get both global templates and user-specific templates
-    const globalTemplates = await db.select().from(reportTemplates).where(isNull(reportTemplates.userId));
-    
-    if (userId) {
-      const userTemplates = await db.select().from(reportTemplates).where(eq(reportTemplates.userId, userId));
-      // User templates override global ones by type
-      const userTemplateTypes = new Set(userTemplates.map(t => t.type));
-      const filteredGlobal = globalTemplates.filter(t => !userTemplateTypes.has(t.type));
-      return [...userTemplates, ...filteredGlobal];
-    }
-    
-    return globalTemplates;
-  }
-
-  // Get business with cascaded settings from parent chain
-  async getBusinessWithSettings(businessId: number): Promise<Business & { cascadedSettings: any }> {
-    const business = await this.getBusiness(businessId);
-    if (!business) {
-      throw new Error("Business not found");
-    }
-
-    // Start with default settings
-    let cascadedSettings = {};
-    
-    // If has parent, get parent's cascaded settings first
-    if (business.parentId) {
-      const parent = await this.getBusinessWithSettings(business.parentId);
-      cascadedSettings = parent.cascadedSettings;
-    }
-    
-    // Merge business's own settings (override parent)
-    if (business.settings) {
-      cascadedSettings = { ...cascadedSettings, ...(business.settings as any) };
-    }
-
-    return { ...business, cascadedSettings };
-  }
-
-  async createReportTemplate(insertTemplate: InsertReportTemplate): Promise<ReportTemplate> {
-    const [template] = await db.insert(reportTemplates).values(insertTemplate).returning();
-    return template;
-  }
-
   // Integration operations
   async getIntegrations(userId: number): Promise<Integration[]> {
     return await db
@@ -288,27 +111,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Financial summary operations
-  async getFinancialSummary(userId: number, businessId?: number | null): Promise<FinancialSummary | undefined> {
-    if (businessId === undefined) {
-      const [summary] = await db
-        .select()
-        .from(financialSummaries)
-        .where(and(eq(financialSummaries.userId, userId), isNull(financialSummaries.businessId)));
-      return summary || undefined;
-    }
-    
-    if (businessId === null) {
-      const [summary] = await db
-        .select()
-        .from(financialSummaries)
-        .where(and(eq(financialSummaries.userId, userId), isNull(financialSummaries.businessId)));
-      return summary || undefined;
-    }
-    
+  async getFinancialSummary(userId: number): Promise<FinancialSummary | undefined> {
     const [summary] = await db
       .select()
       .from(financialSummaries)
-      .where(and(eq(financialSummaries.userId, userId), eq(financialSummaries.businessId, businessId)));
+      .where(eq(financialSummaries.userId, userId));
     return summary || undefined;
   }
 
@@ -320,38 +127,28 @@ export class DatabaseStorage implements IStorage {
     return summary;
   }
 
-  async updateFinancialSummary(userId: number, data: Partial<FinancialSummary>, businessId?: number | null): Promise<FinancialSummary | undefined> {
+  async updateFinancialSummary(userId: number, data: Partial<FinancialSummary>): Promise<FinancialSummary | undefined> {
     const updatedData = { ...data, updatedAt: new Date() };
-    
-    const condition = businessId === undefined || businessId === null
-      ? and(eq(financialSummaries.userId, userId), isNull(financialSummaries.businessId))
-      : and(eq(financialSummaries.userId, userId), eq(financialSummaries.businessId, businessId));
     
     const [summary] = await db
       .update(financialSummaries)
       .set(updatedData)
-      .where(condition)
+      .where(eq(financialSummaries.userId, userId))
       .returning();
     
     return summary || undefined;
   }
 
   // Transaction operations
-  async getTransactions(userId: number, businessId?: number | null, limit?: number): Promise<Transaction[]> {
-    const condition = businessId === undefined
-      ? eq(transactions.userId, userId)
-      : businessId === null
-      ? and(eq(transactions.userId, userId), isNull(transactions.businessId))
-      : and(eq(transactions.userId, userId), eq(transactions.businessId, businessId));
-    
-    const query = db
+  async getTransactions(userId: number, limit?: number): Promise<Transaction[]> {
+    let query = db
       .select()
       .from(transactions)
-      .where(condition)
+      .where(eq(transactions.userId, userId))
       .orderBy(desc(transactions.date));
 
     if (limit) {
-      return await query.limit(limit);
+      query = query.limit(limit);
     }
 
     return await query;
@@ -366,28 +163,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Task operations
-  async getTasks(userId: number, businessId?: number | null, limit?: number): Promise<Task[]> {
-    const condition = businessId === undefined
-      ? eq(tasks.userId, userId)
-      : businessId === null
-      ? and(eq(tasks.userId, userId), isNull(tasks.businessId))
-      : and(eq(tasks.userId, userId), eq(tasks.businessId, businessId));
-    
-    const query = db
+  async getTasks(userId: number, limit?: number): Promise<Task[]> {
+    // Start building the query
+    let query = db
       .select()
       .from(tasks)
-      .where(condition)
-      .orderBy(tasks.completed, tasks.dueDate);
+      .where(eq(tasks.userId, userId));
 
-    const taskResults = limit ? await query.limit(limit) : await query;
+    // Custom ordering (we'll order by multiple columns)
+    // 1. Completed tasks go last
+    // 2. Due date (earliest first)
+    query = query.orderBy(tasks.completed, tasks.dueDate);
 
-    // Apply additional sorting for priority
+    if (limit) {
+      query = query.limit(limit);
+    }
+
+    // Execute query
+    const taskResults = await query;
+
+    // Apply additional sorting for priority since SQL can't easily handle custom enum ordering
     return taskResults.sort((a, b) => {
+      // Priority ordering
       const priorityOrder = { urgent: 0, due_soon: 1, upcoming: 2, null: 3 };
       const aPriority = a.priority ? priorityOrder[a.priority as keyof typeof priorityOrder] : priorityOrder.null;
       const bPriority = b.priority ? priorityOrder[b.priority as keyof typeof priorityOrder] : priorityOrder.null;
       
       if (aPriority !== bPriority) return aPriority - bPriority;
+
       return 0;
     });
   }
@@ -419,14 +222,14 @@ export class DatabaseStorage implements IStorage {
 
   // AI Message operations
   async getAiMessages(userId: number, limit?: number): Promise<AiMessage[]> {
-    const query = db
+    let query = db
       .select()
       .from(aiMessages)
       .where(eq(aiMessages.userId, userId))
       .orderBy(desc(aiMessages.timestamp));
 
     if (limit) {
-      return await query.limit(limit);
+      query = query.limit(limit);
     }
 
     return await query;
@@ -439,23 +242,6 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return message;
   }
-
-  // Jurisdiction Rules operations
-  async getJurisdictionRules(region: string, ruleType?: string): Promise<JurisdictionRule[]> {
-    if (ruleType) {
-      return await db.select().from(jurisdictionRules).where(
-        and(eq(jurisdictionRules.region, region), eq(jurisdictionRules.ruleType, ruleType), eq(jurisdictionRules.active, true))
-      );
-    }
-    return await db.select().from(jurisdictionRules).where(
-      and(eq(jurisdictionRules.region, region), eq(jurisdictionRules.active, true))
-    );
-  }
-
-  async createJurisdictionRule(insertRule: InsertJurisdictionRule): Promise<JurisdictionRule> {
-    const [rule] = await db.insert(jurisdictionRules).values(insertRule).returning();
-    return rule;
-  }
 }
 
 // Use the DatabaseStorage
@@ -464,88 +250,29 @@ export const storage = new DatabaseStorage();
 // Initialize default data
 (async () => {
   try {
-    // Check if demo user exists
+    // Check if demo user exists, if not create it
     let user = await storage.getUserByUsername("demo");
     
     if (!user) {
       // Create default user
       user = await storage.createUser({
         username: "demo",
-        password: "password",
+        password: "password", // In a real app, would be hashed
         displayName: "Sarah Johnson",
         email: "sarah@example.com",
         role: "Financial Manager",
         avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
       });
       
-      // Create demo businesses/properties
-      const mainPortfolio = await storage.createBusiness({
-        userId: user.id,
-        name: "Main Portfolio",
-        type: "portfolio",
-        settings: { currency: "USD", timezone: "America/Los_Angeles" },
-        active: true
-      });
-      
-      const property1 = await storage.createBusiness({
-        userId: user.id,
-        parentId: mainPortfolio.id,
-        name: "Sunset Apartments",
-        type: "rental",
-        address: "123 Sunset Blvd, Los Angeles, CA",
-        metadata: { units: 12, sqft: 8400, purchasePrice: 2100000 },
-        active: true
-      });
-      
-      const property2 = await storage.createBusiness({
-        userId: user.id,
-        parentId: mainPortfolio.id,
-        name: "Downtown Office Building",
-        type: "commercial",
-        address: "456 Main St, San Francisco, CA",
-        metadata: { units: 6, sqft: 12000, purchasePrice: 4500000 },
-        active: true
-      });
-      
-      // Create AI Agent Templates
-      await storage.createAiAgentTemplate({
-        name: "Cash Flow Analyzer",
-        type: "cashflow",
-        systemPrompt: "You are a specialized financial AI focused on cash flow analysis. Provide insights on income trends, expense patterns, and liquidity management.",
-        userPromptTemplate: "Analyze the cash flow for {{businessName}} over the last {{period}}. Current balance: {{balance}}. Monthly income: {{income}}. Monthly expenses: {{expenses}}.",
-        model: "gpt-4o-mini",
-        temperature: 0.7,
-        active: true
-      });
-      
-      await storage.createAiAgentTemplate({
-        name: "Property Performance Advisor",
-        type: "property_analysis",
-        systemPrompt: "You are a property management AI specialist. Analyze occupancy rates, maintenance costs, and rental income to provide actionable recommendations.",
-        userPromptTemplate: "Evaluate the performance of {{propertyName}}. Occupancy: {{occupancy}}%. Monthly rent: ${{rent}}. Maintenance costs: ${{maintenance}}. Provide optimization recommendations.",
-        model: "gpt-4o-mini",
-        temperature: 0.7,
-        active: true
-      });
-      
-      await storage.createAiAgentTemplate({
-        name: "Expense Optimizer",
-        type: "expense_optimizer",
-        systemPrompt: "You are an expense optimization AI. Identify cost-saving opportunities, negotiate better rates, and eliminate wasteful spending.",
-        userPromptTemplate: "Review expenses for {{businessName}}. Top categories: {{categories}}. Identify opportunities to reduce costs by at least {{target}}%.",
-        model: "gpt-4o-mini",
-        temperature: 0.5,
-        active: true
-      });
-      
-      // Setup integrations
-      const integrationsList = [
+      // Setup integrations for Chitty Services
+      const integrations = [
         {
           userId: user.id,
           serviceType: "mercury_bank",
           name: "Mercury Bank",
           description: "Banking & Financial Data",
           connected: true,
+          lastSynced: new Date(Date.now() - 10 * 60 * 1000), // 10 minutes ago
           credentials: {}
         },
         {
@@ -554,6 +281,7 @@ export const storage = new DatabaseStorage();
           name: "WavApps",
           description: "Accounting & Invoicing",
           connected: true,
+          lastSynced: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
           credentials: {}
         },
         {
@@ -562,15 +290,16 @@ export const storage = new DatabaseStorage();
           name: "DoorLoop",
           description: "Property Management",
           connected: true,
+          lastSynced: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5 hours ago
           credentials: {}
         }
       ];
 
-      for (const integration of integrationsList) {
+      for (const integration of integrations) {
         await storage.createIntegration(integration);
       }
 
-      // Setup financial summary (aggregate)
+      // Setup financial summary
       await storage.createFinancialSummary({
         userId: user.id,
         cashOnHand: 127842.50,
@@ -580,79 +309,73 @@ export const storage = new DatabaseStorage();
       });
 
       // Setup transactions
-      const transactionsList = [
+      const transactions = [
         {
           userId: user.id,
-          businessId: property1.id,
-          title: "Rent Payment - Unit 3A",
-          description: "Monthly rent",
-          amount: 2800.00,
+          title: "Client Payment - Acme Corp",
+          description: "Invoice #12345",
+          amount: 7500.00,
           type: "income",
-          category: "rent"
+          date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
         },
         {
           userId: user.id,
-          businessId: property1.id,
-          title: "HVAC Maintenance",
-          description: "Annual service",
-          amount: -1200.00,
+          title: "Software Subscription",
+          description: "Monthly SaaS Tools",
+          amount: -1299.00,
           type: "expense",
-          category: "maintenance"
+          date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
         },
         {
           userId: user.id,
-          businessId: property2.id,
-          title: "Office Lease - Suite 201",
-          description: "Monthly commercial lease",
-          amount: 5500.00,
+          title: "Client Payment - XYZ Inc",
+          description: "Invoice #12347",
+          amount: 4200.00,
           type: "income",
-          category: "rent"
+          date: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
         }
       ];
 
-      for (const transaction of transactionsList) {
+      for (const transaction of transactions) {
         await storage.createTransaction(transaction);
       }
 
       // Setup tasks
-      const tasksList = [
+      const tasks = [
         {
           userId: user.id,
-          businessId: property1.id,
-          title: "Schedule roof inspection",
-          description: "Annual safety check for Sunset Apartments",
+          title: "Review Q2 expense report",
+          description: "Due in 2 days",
           dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
           priority: "due_soon",
           completed: false,
         },
         {
           userId: user.id,
-          businessId: property2.id,
-          title: "Renew insurance policy",
-          description: "Commercial property insurance renewal",
+          title: "Approve pending invoice payments",
+          description: "5 payments requiring approval",
           dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
           priority: "urgent",
           completed: false,
         },
         {
           userId: user.id,
-          title: "Review Q3 portfolio performance",
-          description: "Quarterly analysis across all properties",
+          title: "Schedule tax preparation meeting",
+          description: "Due in 2 weeks",
           dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
           priority: "upcoming",
           completed: false,
         },
       ];
 
-      for (const task of tasksList) {
+      for (const task of tasks) {
         await storage.createTask(task);
       }
 
       // Setup initial AI message
       await storage.createAiMessage({
         userId: user.id,
-        agentType: "cashflow",
-        content: "Based on your current portfolio performance, your rental income is strong at $43,291/month. However, I notice your maintenance costs are 15% above market average. Would you like me to analyze opportunities to optimize these expenses?",
+        content: "Based on current cash flow projections, I recommend delaying the planned office expansion until Q3. Cash reserves are currently 12% below optimal levels for your business size. Would you like me to generate a detailed cost-reduction plan?",
         role: "assistant"
       });
     }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,9 +17,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { apiRequest } from '@/lib/queryClient';
-import { CreditCard, Calendar, TrendingDown, CheckCircle, XCircle, DollarSign } from 'lucide-react';
+import { CreditCard, Calendar, AlertCircle, CheckCircle, XCircle, DollarSign } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
+// Types for API responses
 interface ChargeDetails {
   id: string;
   merchantName: string;
@@ -47,14 +49,17 @@ export default function ChargeAutomation() {
   const [selectedCharge, setSelectedCharge] = useState<ChargeDetails | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
+  // Fetch recurring charges
   const { data: recurringCharges, isLoading: isLoadingCharges } = useQuery<ChargeDetails[]>({
     queryKey: ['/api/charges/recurring'],
   });
   
+  // Fetch optimization recommendations
   const { data: optimizations, isLoading: isLoadingOptimizations } = useQuery<OptimizationRecommendation[]>({
     queryKey: ['/api/charges/optimizations'],
   });
   
+  // Manage recurring charge mutation
   const manageMutation = useMutation({
     mutationFn: async ({ chargeId, action }: { chargeId: string; action: 'cancel' | 'modify' }) => {
       return apiRequest('POST', '/api/charges/manage', { chargeId, action })
@@ -91,50 +96,34 @@ export default function ChargeAutomation() {
     }
   };
   
+  // Calculate savings
   const calculateTotalSavings = () => {
     if (!optimizations) return 0;
     return optimizations.reduce((sum, opt) => sum + opt.potentialSavings, 0);
   };
   
   return (
-    <div className="apple-card overflow-hidden" data-testid="card-charge-automation">
-      <div className="p-6 border-b border-border">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-xl font-semibold mb-1">Expense Optimization</h3>
-            <p className="text-sm text-muted-foreground">
-              Manage recurring property expenses
-            </p>
-          </div>
-          {optimizations && optimizations.length > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary rounded-full">
-              <TrendingDown className="w-4 h-4" />
-              <span className="text-sm font-medium">
-                {formatCurrency(calculateTotalSavings())}/mo savings
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
+    <Card className="card">
+      <CardHeader className="card-header">
+        <CardTitle className="text-lg font-medium text-lime-400">Charge Automation</CardTitle>
+      </CardHeader>
       
       <Tabs defaultValue="recurring" onValueChange={setSelectedTab}>
-        <div className="px-6 pt-4">
-          <TabsList className="segment-control w-full">
+        <div className="px-4 py-3 border-b border-zinc-800">
+          <TabsList className="grid w-full grid-cols-2 bg-zinc-800 p-1">
             <TabsTrigger 
               value="recurring" 
-              className={selectedTab === 'recurring' ? 'segment-item active' : 'segment-item'}
-              data-testid="tab-recurring"
+              className="data-[state=active]:bg-lime-400 data-[state=active]:text-black data-[state=active]:shadow-none text-zinc-300"
             >
               Recurring Charges
             </TabsTrigger>
             <TabsTrigger 
               value="optimizations"
-              className={selectedTab === 'optimizations' ? 'segment-item active' : 'segment-item'}
-              data-testid="tab-optimizations"
+              className="data-[state=active]:bg-lime-400 data-[state=active]:text-black data-[state=active]:shadow-none text-zinc-300"
             >
-              Optimizations
+              Optimizations 
               {optimizations && optimizations.length > 0 && (
-                <Badge className="ml-2 bg-accent text-accent-foreground text-xs">
+                <Badge className="ml-2 bg-zinc-900 text-lime-400 border border-lime-500/20">
                   {optimizations.length}
                 </Badge>
               )}
@@ -142,89 +131,89 @@ export default function ChargeAutomation() {
           </TabsList>
         </div>
         
-        <div className="p-6">
-          <TabsContent value="recurring" className="m-0 space-y-3">
-            {isLoadingCharges ? (
-              <>
-                <ChargeItemSkeleton />
-                <ChargeItemSkeleton />
-                <ChargeItemSkeleton />
-              </>
-            ) : recurringCharges && recurringCharges.length > 0 ? (
-              recurringCharges.map(charge => (
-                <div 
-                  key={charge.id} 
-                  className="p-4 rounded-xl border border-border bg-card hover:border-primary/30 transition-all duration-200"
-                  data-testid={`charge-${charge.id}`}
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                        <CreditCard className="w-5 h-5 text-primary" />
+        <CardContent className="px-6 py-4">
+          <TabsContent value="recurring" className="m-0">
+            <div className="space-y-4">
+              {isLoadingCharges ? (
+                // Loading state
+                <>
+                  <ChargeItemSkeleton />
+                  <ChargeItemSkeleton />
+                  <ChargeItemSkeleton />
+                </>
+              ) : recurringCharges && recurringCharges.length > 0 ? (
+                recurringCharges.map(charge => (
+                  <div 
+                    key={charge.id} 
+                    className="p-4 rounded-lg border border-zinc-700 bg-zinc-800"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center">
+                        <div className="h-10 w-10 rounded-full bg-zinc-900 border border-lime-500/20 text-lime-400 flex items-center justify-center mr-3">
+                          <CreditCard className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-zinc-100">
+                            {charge.merchantName}
+                          </h4>
+                          <p className="text-sm text-zinc-400">
+                            {charge.category}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="font-medium" data-testid={`text-merchant-${charge.id}`}>
-                          {charge.merchantName}
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          {charge.category}
+                      <div className="text-right">
+                        <p className="font-bold text-lime-400">
+                          {formatCurrency(charge.amount)}
+                        </p>
+                        <p className="text-sm text-zinc-400">
+                          Last charged on {formatDate(charge.date)}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-lg" data-testid={`text-amount-${charge.id}`}>
-                        {formatCurrency(charge.amount)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(charge.date)}
-                      </p>
+                    
+                    <div className="mt-3 pt-3 border-t border-zinc-700 flex justify-between items-center">
+                      <div className="flex items-center text-sm text-zinc-400">
+                        <Calendar className="h-4 w-4 mr-1 text-lime-400" />
+                        Next charge: {charge.nextChargeDate ? formatDate(charge.nextChargeDate) : 'Unknown'}
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="text-red-400 border-red-800/30 hover:bg-red-900/20 hover:text-red-300"
+                        onClick={() => handleCancelSubscription(charge)}
+                      >
+                        <XCircle className="h-4 w-4 mr-1" />
+                        Cancel Subscription
+                      </Button>
                     </div>
                   </div>
-                  
-                  <div className="flex justify-between items-center pt-3 border-t border-border">
-                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <Calendar className="w-4 h-4" />
-                      <span>Next: {charge.nextChargeDate ? formatDate(charge.nextChargeDate) : 'Unknown'}</span>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleCancelSubscription(charge)}
-                      data-testid={`button-cancel-${charge.id}`}
-                    >
-                      <XCircle className="w-4 h-4 mr-1" />
-                      Cancel
-                    </Button>
-                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-zinc-500">No recurring charges found.</p>
                 </div>
-              ))
-            ) : (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground">No recurring charges found.</p>
-              </div>
-            )}
+              )}
+            </div>
           </TabsContent>
           
-          <TabsContent value="optimizations" className="m-0 space-y-4">
-            {!isLoadingOptimizations && optimizations && optimizations.length > 0 && (
-              <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <DollarSign className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Potential Monthly Savings</p>
-                    <p className="text-2xl font-semibold text-primary" data-testid="text-total-savings">
-                      {formatCurrency(calculateTotalSavings())}
-                    </p>
-                  </div>
+          <TabsContent value="optimizations" className="m-0">
+            <div className="mb-4 p-4 rounded-lg bg-zinc-800 border border-lime-500/10">
+              <div className="flex items-center">
+                <DollarSign className="h-8 w-8 text-lime-400 mr-2" />
+                <div>
+                  <h3 className="font-medium text-zinc-200">
+                    Potential Monthly Savings
+                  </h3>
+                  <p className="text-2xl font-bold gradient-text">
+                    {formatCurrency(calculateTotalSavings())}
+                  </p>
                 </div>
               </div>
-            )}
+            </div>
             
-            <div className="space-y-3">
+            <div className="space-y-4">
               {isLoadingOptimizations ? (
+                // Loading state
                 <>
                   <OptimizationItemSkeleton />
                   <OptimizationItemSkeleton />
@@ -233,64 +222,58 @@ export default function ChargeAutomation() {
                 optimizations.map(optimization => (
                   <div 
                     key={optimization.chargeId} 
-                    className="p-4 rounded-xl border border-border bg-card"
-                    data-testid={`optimization-${optimization.chargeId}`}
+                    className="p-4 rounded-lg border border-zinc-700 bg-zinc-800"
                   >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
-                        <h4 className="font-medium mb-2" data-testid={`text-opt-merchant-${optimization.chargeId}`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-medium text-zinc-100">
                           {optimization.merchantName}
                         </h4>
-                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <Badge variant="outline" className="bg-accent/10 text-accent border-accent/20">
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge className="bg-zinc-900 text-lime-400 border border-lime-500/20">
                             {optimization.suggestedAction.toUpperCase()}
                           </Badge>
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-sm text-zinc-400">
                             {optimization.reasoning}
                           </p>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex justify-between items-center text-sm mb-3">
-                      <span className="text-muted-foreground">Current:</span>
-                      <span className="font-medium">{formatCurrency(optimization.currentAmount)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm mb-4">
-                      <span className="text-muted-foreground">Savings:</span>
-                      <span className="font-semibold text-primary" data-testid={`text-savings-${optimization.chargeId}`}>
-                        {formatCurrency(optimization.potentialSavings)}
-                      </span>
+                      <div className="text-right">
+                        <p className="font-semibold text-zinc-300">
+                          Current: {formatCurrency(optimization.currentAmount)}
+                        </p>
+                        <p className="text-sm font-medium text-lime-400">
+                          Potential Savings: {formatCurrency(optimization.potentialSavings)}
+                        </p>
+                      </div>
                     </div>
                     
                     {optimization.alternativeOptions && optimization.alternativeOptions.length > 0 && (
-                      <div className="mb-4 p-3 rounded-lg bg-muted/50">
-                        <p className="text-sm font-medium mb-2">Alternative Options:</p>
-                        <ul className="space-y-1">
+                      <div className="mt-3 pt-3 border-t border-zinc-700">
+                        <p className="text-sm font-medium text-lime-400 mb-1">
+                          Alternative Options:
+                        </p>
+                        <ul className="list-disc list-inside text-sm text-zinc-400">
                           {optimization.alternativeOptions.map((option, index) => (
-                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                              <span className="text-primary">•</span>
-                              <span>{option}</span>
-                            </li>
+                            <li key={index}>{option}</li>
                           ))}
                         </ul>
                       </div>
                     )}
                     
-                    <div className="flex gap-2">
+                    <div className="mt-3 pt-3 border-t border-zinc-700 flex justify-end">
                       <Button 
-                        className="primary-cta flex-1"
+                        variant="default" 
                         size="sm"
-                        data-testid={`button-apply-${optimization.chargeId}`}
+                        className="mr-2 bg-lime-400 text-black hover:bg-lime-500"
                       >
-                        <CheckCircle className="w-4 h-4 mr-1" />
-                        Apply
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Apply Recommendation
                       </Button>
                       <Button 
                         variant="outline" 
                         size="sm"
-                        className="flex-1"
-                        data-testid={`button-ignore-${optimization.chargeId}`}
+                        className="border-zinc-600 text-zinc-300 hover:bg-zinc-700"
                       >
                         Ignore
                       </Button>
@@ -299,60 +282,60 @@ export default function ChargeAutomation() {
                 ))
               ) : (
                 <div className="text-center py-12">
-                  <p className="text-muted-foreground">No optimization recommendations available.</p>
+                  <p className="text-zinc-500">No optimization recommendations available.</p>
                 </div>
               )}
             </div>
           </TabsContent>
-        </div>
+        </CardContent>
       </Tabs>
       
+      {/* Cancel Subscription Dialog */}
       <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-zinc-900 border border-zinc-700">
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel Subscription</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-lime-400">Cancel Subscription</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-300">
               Are you sure you want to cancel your subscription to {selectedCharge?.merchantName}? 
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-dialog-cancel">
-              Keep Subscription
+            <AlertDialogCancel className="bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200">
+              Cancel
             </AlertDialogCancel>
             <AlertDialogAction 
               onClick={confirmCancelSubscription}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="button-dialog-confirm"
+              className="bg-red-900 hover:bg-red-800 text-red-200 border border-red-700"
             >
-              Yes, Cancel
+              Yes, Cancel Subscription
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </Card>
   );
 }
 
 function ChargeItemSkeleton() {
   return (
-    <div className="p-4 rounded-xl border border-border bg-card">
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex items-center gap-3">
-          <Skeleton className="w-10 h-10 rounded-lg" />
+    <div className="p-4 rounded-lg border border-zinc-700 bg-zinc-800">
+      <div className="flex justify-between items-start">
+        <div className="flex items-center">
+          <Skeleton className="h-10 w-10 rounded-full mr-3 bg-zinc-700" />
           <div>
-            <Skeleton className="h-5 w-36 mb-2" />
-            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-5 w-36 mb-1 bg-zinc-700" />
+            <Skeleton className="h-4 w-24 bg-zinc-700" />
           </div>
         </div>
         <div className="text-right">
-          <Skeleton className="h-5 w-20 mb-2 ml-auto" />
-          <Skeleton className="h-4 w-32 ml-auto" />
+          <Skeleton className="h-5 w-24 mb-1 ml-auto bg-zinc-700" />
+          <Skeleton className="h-4 w-32 ml-auto bg-zinc-700" />
         </div>
       </div>
-      <div className="flex justify-between items-center pt-3 border-t border-border">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-8 w-20" />
+      <div className="mt-3 pt-3 border-t border-zinc-700 flex justify-between items-center">
+        <Skeleton className="h-4 w-40 bg-zinc-700" />
+        <Skeleton className="h-8 w-32 bg-zinc-700" />
       </div>
     </div>
   );
@@ -360,13 +343,25 @@ function ChargeItemSkeleton() {
 
 function OptimizationItemSkeleton() {
   return (
-    <div className="p-4 rounded-xl border border-border bg-card">
-      <Skeleton className="h-5 w-36 mb-3" />
-      <Skeleton className="h-4 w-full mb-2" />
-      <Skeleton className="h-4 w-3/4 mb-4" />
-      <div className="flex gap-2">
-        <Skeleton className="h-9 flex-1" />
-        <Skeleton className="h-9 flex-1" />
+    <div className="p-4 rounded-lg border border-zinc-700 bg-zinc-800">
+      <div className="flex justify-between items-start">
+        <div>
+          <Skeleton className="h-5 w-36 mb-1 bg-zinc-700" />
+          <Skeleton className="h-4 w-64 mt-1 bg-zinc-700" />
+        </div>
+        <div className="text-right">
+          <Skeleton className="h-5 w-28 mb-1 ml-auto bg-zinc-700" />
+          <Skeleton className="h-4 w-36 ml-auto bg-zinc-700" />
+        </div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-zinc-700">
+        <Skeleton className="h-4 w-32 mb-1 bg-zinc-700" />
+        <Skeleton className="h-4 w-full max-w-md mb-1 bg-zinc-700" />
+        <Skeleton className="h-4 w-full max-w-sm bg-zinc-700" />
+      </div>
+      <div className="mt-3 pt-3 border-t border-zinc-700 flex justify-end">
+        <Skeleton className="h-8 w-32 mr-2 bg-zinc-700" />
+        <Skeleton className="h-8 w-20 bg-zinc-700" />
       </div>
     </div>
   );
