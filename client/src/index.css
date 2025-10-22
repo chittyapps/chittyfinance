@@ -2,17 +2,120 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer components {
-  .card {
-    @apply bg-card border border-border/40 shadow-lg hover:shadow-xl transition-shadow duration-200;
-  }
-  
-  .dashboard-grid {
-    @apply grid gap-6 md:grid-cols-2 lg:grid-cols-3;
+@layer base {
+  :root {
+    /* Coastal Palette - Light Mode */
+    --background: 35 23% 96%;
+    --foreground: 209 26% 25%;
+    
+    /* Surface colors */
+    --card: 0 0% 100%;
+    --card-foreground: 209 26% 25%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 209 26% 25%;
+    
+    /* Primary - Muted Green */
+    --primary: 159 24% 44%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Secondary - Soft Slate */
+    --secondary: 209 20% 32%;
+    --secondary-foreground: 0 0% 100%;
+    
+    /* Muted backgrounds */
+    --muted: 35 23% 94%;
+    --muted-foreground: 209 20% 45%;
+    
+    /* Accent - Copper */
+    --accent: 27 48% 54%;
+    --accent-foreground: 0 0% 100%;
+    
+    /* Supporting - Sky */
+    --sky: 205 37% 64%;
+    --sky-foreground: 0 0% 100%;
+    
+    /* Borders and inputs */
+    --border: 209 15% 88%;
+    --input: 209 15% 88%;
+    --ring: 159 24% 44%;
+    
+    /* Destructive */
+    --destructive: 0 65% 51%;
+    --destructive-foreground: 0 0% 100%;
+    
+    /* Chart colors */
+    --chart-1: 159 24% 44%;
+    --chart-2: 27 48% 54%;
+    --chart-3: 205 37% 64%;
+    --chart-4: 209 20% 32%;
+    --chart-5: 35 23% 70%;
+    
+    /* Sidebar - deprecated but kept for compatibility */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 209 26% 25%;
+    --sidebar-primary: 159 24% 44%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 35 23% 94%;
+    --sidebar-accent-foreground: 209 26% 25%;
+    --sidebar-border: 209 15% 88%;
+    --sidebar-ring: 159 24% 44%;
+    
+    /* Border radius - Apple-inspired rounded corners (14px) */
+    --radius: 0.875rem;
+    
+    /* Custom spacing scale - 12pt/16pt increments */
+    --spacing-xs: 0.75rem;
+    --spacing-sm: 1rem;
+    --spacing-md: 1.5rem;
+    --spacing-lg: 2rem;
+    --spacing-xl: 3rem;
+    --spacing-2xl: 4rem;
+    
+    /* Typography scale */
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.5rem;
+    --text-2xl: 2rem;
+    --text-3xl: 2.75rem;
+    
+    /* Shadow system - soft depth */
+    --shadow-sm: 0 1px 2px 0 rgba(62, 74, 87, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(62, 74, 87, 0.08), 0 2px 4px -1px rgba(62, 74, 87, 0.04);
+    --shadow-lg: 0 10px 15px -3px rgba(62, 74, 87, 0.1), 0 4px 6px -2px rgba(62, 74, 87, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(62, 74, 87, 0.1), 0 10px 10px -5px rgba(62, 74, 87, 0.04);
   }
 
-  .hover-lift {
-    @apply transition-transform duration-200 hover:-translate-y-1;
+  .dark {
+    /* Dark mode variant if needed later */
+    --background: 209 26% 15%;
+    --foreground: 35 23% 96%;
+    
+    --card: 209 20% 20%;
+    --card-foreground: 35 23% 96%;
+    
+    --popover: 209 20% 20%;
+    --popover-foreground: 35 23% 96%;
+    
+    --primary: 159 24% 50%;
+    --primary-foreground: 209 26% 15%;
+    
+    --secondary: 209 20% 32%;
+    --secondary-foreground: 35 23% 96%;
+    
+    --muted: 209 20% 25%;
+    --muted-foreground: 35 23% 75%;
+    
+    --accent: 27 48% 60%;
+    --accent-foreground: 209 26% 15%;
+    
+    --border: 209 20% 30%;
+    --input: 209 20% 30%;
+    --ring: 159 24% 50%;
+    
+    --destructive: 0 65% 51%;
+    --destructive-foreground: 35 23% 96%;
   }
 }
 
@@ -21,76 +124,266 @@
     @apply border-border;
   }
 
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply font-sans antialiased bg-gradient-to-b from-zinc-950 to-zinc-900 text-zinc-50 min-h-screen;
+    @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Roboto", "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+    min-height: 100vh;
   }
 
-  .gradient-text {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-lime-400 via-emerald-400 to-lime-500 animate-gradient;
-  }
-  
-  .card {
-    @apply bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/50 rounded-xl overflow-hidden shadow-xl transition-all duration-300 hover:border-lime-500/20 hover:shadow-lime-500/5;
-  }
-  
-  .card-header {
-    @apply border-b border-zinc-800/50 p-4 font-medium bg-gradient-to-r from-lime-400/10 to-transparent text-lime-400;
-  }
-  
-  .card-content {
-    @apply p-4 space-y-3;
+  /* Apple-inspired typography */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+    letter-spacing: -0.01em;
   }
 
-  @keyframes gradient {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+  h1 {
+    @apply text-3xl;
+    line-height: 1.15;
   }
 
-  .animate-gradient {
-    animation: gradient 4s ease infinite;
-    background-size: 200% 200%;
+  h2 {
+    @apply text-2xl;
+    line-height: 1.2;
   }
-  
-  .pulse-connection {
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  h3 {
+    @apply text-xl;
+    line-height: 1.3;
   }
-  
-  @keyframes pulse {
-    0%, 100% {
+
+  p {
+    @apply text-base leading-relaxed;
+  }
+}
+
+@layer components {
+  /* Apple-inspired card component */
+  .apple-card {
+    @apply bg-card rounded-[14px] border border-border shadow-md transition-all duration-200;
+  }
+
+  .apple-card:hover {
+    @apply shadow-lg;
+  }
+
+  /* Focus mode - ADHD-friendly */
+  .focus-mode .apple-card:not(.focus-active) {
+    @apply opacity-40 pointer-events-none;
+  }
+
+  /* Primary CTA - Always clear and prominent */
+  .primary-cta {
+    @apply bg-primary text-primary-foreground px-6 py-3 rounded-xl font-medium;
+    @apply shadow-md hover:shadow-lg transition-all duration-200;
+    @apply active:scale-[0.98];
+  }
+
+  /* Micro-interaction hover state */
+  .interactive-card {
+    @apply transition-all duration-200 ease-out;
+    @apply hover:-translate-y-0.5 hover:shadow-lg;
+    @apply active:scale-[0.99];
+  }
+
+  /* Glassmorphism subtle effect */
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-md border border-border/50;
+  }
+
+  /* KPI metric card */
+  .kpi-card {
+    @apply apple-card p-6 space-y-2;
+  }
+
+  .kpi-label {
+    @apply text-sm text-muted-foreground font-medium;
+  }
+
+  .kpi-value {
+    @apply text-2xl font-semibold text-foreground;
+  }
+
+  .kpi-change {
+    @apply text-sm font-medium;
+  }
+
+  .kpi-change.positive {
+    @apply text-primary;
+  }
+
+  .kpi-change.negative {
+    @apply text-destructive;
+  }
+
+  /* Navigation segment control - Apple style */
+  .segment-control {
+    @apply inline-flex p-1 bg-muted rounded-xl gap-1;
+  }
+
+  .segment-item {
+    @apply px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200;
+    @apply text-muted-foreground hover:text-foreground;
+  }
+
+  .segment-item.active {
+    @apply bg-card text-foreground shadow-sm;
+  }
+
+  /* Collapsible detail drawer - ADHD progressive disclosure */
+  .detail-drawer {
+    @apply overflow-hidden transition-all duration-300;
+  }
+
+  .detail-drawer.collapsed {
+    @apply max-h-0 opacity-0;
+  }
+
+  .detail-drawer.expanded {
+    @apply max-h-[1000px] opacity-100;
+  }
+
+  /* Sticky contextual guidance */
+  .sticky-guide {
+    @apply sticky top-4 z-10 bg-sky/10 border border-sky/20 rounded-xl p-4;
+    @apply text-sm text-foreground/80;
+  }
+
+  /* Task checklist widget - executive function support */
+  .task-checkbox {
+    @apply w-5 h-5 rounded-md border-2 border-border transition-all duration-200;
+    @apply hover:border-primary cursor-pointer;
+  }
+
+  .task-checkbox.checked {
+    @apply bg-primary border-primary;
+  }
+
+  /* Progress ring */
+  .progress-ring {
+    @apply relative inline-flex items-center justify-center;
+  }
+
+  /* Spring animation classes */
+  .spring-hover {
+    @apply transition-transform duration-200;
+  }
+
+  .spring-hover:hover {
+    @apply scale-105;
+  }
+
+  .spring-hover:active {
+    @apply scale-95;
+  }
+
+  /* Fade and slide animations */
+  @keyframes fadeSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
       opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .fade-slide-in {
+    animation: fadeSlideIn 0.3s ease-out;
+  }
+
+  /* Celebration animation */
+  @keyframes celebrate {
+    0%, 100% {
+      transform: scale(1);
     }
     50% {
-      opacity: 0.5;
+      transform: scale(1.05);
     }
   }
 
-  /* Custom scrollbar */
+  .celebrate {
+    animation: celebrate 0.5s ease-out;
+  }
+
+  /* Clean scrollbar - Apple style */
   ::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
+    height: 8px;
   }
-  
+
   ::-webkit-scrollbar-track {
-    background: theme('colors.zinc.950');
+    background: transparent;
   }
-  
+
   ::-webkit-scrollbar-thumb {
-    background: theme('colors.zinc.800');
+    background: hsl(var(--border));
     border-radius: 999px;
-    transition: all 0.3s;
+    border: 2px solid hsl(var(--background));
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
-    background: theme('colors.lime.500');
+    background: hsl(var(--muted-foreground));
   }
 
-  /* Improved focus styles */
+  /* Focus styles - accessibility */
   :focus-visible {
-    @apply outline-none ring-2 ring-lime-500/50 ring-offset-2 ring-offset-zinc-950;
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 
-  /* Button hover effects */
-  button:not(:disabled):hover {
-    @apply transform scale-[1.02] transition-transform;
+  /* Reduced motion for accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Spacing utilities using custom scale */
+  .space-xs {
+    @apply space-y-3;
+  }
+
+  .space-sm {
+    @apply space-y-4;
+  }
+
+  .space-md {
+    @apply space-y-6;
+  }
+
+  .space-lg {
+    @apply space-y-8;
+  }
+
+  /* Container with generous padding */
+  .container-apple {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Single column layout for clarity */
+  .single-column {
+    @apply max-w-2xl mx-auto;
+  }
+
+  /* Two column responsive */
+  .two-column {
+    @apply grid grid-cols-1 lg:grid-cols-2 gap-6;
+  }
+
+  /* Card grid */
+  .card-grid {
+    @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6;
   }
 }
