@@ -1,0 +1,38 @@
+name = "chittyfinance"
+main = "dist/system/worker.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Account and workers configuration
+# account_id will be set via wrangler login or environment
+workers_dev = false
+
+# Custom domain route
+routes = [
+  { pattern = "finance.chitty.cc/*", custom_domain = true }
+]
+
+# Environment variables (non-sensitive)
+[vars]
+NODE_ENV = "production"
+MODE = "system"
+
+# Secrets (set via: wrangler secret put <NAME>)
+# - DATABASE_URL
+# - OPENAI_API_KEY
+# - CHITTYCONNECT_API_BASE
+# - CHITTY_AUTH_SERVICE_TOKEN
+
+# Node.js compatibility for Neon DB, Express, etc.
+node_compat = true
+
+# Increase limits for production workload
+[limits]
+cpu_ms = 50000
+
+# Build configuration
+[build]
+command = "npm run build:system"
+
+[build.upload]
+format = "service-worker"
