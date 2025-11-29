@@ -1,99 +1,319 @@
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useLocation } from "wouter";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { CheckCircle, Circle, ExternalLink, RefreshCw } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-type Status = {
+interface Integration {
+  id: number;
+  serviceType: string;
   name: string;
-  version?: string;
-  chittyConnect?: { configured: boolean };
-};
+  connected: boolean;
+  credentials?: any;
+}
+
+const integrationConfigs = [
+  {
+    type: 'mercury_bank',
+    name: 'Mercury Bank',
+    description: 'Connect your Mercury business bank accounts for real-time balance and transaction sync',
+    icon: '🏦',
+    docsUrl: 'https://mercury.com/api',
+    requiresApproval: true,
+    features: ['Real-time balances', 'Transaction history', 'Multi-account support'],
+  },
+  {
+    type: 'wavapps',
+    name: 'Wave Accounting',
+    description: 'Sync invoices, expenses, and revenue from Wave Accounting (requires Wave Pro subscription)',
+    icon: '📊',
+    docsUrl: 'https://developer.waveapps.com',
+    requiresApproval: false,
+    features: ['Invoice tracking', 'Expense management', 'Revenue reporting'],
+  },
+  {
+    type: 'stripe',
+    name: 'Stripe',
+    description: 'Accept payments and manage subscriptions with Stripe',
+    icon: '💳',
+    docsUrl: 'https://stripe.com/docs',
+    requiresApproval: false,
+    features: ['Payment processing', 'Subscription management', 'Customer portal'],
+  },
+  {
+    type: 'doorloop',
+    name: 'DoorLoop',
+    description: 'Property management integration for rent collection and maintenance tracking',
+    icon: '🏠',
+    docsUrl: 'https://www.doorloop.com',
+    requiresApproval: false,
+    features: ['Rent roll', 'Maintenance requests', 'Lease management'],
+  },
+];
 
 export default function Connections() {
-  const [status, setStatus] = useState<Status | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [events, setEvents] = useState<any[]>([]);
-  const [since, setSince] = useState<string>("");
-  const [replayMsg, setReplayMsg] = useState<string | null>(null);
+  const [_, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const [connectingType, setConnectingType] = useState<string | null>(null);
 
+  // Fetch integrations
+  const { data: integrations = [], isLoading } = useQuery<Integration[]>({
+    queryKey: ['/api/integrations'],
+  });
+
+  // Check for OAuth callback success/error
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/v1/status");
-        const data = await res.json();
-        setStatus(data);
-        const er = await fetch("/api/integrations/events?source=mercury&limit=10");
-        const ed = await er.json();
-        setEvents(ed.items || []);
-      } catch (e: any) {
-        setError(e?.message || "Failed to load status");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  async function replay() {
-    setReplayMsg(null);
-    try {
-      const qs = new URLSearchParams({ source: 'mercury', limit: '50', ...(since ? { since } : {}) }).toString();
-      const res = await fetch(`/api/admin/events/replay?${qs}`, { method: 'POST', headers: { 'content-type': 'application/json' } });
-      const data = await res.json();
-      setReplayMsg(`Replayed: ${data.succeeded}/${data.attempted} (failed ${data.failed})`);
-    } catch (e: any) {
-      setReplayMsg(`Replay failed: ${e?.message || e}`);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('wave') === 'connected') {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
+      // Clean up URL
+      window.history.replaceState({}, '', '/connections');
     }
-  }
+  }, [queryClient]);
+
+  // Connect Wave
+  const connectWave = async () => {
+    setConnectingType('wavapps');
+    try {
+      const response = await fetch('/api/integrations/wave/authorize');
+      const data = await response.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      }
+    } catch (error) {
+      console.error('Failed to start Wave authorization:', error);
+      setConnectingType(null);
+    }
+  };
+
+  // Disconnect integration
+  const disconnectMutation = useMutation({
+    mutationFn: async (integrationId: number) => {
+      const response = await fetch(`/api/integrations/${integrationId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connected: false }),
+      });
+      if (!response.ok) throw new Error('Failed to disconnect');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
+    },
+  });
+
+  // Refresh Wave token
+  const refreshWaveMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/integrations/wave/refresh', {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('Failed to refresh token');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
+    },
+  });
+
+  const getIntegration = (type: string) => {
+    return integrations.find(i => i.serviceType === type);
+  };
+
+  const handleConnect = async (type: string) => {
+    if (type === 'wavapps') {
+      await connectWave();
+    } else if (type === 'mercury_bank') {
+      // Redirect to ChittyConnect
+      window.location.href = '/connect';
+    } else {
+      // For other integrations, show message
+      alert(`${type} integration coming soon!`);
+    }
+  };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Card>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold">Connections</h1>
+        <p className="text-muted-foreground mt-2">
+          Connect your financial accounts and services to ChittyFinance
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-12">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">Loading integrations...</p>
+        </div>
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2">
+          {integrationConfigs.map((config) => {
+            const integration = getIntegration(config.type);
+            const isConnected = integration?.connected || false;
+            const isConnecting = connectingType === config.type;
+
+            return (
+              <Card key={config.type} className="relative">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="text-4xl">{config.icon}</div>
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          {config.name}
+                          {isConnected && (
+                            <Badge variant="default" className="bg-green-600">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Connected
+                            </Badge>
+                          )}
+                          {config.requiresApproval && (
+                            <Badge variant="outline" className="text-xs">
+                              Requires Approval
+                            </Badge>
+                          )}
+                        </CardTitle>
+                        <CardDescription className="mt-1">
+                          {config.description}
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {/* Features */}
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Features:</h4>
+                      <ul className="space-y-1">
+                        {config.features.map((feature) => (
+                          <li key={feature} className="text-sm flex items-center gap-2">
+                            <Circle className="h-2 w-2 fill-current" />
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Connection status details */}
+                    {isConnected && integration?.credentials && (
+                      <div className="bg-muted p-3 rounded-md text-sm">
+                        {config.type === 'wavapps' && integration.credentials.business_name && (
+                          <p>
+                            <strong>Business:</strong> {integration.credentials.business_name}
+                          </p>
+                        )}
+                        {config.type === 'mercury_bank' && integration.credentials.selectedAccountIds && (
+                          <p>
+                            <strong>Accounts:</strong> {integration.credentials.selectedAccountIds.length} connected
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                      {!isConnected ? (
+                        <Button
+                          onClick={() => handleConnect(config.type)}
+                          disabled={isConnecting}
+                          className="w-full"
+                        >
+                          {isConnecting ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                              Connecting...
+                            </>
+                          ) : (
+                            `Connect ${config.name}`
+                          )}
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            variant="destructive"
+                            onClick={() => integration && disconnectMutation.mutate(integration.id)}
+                            disabled={disconnectMutation.isPending}
+                            className="flex-1"
+                          >
+                            Disconnect
+                          </Button>
+                          {config.type === 'wavapps' && (
+                            <Button
+                              variant="outline"
+                              onClick={() => refreshWaveMutation.mutate()}
+                              disabled={refreshWaveMutation.isPending}
+                              title="Refresh access token"
+                            >
+                              {refreshWaveMutation.isPending ? (
+                                <RefreshCw className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                        </>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.open(config.docsUrl, '_blank')}
+                        title="View documentation"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Help section */}
+      <Card className="mt-8">
         <CardHeader>
-          <CardTitle>Connections</CardTitle>
+          <CardTitle>Need Help?</CardTitle>
         </CardHeader>
-        <CardContent>
-          {loading && <p>Loading…</p>}
-          {error && <p className="text-red-600">{error}</p>}
-          {status && (
-            <div className="space-y-2">
-              <div className="text-sm text-muted-foreground">Service: {status.name}</div>
-              {status.version && <div className="text-sm">Version: {status.version}</div>}
-              <div className="text-sm">ChittyConnect: {status.chittyConnect?.configured ? "configured" : "not configured"}</div>
-              <div className="pt-4 space-x-3 flex items-center flex-wrap gap-2">
-                <a className="underline" href="/connect">Connect Services</a>
-                <a className="underline" href="/register">Register a Service</a>
-                <label className="text-xs text-muted-foreground">Since:
-                  <input type="datetime-local" className="ml-2 border rounded px-1 py-0.5 text-xs bg-background" value={since} onChange={e => setSince(e.target.value)} />
-                </label>
-                <Button variant="secondary" className="ml-2" onClick={replay}>Replay Last 50</Button>
-                {replayMsg && <span className="text-xs text-muted-foreground ml-2">{replayMsg}</span>}
-              </div>
-            </div>
-          )}
+        <CardContent className="space-y-2 text-sm">
+          <p>
+            <strong>Mercury Bank:</strong> Requires prior OAuth approval from Mercury. Contact{' '}
+            <a href="mailto:api@mercury.com" className="underline">
+              api@mercury.com
+            </a>{' '}
+            to request access.
+          </p>
+          <p>
+            <strong>Wave Accounting:</strong> Requires a Wave Pro or Wave Advisor subscription. Get your
+            OAuth credentials from the{' '}
+            <a
+              href="https://developer.waveapps.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Wave Developer Portal
+            </a>
+            .
+          </p>
+          <p>
+            <strong>Stripe:</strong> Create a Stripe account and get your API keys from the{' '}
+            <a
+              href="https://dashboard.stripe.com/apikeys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Stripe Dashboard
+            </a>
+            .
+          </p>
         </CardContent>
       </Card>
-
-      <div className="mt-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Events</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {events.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No events yet.</p>
-            ) : (
-              <ul className="text-sm space-y-1">
-                {events.map((e: any) => (
-                  <li key={e.id} className="flex justify-between">
-                    <span>{e.source}:{e.eventId}</span>
-                    <span className="text-muted-foreground">{new Date(e.receivedAt).toLocaleString()}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

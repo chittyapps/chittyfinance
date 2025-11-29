@@ -1,5 +1,6 @@
 import { Integration } from "@shared/schema";
 import { getMercurySummary } from "./chittyConnect";
+import { createWaveClient, WaveAPIClient } from "./wave-api";
 
 // Interface for financial data returned by services
 export interface FinancialData {
@@ -49,35 +50,69 @@ export async function fetchMercuryBankData(integration: Integration): Promise<Pa
   return { cashOnHand: 0, transactions: [] };
 }
 
-// Mock service for WavApps
+// Real Wave Accounting API integration
 export async function fetchWavAppsData(integration: Integration): Promise<Partial<FinancialData>> {
-  // In a real implementation, this would connect to WavApps API
-  console.log(`Fetching data from WavApps for integration ID ${integration.id}`);
-  
-  // Return mock data for demo purposes
-  return {
-    monthlyRevenue: 43291.75,
-    monthlyExpenses: 26142.30,
-    outstandingInvoices: 18520.00,
-    transactions: [
-      {
-        id: "wavapps-1",
-        title: "Software Subscription",
-        description: "Monthly SaaS Tools",
-        amount: -1299.00,
-        type: 'expense',
-        date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
-      },
-      {
-        id: "wavapps-2",
-        title: "Client Payment - XYZ Inc",
-        description: "Invoice #12347",
-        amount: 4200.00,
-        type: 'income',
-        date: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
-      }
-    ]
-  };
+  console.log(`Fetching data from Wave Accounting for integration ID ${integration.id}`);
+
+  // Check if Wave OAuth credentials are configured
+  const credentials = integration.credentials as any;
+  const accessToken = credentials?.access_token;
+  const businessId = credentials?.business_id;
+
+  if (!accessToken || !businessId) {
+    console.warn('Wave integration not fully configured - missing access_token or business_id');
+
+    // In production system mode, throw error
+    const isProdSystem = (process.env.NODE_ENV === 'production') && ((process.env.MODE || 'standalone') === 'system');
+    if (isProdSystem) {
+      throw new Error('Wave integration not configured: missing credentials');
+    }
+
+    // Return empty data in dev mode
+    return {
+      monthlyRevenue: 0,
+      monthlyExpenses: 0,
+      outstandingInvoices: 0,
+      transactions: []
+    };
+  }
+
+  try {
+    // Create Wave API client
+    const waveClient = createWaveClient({
+      clientId: process.env.WAVE_CLIENT_ID || '',
+      clientSecret: process.env.WAVE_CLIENT_SECRET || '',
+      redirectUri: process.env.WAVE_REDIRECT_URI || `${process.env.PUBLIC_APP_BASE_URL}/integrations/wave/callback`,
+    });
+
+    waveClient.setAccessToken(accessToken);
+
+    // Fetch financial summary from Wave
+    const summary = await waveClient.getFinancialSummary(businessId);
+
+    return {
+      monthlyRevenue: summary.monthlyRevenue,
+      monthlyExpenses: summary.monthlyExpenses,
+      outstandingInvoices: summary.outstandingInvoices,
+      transactions: summary.transactions.map(t => ({
+        id: t.id,
+        title: t.description,
+        description: t.category,
+        amount: t.amount,
+        type: t.type,
+        date: new Date(t.date),
+      })),
+    };
+  } catch (error) {
+    console.error('Error fetching Wave data:', error);
+
+    // If token expired, we should refresh it
+    if (error instanceof Error && error.message.includes('unauthorized')) {
+      throw new Error('Wave access token expired - please reconnect integration');
+    }
+
+    throw error;
+  }
 }
 
 // Mock service for DoorLoop

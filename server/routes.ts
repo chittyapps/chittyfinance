@@ -11,6 +11,7 @@ import { insertAiMessageSchema, insertIntegrationSchema, insertTaskSchema } from
 import { getFinancialAdvice, generateCostReductionPlan } from "./lib/openai";
 import { getAggregatedFinancialData } from "./lib/financialServices";
 import { listMercuryAccounts } from "./lib/chittyConnect";
+import { createWaveClient } from "./lib/wave-api";
 import { getRecurringCharges, getChargeOptimizations, manageRecurringCharge } from "./lib/chargeAutomation";
 import {
   fetchUserRepositories,
@@ -197,6 +198,152 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedIntegration);
     } catch (error) {
       res.status(500).json({ message: "Failed to update integration" });
+    }
+  });
+
+  // Wave OAuth endpoints
+  api.get("/integrations/wave/authorize", chittyConnectAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getSessionUser();
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Create Wave client
+      const waveClient = createWaveClient({
+        clientId: process.env.WAVE_CLIENT_ID || '',
+        clientSecret: process.env.WAVE_CLIENT_SECRET || '',
+        redirectUri: process.env.WAVE_REDIRECT_URI || `${process.env.PUBLIC_APP_BASE_URL}/api/integrations/wave/callback`,
+      });
+
+      // Generate state token for CSRF protection
+      const state = Buffer.from(JSON.stringify({ userId: user.id })).toString('base64');
+
+      // Get authorization URL
+      const authUrl = waveClient.getAuthorizationUrl(state);
+
+      res.json({ authUrl });
+    } catch (error) {
+      console.error('Wave authorization error:', error);
+      res.status(500).json({ message: "Failed to start Wave authorization" });
+    }
+  });
+
+  api.get("/integrations/wave/callback", async (req: Request, res: Response) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ message: "Missing authorization code or state" });
+      }
+
+      // Verify state and extract user ID
+      const stateData = JSON.parse(Buffer.from(state as string, 'base64').toString());
+      const userId = stateData.userId;
+
+      // Create Wave client
+      const waveClient = createWaveClient({
+        clientId: process.env.WAVE_CLIENT_ID || '',
+        clientSecret: process.env.WAVE_CLIENT_SECRET || '',
+        redirectUri: process.env.WAVE_REDIRECT_URI || `${process.env.PUBLIC_APP_BASE_URL}/api/integrations/wave/callback`,
+      });
+
+      // Exchange code for tokens
+      const tokens = await waveClient.exchangeCodeForToken(code as string);
+      waveClient.setAccessToken(tokens.access_token);
+
+      // Get user's businesses
+      const businesses = await waveClient.getBusinesses();
+
+      if (businesses.length === 0) {
+        return res.status(400).json({ message: "No Wave businesses found for this account" });
+      }
+
+      // Use first business by default
+      const business = businesses[0];
+
+      // Check if integration already exists
+      const integrations = await storage.getIntegrations(userId);
+      let integration = integrations.find(i => i.serviceType === 'wavapps');
+
+      const credentials = {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        token_type: tokens.token_type,
+        expires_in: tokens.expires_in,
+        business_id: business.id,
+        business_name: business.name,
+      };
+
+      if (integration) {
+        // Update existing integration
+        integration = await storage.updateIntegration(integration.id, {
+          credentials,
+          connected: true,
+        });
+      } else {
+        // Create new integration
+        integration = await storage.createIntegration({
+          userId,
+          name: 'Wave Accounting',
+          serviceType: 'wavapps',
+          credentials,
+          connected: true,
+        });
+      }
+
+      // Redirect to connections page with success message
+      res.redirect(`${process.env.PUBLIC_APP_BASE_URL}/connections?wave=connected`);
+    } catch (error) {
+      console.error('Wave callback error:', error);
+      res.redirect(`${process.env.PUBLIC_APP_BASE_URL}/connections?wave=error`);
+    }
+  });
+
+  // Refresh Wave token
+  api.post("/integrations/wave/refresh", chittyConnectAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getSessionUser();
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const integrations = await storage.getIntegrations(user.id);
+      const integration = integrations.find(i => i.serviceType === 'wavapps');
+
+      if (!integration) {
+        return res.status(404).json({ message: "Wave integration not found" });
+      }
+
+      const credentials = integration.credentials as any;
+      if (!credentials?.refresh_token) {
+        return res.status(400).json({ message: "No refresh token available" });
+      }
+
+      // Create Wave client
+      const waveClient = createWaveClient({
+        clientId: process.env.WAVE_CLIENT_ID || '',
+        clientSecret: process.env.WAVE_CLIENT_SECRET || '',
+        redirectUri: process.env.WAVE_REDIRECT_URI || `${process.env.PUBLIC_APP_BASE_URL}/api/integrations/wave/callback`,
+      });
+
+      // Refresh token
+      const newTokens = await waveClient.refreshAccessToken(credentials.refresh_token);
+
+      // Update integration with new tokens
+      const updatedIntegration = await storage.updateIntegration(integration.id, {
+        credentials: {
+          ...credentials,
+          access_token: newTokens.access_token,
+          refresh_token: newTokens.refresh_token,
+          expires_in: newTokens.expires_in,
+        },
+      });
+
+      res.json({ message: "Token refreshed successfully" });
+    } catch (error) {
+      console.error('Wave token refresh error:', error);
+      res.status(500).json({ message: "Failed to refresh Wave token" });
     }
   });
 
