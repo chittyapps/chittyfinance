@@ -9,12 +9,20 @@ import type {
   TenantUser, InsertTenantUser,
   Account, InsertAccount,
   Transaction, InsertTransaction,
+  Integration, InsertIntegration,
+  Task, InsertTask,
+  AiMessage, InsertAiMessage,
 } from "../database/system.schema";
 import {
   tenants, users, tenantUsers, accounts, transactions,
+  integrations, tasks, aiMessages,
 } from "../database/system.schema";
+import { webhookEvents, type NewWebhookEvent } from "@shared/finance.schema";
 
 export interface ISystemStorage {
+  // Session helper (for demo mode compatibility)
+  getSessionUser(): Promise<User | undefined>;
+
   // Tenant operations
   getTenants(userId: string): Promise<Tenant[]>;
   getTenant(tenantId: string): Promise<Tenant | undefined>;
@@ -39,6 +47,22 @@ export interface ISystemStorage {
   getTransactions(tenantId: string, limit?: number): Promise<Transaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
 
+  // Tenant-scoped integration operations
+  getIntegrations(tenantId: string): Promise<Integration[]>;
+  getIntegration(id: string, tenantId: string): Promise<Integration | undefined>;
+  createIntegration(integration: InsertIntegration): Promise<Integration>;
+  updateIntegration(id: string, tenantId: string, data: Partial<Integration>): Promise<Integration | undefined>;
+
+  // Tenant-scoped task operations
+  getTasks(tenantId: string, userId?: string, limit?: number): Promise<Task[]>;
+  getTask(id: string, tenantId: string): Promise<Task | undefined>;
+  createTask(task: InsertTask): Promise<Task>;
+  updateTask(id: string, tenantId: string, data: Partial<Task>): Promise<Task | undefined>;
+
+  // Tenant-scoped AI message operations
+  getAiMessages(tenantId: string, userId?: string, limit?: number): Promise<AiMessage[]>;
+  createAiMessage(message: InsertAiMessage): Promise<AiMessage>;
+
   // Financial summary (tenant-scoped)
   getFinancialSummary(tenantId: string): Promise<{
     cashOnHand: string;
@@ -46,6 +70,11 @@ export interface ISystemStorage {
     monthlyExpenses: string;
     accountCount: number;
   }>;
+
+  // Webhook operations (shared across tenants)
+  isWebhookDuplicate(source: string, eventId: string): Promise<boolean>;
+  recordWebhookEvent(data: Omit<NewWebhookEvent, 'id' | 'receivedAt'>): Promise<any>;
+  listWebhookEvents(params: { source?: string; limit?: number; cursor?: number }): Promise<{ items: any[]; nextCursor?: number }>;
 }
 
 export class SystemStorage implements ISystemStorage {
@@ -170,6 +199,153 @@ export class SystemStorage implements ISystemStorage {
       monthlyExpenses: monthlyExpenses.toFixed(2),
       accountCount: accts.length,
     };
+  }
+
+  // Session helper for demo mode compatibility
+  async getSessionUser(): Promise<User | undefined> {
+    // In system mode, look for a demo user by email
+    // In production, this would use real authentication
+    return this.getUserByEmail('demo@itcanbe.llc');
+  }
+
+  // Integration operations (tenant-scoped)
+  async getIntegrations(tenantId: string): Promise<Integration[]> {
+    return await db
+      .select()
+      .from(integrations)
+      .where(eq(integrations.tenantId, tenantId));
+  }
+
+  async getIntegration(id: string, tenantId: string): Promise<Integration | undefined> {
+    const [integration] = await db
+      .select()
+      .from(integrations)
+      .where(and(eq(integrations.id, id), eq(integrations.tenantId, tenantId)));
+    return integration;
+  }
+
+  async createIntegration(insertIntegration: InsertIntegration): Promise<Integration> {
+    const [integration] = await db.insert(integrations).values(insertIntegration).returning();
+    return integration;
+  }
+
+  async updateIntegration(id: string, tenantId: string, data: Partial<Integration>): Promise<Integration | undefined> {
+    const [updated] = await db
+      .update(integrations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(integrations.id, id), eq(integrations.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+
+  // Task operations (tenant-scoped)
+  async getTasks(tenantId: string, userId?: string, limit?: number): Promise<Task[]> {
+    let query = db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.tenantId, tenantId))
+      .orderBy(desc(tasks.createdAt));
+
+    if (userId) {
+      query = db
+        .select()
+        .from(tasks)
+        .where(and(eq(tasks.tenantId, tenantId), eq(tasks.userId, userId)))
+        .orderBy(desc(tasks.createdAt));
+    }
+
+    return limit ? await query.limit(limit) : await query;
+  }
+
+  async getTask(id: string, tenantId: string): Promise<Task | undefined> {
+    const [task] = await db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, id), eq(tasks.tenantId, tenantId)));
+    return task;
+  }
+
+  async createTask(insertTask: InsertTask): Promise<Task> {
+    const [task] = await db.insert(tasks).values(insertTask).returning();
+    return task;
+  }
+
+  async updateTask(id: string, tenantId: string, data: Partial<Task>): Promise<Task | undefined> {
+    const [updated] = await db
+      .update(tasks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(tasks.id, id), eq(tasks.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+
+  // AI Message operations (tenant-scoped)
+  async getAiMessages(tenantId: string, userId?: string, limit?: number): Promise<AiMessage[]> {
+    let query = db
+      .select()
+      .from(aiMessages)
+      .where(eq(aiMessages.tenantId, tenantId))
+      .orderBy(desc(aiMessages.createdAt));
+
+    if (userId) {
+      query = db
+        .select()
+        .from(aiMessages)
+        .where(and(eq(aiMessages.tenantId, tenantId), eq(aiMessages.userId, userId)))
+        .orderBy(desc(aiMessages.createdAt));
+    }
+
+    return limit ? await query.limit(limit) : await query;
+  }
+
+  async createAiMessage(insertMessage: InsertAiMessage): Promise<AiMessage> {
+    const [message] = await db.insert(aiMessages).values(insertMessage).returning();
+    return message;
+  }
+
+  // Webhook operations (shared across all tenants)
+  async isWebhookDuplicate(source: string, eventId: string): Promise<boolean> {
+    const [existing] = await db
+      .select()
+      .from(webhookEvents)
+      .where(and(eq(webhookEvents.source, source), eq(webhookEvents.eventId, eventId)))
+      .limit(1);
+    return !!existing;
+  }
+
+  async recordWebhookEvent(data: Omit<NewWebhookEvent, 'id' | 'receivedAt'>): Promise<any> {
+    const [event] = await db.insert(webhookEvents).values(data).returning();
+    return event;
+  }
+
+  async listWebhookEvents(params: {
+    source?: string;
+    limit?: number;
+    cursor?: number;
+  }): Promise<{ items: any[]; nextCursor?: number }> {
+    const { source, limit = 50, cursor } = params;
+
+    let query = db.select().from(webhookEvents).orderBy(desc(webhookEvents.receivedAt));
+
+    if (source) {
+      query = db
+        .select()
+        .from(webhookEvents)
+        .where(eq(webhookEvents.source, source))
+        .orderBy(desc(webhookEvents.receivedAt));
+    }
+
+    if (cursor) {
+      query = query.where(desc(webhookEvents.id));
+    }
+
+    const items = await query.limit(limit + 1);
+
+    const hasMore = items.length > limit;
+    const results = hasMore ? items.slice(0, limit) : items;
+    const nextCursor = hasMore ? (results[results.length - 1] as any).id : undefined;
+
+    return { items: results, nextCursor };
   }
 }
 
