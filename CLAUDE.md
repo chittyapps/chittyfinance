@@ -693,16 +693,35 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - Optimize re-renders with proper React patterns (memo, useCallback)
 
 ### Security Considerations
-- **Critical**: Replace demo authentication before production
+
+**OAuth Security** (Phase 3 implemented):
+- **CSRF Protection**: OAuth state tokens use HMAC-SHA256 signatures (`server/lib/oauth-state.ts`)
+- **Replay Prevention**: State tokens expire after 10 minutes (timestamp validation)
+- **Tampering Detection**: State includes cryptographic signature verified server-side
+- **Production Requirement**: Set `OAUTH_STATE_SECRET` to random 32+ character string
+
+**Webhook Security**:
+- **Stripe**: Webhook signatures verified using `STRIPE_WEBHOOK_SECRET`
+- **Mercury**: Service authentication via `serviceAuth` middleware
+- **Idempotency**: All webhook events deduplicated using `webhook_events` table
+
+**Integration Validation** (`server/lib/integration-validation.ts`):
+- Validates required environment variables before allowing integration connections
+- Returns 503 Service Unavailable if integration not properly configured
+- Prevents cryptic errors from misconfigured services
+
+**General Security**:
+- **Critical**: Replace demo authentication before production (ChittyID integration pending)
 - Never commit API keys (use environment variables)
 - Sanitize financial data in logs (mask account numbers)
 - Validate all user inputs on backend (Zod schemas)
 - Use HTTPS in production (HTTP allowed for local dev only)
+- Credential data stored as JSONB in database (encrypted at rest by Neon)
 
 ## Known Limitations
 
 1. **No Real Authentication**: Demo user auto-login is insecure for production (ChittyID integration pending)
-2. **Mock Integrations**: Mercury and Wave return hardcoded data (not real API calls)
+2. **DoorLoop Still Mock**: DoorLoop integration returns hardcoded data (real API integration pending)
 3. **Hardcoded Port**: Port 5000 required for Replit (cannot be changed)
 4. **No Migrations**: Uses `drizzle-kit push` (destructive) instead of proper migrations
 5. **Storage Layer Not Updated**: `server/storage.ts` still uses old schema (needs tenant-aware queries)
@@ -712,7 +731,7 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 
 ## Future Enhancements
 
-### Phase 1: Complete Multi-Tenant Implementation (Immediate)
+### Phase 1: Complete Multi-Tenant Implementation (In Progress)
 - ✅ Database schemas created (system.schema.ts, standalone.schema.ts)
 - ✅ Seeding script for IT CAN BE LLC entities
 - ✅ Mode-aware database connection
@@ -723,34 +742,45 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ⏳ Update frontend with tenant switcher
 - ⏳ Add tenant-scoped API middleware
 
-### Phase 2: Real Integrations
-- Connect to Mercury Bank API (replace mock)
-- Connect to Wave Accounting API (replace mock)
-- Implement Stripe payment processing
-- Add GitHub cost attribution (already integrated)
-- Real-time sync via webhooks
+### Phase 2: ChittyConnect Integration (Partially Completed)
+- ✅ Mercury Bank via ChittyConnect backend (multi-account support)
+- ⏳ Register with ChittyRegistry
+- ⏳ Integrate with ChittyConnect MCP
+- ⏳ Log to ChittyChronicle
+- ⏳ Use ChittyAuth tokens
 
-### Phase 3: Property Management Features
-- Rent roll tracking per property
-- Lease expiration notifications
-- Maintenance request system
-- Vendor payment tracking
-- Occupancy rate reporting
+### Phase 3: Real Third-Party Integrations (COMPLETED ✅)
+- ✅ **Wave Accounting** - OAuth 2.0 flow + GraphQL API (`server/lib/wave-api.ts`)
+- ✅ **Stripe** - Payment processing, checkout, webhooks (`server/lib/stripe.ts`)
+- ✅ **Mercury Bank** - Multi-account via ChittyConnect (static egress IP)
+- ✅ **OAuth Security** - CSRF-protected state tokens (`server/lib/oauth-state.ts`)
+- ✅ **Integration Monitoring** - Config validation endpoint (`/api/integrations/status`)
+- ✅ **Webhook Infrastructure** - Idempotent event processing (`webhook_events` table)
+- ⏳ **DoorLoop** - Real property management API (currently mock)
 
-### Phase 4: ChittyOS Integration
-- Replace demo auth with ChittyID
-- Register with ChittyRegistry
-- Integrate with ChittyConnect MCP
-- Log to ChittyChronicle
-- Use ChittyAuth tokens
+### Phase 4: Property Management & Valuation Features (In Progress)
+- ✅ Valuation Console (`client/src/pages/ValuationConsole.tsx`)
+- ⏳ Integrate ValuationConsole with dashboard
+- ⏳ Rent roll tracking per property
+- ⏳ Lease expiration notifications
+- ⏳ Maintenance request system
+- ⏳ Vendor payment tracking
+- ⏳ Occupancy rate reporting
 
-### Phase 5: Advanced Features
+### Phase 5: ChittyOS Ecosystem Integration
+- ⏳ Replace demo auth with ChittyID
+- ⏳ Expose financial data as MCP resources
+- ⏳ Log to ChittyChronicle (audit trail)
+- ⏳ Issue ChittyCert certificates for secure connections
+
+### Phase 6: Advanced Features
 - Consolidated reporting across all entities
 - Inter-company allocation automation
 - Tax optimization and reporting
-- Advanced AI forecasting
+- Advanced AI forecasting (beyond GPT-4o)
 - Mobile app (React Native)
 - Export/import (CSV, QFX, OFX)
+- Multi-currency support
 
 ## Related Documentation
 
