@@ -2,12 +2,12 @@
  * Storage Helpers - Smart wrappers for multi-tenant storage access
  *
  * These helpers automatically handle tenant context from Express requests
- * and route to the correct storage implementation (standalone vs system mode).
+ * and use the unified storage layer.
  */
 
 import type { Request } from 'express';
-import { storage as standaloneStorage } from '../storage';
-import { systemStorage } from '../storage-system';
+import { storage } from '../storage';
+import { toStringId } from './id-compat';
 
 const MODE = process.env.MODE || 'standalone';
 
@@ -15,25 +15,18 @@ const MODE = process.env.MODE || 'standalone';
  * Get the appropriate storage context from a request
  */
 export function getStorageContext(req: Request): {
-  userId: number | string;
-  tenantId?: string;
+  userId: string;
+  tenantId: string;
   mode: 'standalone' | 'system';
 } {
   const mode = MODE === 'system' ? 'system' : 'standalone';
+  const userId = toStringId(req.userId || (req as any).userId || 1);
+  const tenantId = toStringId(req.tenantId || userId); // In standalone, userId === tenantId
 
-  if (mode === 'system') {
-    // In system mode, we need tenant context
-    return {
-      userId: req.userId || '',
-      tenantId: req.tenantId,
-      mode: 'system',
-    };
-  }
-
-  // In standalone mode, userId is a number
   return {
-    userId: (req as any).userId || 0,
-    mode: 'standalone',
+    userId,
+    tenantId,
+    mode,
   };
 }
 
@@ -42,25 +35,14 @@ export function getStorageContext(req: Request): {
  */
 export async function getIntegrations(req: Request) {
   const ctx = getStorageContext(req);
-
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.getIntegrations(ctx.tenantId);
-  }
-
-  return standaloneStorage.getIntegrations(Number(ctx.userId));
+  return storage.getIntegrations(ctx.tenantId);
 }
 
 /**
  * Get single integration
  */
 export async function getIntegration(req: Request, id: number | string) {
-  const ctx = getStorageContext(req);
-
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.getIntegration(String(id), ctx.tenantId);
-  }
-
-  return standaloneStorage.getIntegration(Number(id));
+  return storage.getIntegration(toStringId(id));
 }
 
 /**
@@ -69,16 +51,10 @@ export async function getIntegration(req: Request, id: number | string) {
 export async function createIntegration(req: Request, data: any) {
   const ctx = getStorageContext(req);
 
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.createIntegration({
-      ...data,
-      tenantId: ctx.tenantId,
-    });
-  }
-
-  return standaloneStorage.createIntegration({
+  return storage.createIntegration({
     ...data,
-    userId: Number(ctx.userId),
+    tenantId: ctx.tenantId,
+    userId: MODE === 'standalone' ? parseInt(ctx.userId, 10) : undefined,
   });
 }
 
@@ -86,13 +62,7 @@ export async function createIntegration(req: Request, data: any) {
  * Update integration
  */
 export async function updateIntegration(req: Request, id: number | string, data: any) {
-  const ctx = getStorageContext(req);
-
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.updateIntegration(String(id), ctx.tenantId, data);
-  }
-
-  return standaloneStorage.updateIntegration(Number(id), data);
+  return storage.updateIntegration(toStringId(id), data);
 }
 
 /**
@@ -100,25 +70,14 @@ export async function updateIntegration(req: Request, id: number | string, data:
  */
 export async function getTasks(req: Request, limit?: number) {
   const ctx = getStorageContext(req);
-
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.getTasks(ctx.tenantId, String(ctx.userId), limit);
-  }
-
-  return standaloneStorage.getTasks(Number(ctx.userId), limit);
+  return storage.getTasks(ctx.tenantId, limit);
 }
 
 /**
  * Get single task
  */
 export async function getTask(req: Request, id: number | string) {
-  const ctx = getStorageContext(req);
-
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.getTask(String(id), ctx.tenantId);
-  }
-
-  return standaloneStorage.getTask(Number(id));
+  return storage.getTask(toStringId(id));
 }
 
 /**
@@ -127,17 +86,10 @@ export async function getTask(req: Request, id: number | string) {
 export async function createTask(req: Request, data: any) {
   const ctx = getStorageContext(req);
 
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.createTask({
-      ...data,
-      tenantId: ctx.tenantId,
-      userId: String(ctx.userId),
-    });
-  }
-
-  return standaloneStorage.createTask({
+  return storage.createTask({
     ...data,
-    userId: Number(ctx.userId),
+    tenantId: ctx.tenantId,
+    userId: MODE === 'standalone' ? parseInt(ctx.userId, 10) : ctx.userId,
   });
 }
 
@@ -145,13 +97,7 @@ export async function createTask(req: Request, data: any) {
  * Update task
  */
 export async function updateTask(req: Request, id: number | string, data: any) {
-  const ctx = getStorageContext(req);
-
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.updateTask(String(id), ctx.tenantId, data);
-  }
-
-  return standaloneStorage.updateTask(Number(id), data);
+  return storage.updateTask(toStringId(id), data);
 }
 
 /**
@@ -159,12 +105,7 @@ export async function updateTask(req: Request, id: number | string, data: any) {
  */
 export async function getAiMessages(req: Request, limit?: number) {
   const ctx = getStorageContext(req);
-
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.getAiMessages(ctx.tenantId, String(ctx.userId), limit);
-  }
-
-  return standaloneStorage.getAiMessages(Number(ctx.userId), limit);
+  return storage.getAiMessages(ctx.tenantId, ctx.userId, limit);
 }
 
 /**
@@ -173,17 +114,10 @@ export async function getAiMessages(req: Request, limit?: number) {
 export async function createAiMessage(req: Request, data: any) {
   const ctx = getStorageContext(req);
 
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.createAiMessage({
-      ...data,
-      tenantId: ctx.tenantId,
-      userId: String(ctx.userId),
-    });
-  }
-
-  return standaloneStorage.createAiMessage({
+  return storage.createAiMessage({
     ...data,
-    userId: Number(ctx.userId),
+    tenantId: MODE === 'standalone' ? parseInt(ctx.tenantId, 10) : ctx.tenantId,
+    userId: MODE === 'standalone' ? parseInt(ctx.userId, 10) : ctx.userId,
   });
 }
 
@@ -192,12 +126,7 @@ export async function createAiMessage(req: Request, data: any) {
  */
 export async function getTransactions(req: Request, limit?: number) {
   const ctx = getStorageContext(req);
-
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.getTransactions(ctx.tenantId, limit);
-  }
-
-  return standaloneStorage.getTransactions(Number(ctx.userId), limit);
+  return storage.getTransactions(ctx.tenantId, limit);
 }
 
 /**
@@ -206,14 +135,10 @@ export async function getTransactions(req: Request, limit?: number) {
 export async function createTransaction(req: Request, data: any) {
   const ctx = getStorageContext(req);
 
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    // In system mode, tenant and account IDs should already be in data
-    return systemStorage.createTransaction(data);
-  }
-
-  return standaloneStorage.createTransaction({
+  return storage.createTransaction({
     ...data,
-    userId: Number(ctx.userId),
+    tenantId: MODE === 'standalone' ? parseInt(ctx.tenantId, 10) : ctx.tenantId,
+    userId: MODE === 'standalone' ? parseInt(ctx.userId, 10) : undefined,
   });
 }
 
@@ -223,12 +148,9 @@ export async function createTransaction(req: Request, data: any) {
 export async function getFinancialSummary(req: Request) {
   const ctx = getStorageContext(req);
 
-  if (ctx.mode === 'system' && ctx.tenantId) {
-    return systemStorage.getFinancialSummary(ctx.tenantId);
+  if (!storage.getFinancialSummary) {
+    return undefined; // System mode doesn't have this method
   }
 
-  const user = await standaloneStorage.getSessionUser();
-  if (!user) return undefined;
-
-  return standaloneStorage.getFinancialSummary(user.id);
+  return storage.getFinancialSummary(ctx.userId);
 }
