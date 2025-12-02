@@ -125,7 +125,7 @@ export async function fetchRepositoryPullRequests(integration: Integration, repo
       throw new Error("GitHub token not available");
     }
 
-    const response = await fetch(`https://api.github.com/repos/${repoFullName}/pulls?per_page=5`, {
+    const response = await fetch(`https://api.github.com/repos/${repoFullName}/pulls?state=all&per_page=5`, {
       headers: githubHeaders(),
     });
 
@@ -146,49 +146,25 @@ export async function fetchRepositoryPullRequests(integration: Integration, repo
  */
 export async function fetchRepositoryIssues(integration: Integration, repoFullName: string): Promise<GitHubIssue[]> {
   try {
-    const token = process.env.GITHUB_SHITTYBOT_TOKEN;
-    if (!token) {
-      console.error('GitHub token not found in environment variables');
-      return [];
+    if (!getGithubToken()) {
+      throw new Error("GitHub token not available");
     }
 
-    // Mock data for demo purposes
-    const issues: GitHubIssue[] = [
-      {
-        id: 456,
-        title: 'Dashboard loading slowly on mobile devices',
-        state: 'open',
-        author: 'michaelgreen',
-        createdAt: new Date(Date.now() - 86400000), // 1 day ago
-        updatedAt: new Date(Date.now() - 43200000), // 12 hours ago
-        url: `https://github.com/${repoFullName}/issues/456`,
-        labels: ['bug', 'performance', 'mobile'],
-      },
-      {
-        id: 455,
-        title: 'Add ability to categorize transactions automatically',
-        state: 'open',
-        author: 'amandabrown',
-        createdAt: new Date(Date.now() - 172800000), // 2 days ago
-        updatedAt: new Date(Date.now() - 86400000), // 1 day ago
-        url: `https://github.com/${repoFullName}/issues/455`,
-        labels: ['enhancement', 'feature-request', 'ai'],
-      },
-      {
-        id: 454,
-        title: 'Login page UI improvements',
-        state: 'closed',
-        author: 'johnsmith',
-        createdAt: new Date(Date.now() - 259200000), // 3 days ago
-        updatedAt: new Date(Date.now() - 172800000), // 2 days ago
-        url: `https://github.com/${repoFullName}/issues/454`,
-        labels: ['ui', 'design', 'authentication'],
-      }
-    ];
+    const response = await fetch(`https://api.github.com/repos/${repoFullName}/issues?state=all&per_page=5`, {
+      headers: githubHeaders(),
+    });
 
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+
+    const issues = await response.json();
     return issues;
   } catch (error) {
     console.error(`Error fetching issues for repository ${repoFullName}:`, error);
     return [];
   }
 }
+
+// Export types
+export type { GitHubRepository, GitHubCommit, GitHubPullRequest, GitHubIssue };

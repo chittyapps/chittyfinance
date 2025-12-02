@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import MercuryAccounts from "@/components/integrations/MercuryAccounts";
 
 export default function Settings() {
+  const { toast } = useToast();
+  type MercuryAccount = { id: string; name: string; last4?: string; type?: string; currency?: string };
   // Get user data
   const { data: user, isLoading: isLoadingUser } = useQuery<User>({
     queryKey: ["/api/session"],
@@ -24,14 +26,10 @@ export default function Settings() {
     queryKey: ["/api/integrations"],
   });
 
-  // Get mercury accounts
-  const { data: mercuryAccounts } = useQuery<any[]>({
+// Fetch Mercury accounts (for tooltips / labels)
+  const { data: mercuryAccounts } = useQuery<MercuryAccount[]>({
     queryKey: ["/api/mercury/accounts"],
-    enabled: integrations?.some((i) => i.serviceType === "mercury_bank") ?? false,
   });
-
-  const { toast } = useToast();
-
   return (
     <div className="py-6">
       {/* Page Header */}
@@ -118,7 +116,12 @@ export default function Settings() {
                           </div>
                           <div>
                             <h4 className="text-sm font-medium">{integration.name}</h4>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">{integration.description}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {integration.description}
+                              {integration.serviceType === "mercury_bank" && (
+                                <span className="ml-2 text-[11px] text-orange-600 dark:text-orange-400">Managed via ChittyConnect</span>
+                              )}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -182,6 +185,10 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+
+            <div className="mt-6">
+              <MercuryAccounts />
+            </div>
           </TabsContent>
 
           <TabsContent value="notifications" className="mt-6">

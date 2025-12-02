@@ -1,4 +1,6 @@
 import { Integration } from "@shared/schema";
+import { getMercurySummary } from "./chittyConnect";
+import { createWaveClient, WaveAPIClient } from "./wave-api";
 
 // Interface for financial data returned by services
 export interface FinancialData {
@@ -39,62 +41,99 @@ export interface FinancialData {
 
 // Mock service for Mercury Bank
 export async function fetchMercuryBankData(integration: Integration): Promise<Partial<FinancialData>> {
-  // In a real implementation, this would connect to Mercury Bank API
-  console.log(`Fetching data from Mercury Bank for integration ID ${integration.id}`);
-  
-  // Return mock data for demo purposes
-  return {
-    cashOnHand: 127842.50,
-    transactions: [
-      {
-        id: "merc-1",
-        title: "Client Payment - Acme Corp",
-        description: "Invoice #12345",
-        amount: 7500.00,
-        type: 'income',
-        date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-      },
-      {
-        id: "merc-2",
-        title: "Office Rent",
-        description: "Monthly office space",
-        amount: -3500.00,
-        type: 'expense',
-        date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      }
-    ]
-  };
+  // Prefer ChittyConnect backend if configured (supports static egress + multi-account)
+  const selected: string[] | undefined = (integration.credentials as any)?.selectedAccountIds;
+  const tenantId: string | undefined = (integration.credentials as any)?.tenantId;
+  const hasConnect = !!process.env.CHITTYCONNECT_API_BASE && !!(process.env.CHITTYCONNECT_API_TOKEN || process.env.CHITTY_AUTH_SERVICE_TOKEN);
+
+  if (hasConnect && selected && selected.length > 0) {
+    const summary = await getMercurySummary({ userId: integration.userId, tenantId, accountIds: selected });
+    return {
+      cashOnHand: summary.cashOnHand ?? 0,
+      transactions: (summary.transactions || []).map(t => ({
+        id: t.id,
+        title: t.description || 'Transaction',
+        amount: t.amount,
+        type: t.amount >= 0 ? 'income' : 'expense',
+        date: new Date(t.date),
+      })),
+    };
+  }
+
+  // In production system mode, do not return mock data
+  const isProdSystem = (process.env.NODE_ENV === 'production') && ((process.env.MODE || 'standalone') === 'system');
+  if (isProdSystem) {
+    throw new Error('Mercury data unavailable: ChittyConnect not configured or no accounts selected');
+  }
+
+  // Fallback minimal demo data only for non-production or standalone
+  console.log(`Fetching data from Mercury Bank (dev fallback) for integration ID ${integration.id}`);
+  return { cashOnHand: 0, transactions: [] };
 }
 
-// Mock service for WavApps
+// Real Wave Accounting API integration
 export async function fetchWavAppsData(integration: Integration): Promise<Partial<FinancialData>> {
-  // In a real implementation, this would connect to WavApps API
-  console.log(`Fetching data from WavApps for integration ID ${integration.id}`);
-  
-  // Return mock data for demo purposes
-  return {
-    monthlyRevenue: 43291.75,
-    monthlyExpenses: 26142.30,
-    outstandingInvoices: 18520.00,
-    transactions: [
-      {
-        id: "wavapps-1",
-        title: "Software Subscription",
-        description: "Monthly SaaS Tools",
-        amount: -1299.00,
-        type: 'expense',
-        date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
-      },
-      {
-        id: "wavapps-2",
-        title: "Client Payment - XYZ Inc",
-        description: "Invoice #12347",
-        amount: 4200.00,
-        type: 'income',
-        date: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
-      }
-    ]
-  };
+  console.log(`Fetching data from Wave Accounting for integration ID ${integration.id}`);
+
+  // Check if Wave OAuth credentials are configured
+  const credentials = integration.credentials as any;
+  const accessToken = credentials?.access_token;
+  const businessId = credentials?.business_id;
+
+  if (!accessToken || !businessId) {
+    console.warn('Wave integration not fully configured - missing access_token or business_id');
+
+    // In production system mode, throw error
+    const isProdSystem = (process.env.NODE_ENV === 'production') && ((process.env.MODE || 'standalone') === 'system');
+    if (isProdSystem) {
+      throw new Error('Wave integration not configured: missing credentials');
+    }
+
+    // Return empty data in dev mode
+    return {
+      monthlyRevenue: 0,
+      monthlyExpenses: 0,
+      outstandingInvoices: 0,
+      transactions: []
+    };
+  }
+
+  try {
+    // Create Wave API client
+    const waveClient = createWaveClient({
+      clientId: process.env.WAVE_CLIENT_ID || '',
+      clientSecret: process.env.WAVE_CLIENT_SECRET || '',
+      redirectUri: process.env.WAVE_REDIRECT_URI || `${process.env.PUBLIC_APP_BASE_URL}/integrations/wave/callback`,
+    });
+
+    waveClient.setAccessToken(accessToken);
+
+    // Fetch financial summary from Wave
+    const summary = await waveClient.getFinancialSummary(businessId);
+
+    return {
+      monthlyRevenue: summary.monthlyRevenue,
+      monthlyExpenses: summary.monthlyExpenses,
+      outstandingInvoices: summary.outstandingInvoices,
+      transactions: summary.transactions.map(t => ({
+        id: t.id,
+        title: t.description,
+        description: t.category,
+        amount: t.amount,
+        type: t.type,
+        date: new Date(t.date),
+      })),
+    };
+  } catch (error) {
+    console.error('Error fetching Wave data:', error);
+
+    // If token expired, we should refresh it
+    if (error instanceof Error && error.message.includes('unauthorized')) {
+      throw new Error('Wave access token expired - please reconnect integration');
+    }
+
+    throw error;
+  }
 }
 
 // Mock service for DoorLoop

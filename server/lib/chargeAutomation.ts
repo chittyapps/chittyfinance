@@ -25,8 +25,8 @@ export interface OptimizationRecommendation {
 }
 
 // Get all recurring charges from connected services
-export async function getRecurringCharges(userId: number): Promise<ChargeDetails[]> {
-  const integrations = await storage.getIntegrations(userId);
+export async function getRecurringCharges(userId: number | string): Promise<ChargeDetails[]> {
+  const integrations = await storage.getIntegrations(String(userId));
   const charges: ChargeDetails[] = [];
 
   for (const integration of integrations) {

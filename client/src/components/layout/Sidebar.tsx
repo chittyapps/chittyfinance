@@ -1,15 +1,9 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { 
-  Home, 
-  BarChart, 
-  DollarSign, 
-  FileText, 
-  Settings, 
-  Menu
-} from "lucide-react";
+import { Home, BarChart, DollarSign, FileText, Settings, Menu, Plug, Building2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { TenantSwitcher } from "./TenantSwitcher";
 
 export default function Sidebar() {
   const [location] = useLocation();
@@ -79,17 +73,24 @@ export default function Sidebar() {
               <NavItem href="/" icon={<Home />} active={location === "/"}>
                 Dashboard
               </NavItem>
-              
+
+              <NavItem href="/properties" icon={<Building2 />} active={location === "/properties"}>
+                Properties
+              </NavItem>
+
               <NavItem href="/reports" icon={<BarChart />} active={location === "/reports"}>
                 Financial Reports
               </NavItem>
-              
+
               <NavItem href="/cash-flow" icon={<DollarSign />} active={location === "/cash-flow"}>
                 Cash Flow
               </NavItem>
-              
+
               <NavItem href="/invoices" icon={<FileText />} active={location === "/invoices"}>
                 Invoices
+              </NavItem>
+              <NavItem href="/connections" icon={<Plug />} active={location === "/connections"}>
+                Connections
               </NavItem>
               
               <NavItem href="/settings" icon={<Settings />} active={location === "/settings"}>
@@ -97,7 +98,14 @@ export default function Sidebar() {
               </NavItem>
             </nav>
           </div>
-          
+
+          {/* Tenant Switcher (system mode only) */}
+          {import.meta.env.MODE === 'system' && (
+            <div className="px-4 pb-4">
+              <TenantSwitcher />
+            </div>
+          )}
+
           {user && (
             <div className="p-4 border-t border-zinc-800">
               <div className="flex items-center">

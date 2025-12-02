@@ -1,0 +1,26 @@
+name = "chittyfinance"
+main = "../server/worker.ts"
+compatibility_date = "2024-05-01"
+node_compat = true
+
+routes = [
+  { pattern = "finance.chitty.cc/*", zone_name = "chitty.cc" }
+]
+
+[vars]
+# Used by the Worker to forward API calls/webhooks
+# Set real values via `wrangler secret put` for sensitive entries
+API_ORIGIN = "https://api.chitty.cc/finance"
+
+[build]
+command = ""
+
+[assets]
+directory = "../public"
+binding = "ASSETS"
+
+# Durable Objects binding (if needed by server/worker.ts)
+[[durable_objects.bindings]]
+name = "CF_AGENT"
+class_name = "ChittyAgent"
+

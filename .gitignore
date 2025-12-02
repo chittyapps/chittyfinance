@@ -4,3 +4,22 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Environment files with secrets
+.env
+.env.local
+.env.production
+
+# Wrangler build artifacts with embedded secrets
+.wrangler/
+
+# API keys and tokens
+*.key
+*.pem
+*.p12
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+migrations/

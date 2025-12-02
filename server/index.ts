@@ -1,10 +1,21 @@
+/**
+ * Server Entry
+ * - Express API + client dev middleware (Vite in dev, static in prod)
+ * - Routes registered via `server/routes.ts`
+ * - Data access centralized in `server/storage.ts`
+ * - Default port 5000; override with `PORT`
+ */
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { tenantScope } from './middleware/tenant';
 import { setupVite, serveStatic, log } from "./vite";
+import { startChittyConnectKeepAlive } from './lib/tokenKeepAlive';
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+// Attach tenant context early so routes can read it
+app.use(tenantScope);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -38,6 +49,8 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+  // Start background keep-alive for ChittyConnect tokens (if configured)
+  startChittyConnectKeepAlive();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -56,14 +69,11 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
+  // Default to port 5000; allow override via PORT for local conflicts
+  const port = Number(process.env.PORT) || 5000;
   server.listen({
     port,
     host: "0.0.0.0",
-    reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
   });

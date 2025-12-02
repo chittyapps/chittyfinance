@@ -1,0 +1,29 @@
+
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(printenv)",
+      "WebFetch(domain:nevershitty.replit.app)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(env)",
+      "Bash(npm run check:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(rm:*)",
+      "Bash(tree:*)",
+      "Bash(npm run mode:detect:*)",
+      "Bash(npm run db:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run deploy:*)",
+      "Bash(npm test:*)",
+      "Bash(npm install:*)",
+      "Bash(git add:*)",
+      "Bash(pkill:*)",
+      "Bash(open -a \"Google Drive\")",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": []
+  }
+}

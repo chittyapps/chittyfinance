@@ -1,0 +1,19 @@
+# Cloudflare Workers configuration for ChittyRegistry (Directory Service)
+
+name = "chittyregistry"
+main = "../server/chittyRegistryWorker.ts"
+compatibility_date = "2024-11-01"
+workers_dev = false
+
+routes = [
+  { pattern = "registry.chitty.cc/*", zone_name = "chitty.cc" }
+]
+
+[[kv_namespaces]]
+binding = "REGISTRY"
+id = "a0eda021d4a744bc9afffd6b0d875a3f"
+
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "chittyregistry"

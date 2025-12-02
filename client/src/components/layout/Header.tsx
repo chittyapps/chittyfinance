@@ -2,27 +2,9 @@ import { Bell, MoreVertical } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/utils";
+import TenantSwitcher from "@/components/TenantSwitcher";
 
 export default function Header() {
-  const currentDate = formatDate(new Date());
-  return (
-    <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between py-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold">Dashboard</h2>
-          <span className="text-sm text-muted-foreground">{currentDate}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <ThemeToggle />
-          <Button variant="outline" size="icon">
-            <Bell className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </header>
-  );
-
   return (
     <header className="relative z-10 flex flex-shrink-0 h-16 bg-zinc-900 border-b border-zinc-800 shadow-lg">
       <div className="flex justify-between flex-1 px-4">
@@ -53,8 +35,9 @@ export default function Header() {
             </div>
           </div>
         </div>
-
-        <div className="ml-4 flex items-center md:ml-6">
+        
+        <div className="ml-4 flex items-center md:ml-6 gap-3">
+          <TenantSwitcher />
           <ThemeToggle />
 
           <button className="ml-3 p-1 rounded-full text-muted-foreground hover:text-orange-500 dark:hover:text-orange-400 focus:outline-none transition-colors">
