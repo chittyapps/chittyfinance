@@ -1,4 +1,4 @@
-import { 
+import {
   users, type User, type InsertUser,
   integrations, type Integration, type InsertIntegration,
   financialSummaries, type FinancialSummary, type InsertFinancialSummary,
@@ -7,7 +7,10 @@ import {
   aiMessages, type AiMessage, type InsertAiMessage
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
+
+// Import schemas based on MODE
+const MODE = process.env.MODE || 'standalone';
 
 export interface IStorage {
   // User operations
@@ -22,22 +25,22 @@ export interface IStorage {
   getIntegration(id: number): Promise<Integration | undefined>;
   createIntegration(integration: InsertIntegration): Promise<Integration>;
   updateIntegration(id: number, integration: Partial<Integration>): Promise<Integration | undefined>;
-  
+
   // Financial summary operations
   getFinancialSummary(userId: number): Promise<FinancialSummary | undefined>;
   createFinancialSummary(summary: InsertFinancialSummary): Promise<FinancialSummary>;
   updateFinancialSummary(userId: number, summary: Partial<FinancialSummary>): Promise<FinancialSummary | undefined>;
-  
+
   // Transaction operations
   getTransactions(userId: number, limit?: number): Promise<Transaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
-  
+
   // Task operations
   getTasks(userId: number, limit?: number): Promise<Task[]>;
   getTask(id: number): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, task: Partial<Task>): Promise<Task | undefined>;
-  
+
   // AI Message operations
   getAiMessages(userId: number, limit?: number): Promise<AiMessage[]>;
   createAiMessage(message: InsertAiMessage): Promise<AiMessage>;
@@ -54,7 +57,7 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     return user || undefined;
   }
-  
+
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user || undefined;
@@ -67,7 +70,7 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return user;
   }
-  
+
   async updateUser(id: number, data: Partial<User>): Promise<User | undefined> {
     const [user] = await db
       .update(users)
@@ -129,13 +132,13 @@ export class DatabaseStorage implements IStorage {
 
   async updateFinancialSummary(userId: number, data: Partial<FinancialSummary>): Promise<FinancialSummary | undefined> {
     const updatedData = { ...data, updatedAt: new Date() };
-    
+
     const [summary] = await db
       .update(financialSummaries)
       .set(updatedData)
       .where(eq(financialSummaries.userId, userId))
       .returning();
-    
+
     return summary || undefined;
   }
 
@@ -188,7 +191,7 @@ export class DatabaseStorage implements IStorage {
       const priorityOrder = { urgent: 0, due_soon: 1, upcoming: 2, null: 3 };
       const aPriority = a.priority ? priorityOrder[a.priority as keyof typeof priorityOrder] : priorityOrder.null;
       const bPriority = b.priority ? priorityOrder[b.priority as keyof typeof priorityOrder] : priorityOrder.null;
-      
+
       if (aPriority !== bPriority) return aPriority - bPriority;
 
       return 0;
@@ -252,7 +255,7 @@ export const storage = new DatabaseStorage();
   try {
     // Check if demo user exists, if not create it
     let user = await storage.getUserByUsername("demo");
-    
+
     if (!user) {
       // Create default user
       user = await storage.createUser({
@@ -263,7 +266,7 @@ export const storage = new DatabaseStorage();
         role: "Financial Manager",
         avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
       });
-      
+
       // Setup integrations for Chitty Services
       const integrations = [
         {

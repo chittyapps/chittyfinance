@@ -10,7 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { getServiceColor, getServiceIcon } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { toast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
+import MercuryAccounts from "@/components/integrations/MercuryAccounts";
 
 export default function Settings() {
   // Get user data
@@ -28,6 +29,8 @@ export default function Settings() {
     queryKey: ["/api/mercury/accounts"],
     enabled: integrations?.some((i) => i.serviceType === "mercury_bank") ?? false,
   });
+
+  const { toast } = useToast();
 
   return (
     <div className="py-6">

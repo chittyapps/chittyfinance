@@ -11,6 +11,8 @@ import NotFound from "@/pages/not-found";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { User } from "@shared/schema";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { TenantProvider } from "@/contexts/TenantContext";
 
 // Create auth context for the application
 export const AuthContext = createContext<{
@@ -87,9 +89,11 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthContext.Provider value={authContextValue}>
-        <Router />
-      </AuthContext.Provider>
+      <ThemeProvider>
+        <TenantProvider>
+          <Router />
+        </TenantProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

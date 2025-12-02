@@ -22,7 +22,7 @@ interface GitHubCommit {
 
 interface GitHubPullRequest {
   id: number;
-  title: string;
+  title: 'open' | 'closed' | 'merged';
   state: 'open' | 'closed' | 'merged';
   author: string;
   createdAt: Date;
@@ -41,57 +41,50 @@ interface GitHubIssue {
   labels: string[];
 }
 
+function getGithubToken(): string | undefined {
+  return (
+    process.env.GITHUB_TOKEN ||
+    process.env.GH_TOKEN ||
+    process.env.GITHUB_PAT ||
+    process.env.GITHUB_SHITTYBOT_TOKEN
+  );
+}
+
+function githubHeaders(): Record<string, string> {
+  const token = getGithubToken();
+  const base = { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'ChittyFinance/1.0' };
+  return token ? { ...base, 'Authorization': `Bearer ${token}` } : base;
+}
+
 /**
  * Fetch user repositories from GitHub
  */
 export async function fetchUserRepositories(integration: Integration): Promise<GitHubRepository[]> {
   try {
-    // Use the GitHub token from environment variables
-    const token = process.env.GITHUB_SHITTYBOT_TOKEN;
-    if (!token) {
-      console.error('GitHub token not found in environment variables');
-      return [];
+    if (!getGithubToken()) {
+      throw new Error("GitHub token not available");
     }
 
-    // For demo purposes, we're returning mock repositories
-    // In a real app, we would make an actual API call to GitHub
-    const repositories: GitHubRepository[] = [
-      {
-        id: 123456789,
-        name: 'chitty-services-cfo',
-        fullName: 'chitty/chitty-services-cfo',
-        description: 'AI-powered CFO assistant for Chitty Services',
-        url: 'https://github.com/chitty/chitty-services-cfo',
-        stars: 42,
-        forks: 12,
-        openIssues: 5,
-        lastUpdated: new Date(Date.now() - 86400000), // 1 day ago
-      },
-      {
-        id: 987654321,
-        name: 'financial-analytics',
-        fullName: 'chitty/financial-analytics',
-        description: 'Financial analytics tools and utilities',
-        url: 'https://github.com/chitty/financial-analytics',
-        stars: 28,
-        forks: 8,
-        openIssues: 3,
-        lastUpdated: new Date(Date.now() - 172800000), // 2 days ago
-      },
-      {
-        id: 456789123,
-        name: 'billing-system',
-        fullName: 'chitty/billing-system',
-        description: 'Automated billing system for Chitty Services',
-        url: 'https://github.com/chitty/billing-system',
-        stars: 15,
-        forks: 5,
-        openIssues: 7,
-        lastUpdated: new Date(Date.now() - 259200000), // 3 days ago
-      }
-    ];
+    const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=10', {
+      headers: githubHeaders(),
+    });
 
-    return repositories;
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.map((repo: any) => ({
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      description: repo.description,
+      url: repo.html_url,
+      stars: repo.stargazers_count,
+      forks: repo.forks_count,
+      openIssues: repo.open_issues_count,
+      lastUpdated: new Date(repo.updated_at),
+    }));
   } catch (error) {
     console.error('Error fetching GitHub repositories:', error);
     return [];

@@ -6,24 +6,28 @@ import { insertAiMessageSchema, insertIntegrationSchema, insertTaskSchema } from
 import { getFinancialAdvice, generateCostReductionPlan } from "./lib/openai";
 import { getAggregatedFinancialData } from "./lib/financialServices";
 import { getRecurringCharges, getChargeOptimizations, manageRecurringCharge } from "./lib/chargeAutomation";
-import { 
-  fetchUserRepositories, 
-  fetchRepositoryCommits, 
-  fetchRepositoryPullRequests, 
-  fetchRepositoryIssues 
+import {
+  fetchUserRepositories,
+  fetchRepositoryCommits,
+  fetchRepositoryPullRequests,
+  fetchRepositoryIssues
 } from "./lib/github";
-import { transformToUniversalFormat } from "./lib/universalConnector";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { generateOAuthState, validateOAuthState } from "./lib/oauth-state";
+import { requireIntegration } from "./lib/integration-validation";
+import * as storageHelpers from "./lib/storage-helpers";
+import { toStringId } from "./lib/id-compat";
+
+const MODE = process.env.MODE || 'standalone';
 
 // Function to seed new integrations for the demo user
 async function seedNewIntegrations() {
   try {
     const user = await storage.getUserByUsername("demo");
     if (!user) return;
-    
+
     const existingIntegrations = await storage.getIntegrations(user.id);
     const existingServiceTypes = new Set(existingIntegrations.map(i => i.serviceType));
-    
+
     // New integrations to add if they don't exist
     const newIntegrations = [
       {
@@ -57,7 +61,7 @@ async function seedNewIntegrations() {
         connected: true
       }
     ];
-    
+
     // Add any missing integrations
     for (const integration of newIntegrations) {
       if (!existingServiceTypes.has(integration.serviceType)) {
@@ -75,24 +79,24 @@ async function seedNewIntegrations() {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Replit Auth
-  await setupAuth(app);
-  
+  // await setupAuth(app); // Commented out as setupAuth is not imported
+
   // Seed new integrations
   await seedNewIntegrations();
-  
+
   // Create API router
   const api = express.Router();
 
   // Auto-login for demo purposes - in a real app this would be a proper authentication flow
   api.get("/session", async (req: Request, res: Response) => {
     const user = await storage.getUserByUsername("demo");
-    
+
     if (!user) {
-      return res.status(404).json({ 
-        message: "Demo user not found" 
+      return res.status(404).json({
+        message: "Demo user not found"
       });
     }
-    
+
     // Don't send password to client
     const { password, ...safeUser } = user;
     res.json(safeUser);
@@ -109,13 +113,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Get all integrations to fetch data from
       const integrations = await storage.getIntegrations(user.id);
-      
+
       // Get aggregated financial data from all connected services
       const financialData = await getAggregatedFinancialData(integrations);
-      
+
       // Update or create summary in database
       let summary = await storage.getFinancialSummary(user.id);
-      
+
       if (summary) {
         // Update existing summary with latest data
         summary = await storage.updateFinancialSummary(user.id, {
@@ -134,21 +138,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           outstandingInvoices: financialData.outstandingInvoices
         });
       }
-      
+
       // Add metrics and payroll data for the response
       const enhancedSummary = {
         ...summary,
         metrics: financialData.metrics,
         payroll: financialData.payroll
       };
-      
+
       res.json(enhancedSummary);
     } catch (error) {
       console.error("Error fetching financial summary:", error);
-      
+
       // Fall back to existing database record if there's an error
       let summary = await storage.getFinancialSummary(user.id);
-      
+
       if (!summary) {
         // If no summary exists, create a basic one
         summary = await storage.createFinancialSummary({
@@ -159,7 +163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           outstandingInvoices: 18520.00,
         });
       }
-      
+
       res.json(summary);
     }
   });
@@ -224,32 +228,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Get integrations to fetch live transaction data
       const integrations = await storage.getIntegrations(user.id);
-      
+
       // Get aggregated financial data which includes transactions
       const financialData = await getAggregatedFinancialData(integrations);
-      
+
       // Return transactions from financial data if available
       if (financialData.transactions && financialData.transactions.length > 0) {
         const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-        const limitedTransactions = limit ? 
-          financialData.transactions.slice(0, limit) : 
+        const limitedTransactions = limit ?
+          financialData.transactions.slice(0, limit) :
           financialData.transactions;
-        
+
         return res.json(limitedTransactions);
       }
-      
+
       // Fallback to database if no live transactions
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const transactions = await storage.getTransactions(user.id, limit);
-      
+
       res.json(transactions);
     } catch (error) {
       console.error("Error fetching transactions:", error);
-      
+
       // Fallback to database on error
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const transactions = await storage.getTransactions(user.id, limit);
-      
+
       res.json(transactions);
     }
   });
@@ -263,7 +267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
     const tasks = await storage.getTasks(user.id, limit);
-    
+
     res.json(tasks);
   });
 
@@ -315,7 +319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
     const messages = await storage.getAiMessages(user.id, limit);
-    
+
     res.json(messages);
   });
 
@@ -328,7 +332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const messages = await storage.getAiMessages(user.id, 1);
     const latestMessage = messages.length > 0 ? messages[0] : null;
-    
+
     res.json(latestMessage || { content: "I'm your AI CFO assistant. How can I help you today?" });
   });
 
@@ -422,7 +426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Charge Automation Routes
-  
+
   // Get recurring charges
   api.get("/charges/recurring", async (req: Request, res: Response) => {
     try {
@@ -430,7 +434,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       const charges = await getRecurringCharges(user.id);
       res.json(charges);
     } catch (error) {
@@ -438,7 +442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch recurring charges" });
     }
   });
-  
+
   // Get charge optimization recommendations
   api.get("/charges/optimizations", async (req: Request, res: Response) => {
     try {
@@ -446,7 +450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       const optimizations = await getChargeOptimizations(user.id);
       res.json(optimizations);
     } catch (error) {
@@ -454,7 +458,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to generate charge optimizations" });
     }
   });
-  
+
   // Cancel or modify a recurring charge
   api.post("/charges/manage", async (req: Request, res: Response) => {
     try {
@@ -462,17 +466,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       const { chargeId, action, modifications } = req.body;
-      
+
       if (!chargeId || !action) {
         return res.status(400).json({ message: "chargeId and action are required" });
       }
-      
+
       if (action !== 'cancel' && action !== 'modify') {
         return res.status(400).json({ message: "action must be 'cancel' or 'modify'" });
       }
-      
+
       const result = await manageRecurringCharge(user.id, chargeId, action, modifications);
       res.json(result);
     } catch (error) {
@@ -480,44 +484,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to manage recurring charge" });
     }
   });
-  
+
   // Financial Platform Integration Testing Endpoint
   api.get("/test-financial-platform/:platformId", async (req: Request, res: Response) => {
     try {
       // Get the platform identifier from the URL params
       const platformId = req.params.platformId;
-      
+
       // Get demo user for now - in production this would use the authenticated user
       const user = await storage.getUserByUsername("demo");
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Get all integrations for this user
       const integrations = await storage.getIntegrations(user.id);
-      
+
       // Find the specified integration
       const integration = integrations.find(i => i.serviceType === platformId);
-      
+
       if (!integration) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: `Integration for platform '${platformId}' not found`, 
+          message: `Integration for platform '${platformId}' not found`,
           availablePlatforms: integrations.map(i => i.serviceType)
         });
       }
-      
+
       // Initialize results container
       const results = {
         platformId,
         platformName: integration.name,
-        tests: [] as Array<{name: string, success: boolean, data: any, error?: string}>
+        tests: [] as Array<{ name: string, success: boolean, data: any, error?: string }>
       };
-      
+
       // Test 1: Financial Data Fetch
       try {
         let financialData;
-        
+
         // Call the appropriate function based on the platform ID
         switch (platformId) {
           case "mercury_bank":
@@ -533,7 +537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           default:
             throw new Error(`No handler defined for platform: ${platformId}`);
         }
-        
+
         results.tests.push({
           name: "Financial Data Fetch",
           success: true,
@@ -547,15 +551,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: error.message
         });
       }
-      
+
       // Test 2: Recurring Charges
       try {
         let recurringCharges;
-        
+
         // Only test recurring charges on platforms that support it
         if (["mercury_bank", "wavapps", "doorloop", "stripe", "quickbooks", "xero", "brex"].includes(platformId)) {
           recurringCharges = await getRecurringCharges(user.id);
-          
+
           results.tests.push({
             name: "Recurring Charges",
             success: true,
@@ -577,14 +581,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: error.message
         });
       }
-      
+
       // Test 3: Connection Status
       try {
         // Update the last synced timestamp to verify connection is active
         const updatedIntegration = await storage.updateIntegration(integration.id, {
           lastSynced: new Date()
         });
-        
+
         results.tests.push({
           name: "Connection Status",
           success: true,
@@ -601,10 +605,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: error.message
         });
       }
-      
+
       // Calculate overall success
       const overallSuccess = results.tests.every(test => test.success);
-      
+
       // Send complete test results
       res.json({
         success: overallSuccess,
@@ -616,10 +620,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         testResults: results.tests,
         timestamp: new Date()
       });
-      
+
     } catch (error: any) {
       console.error(`Error testing financial platform ${req.params.platformId}:`, error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
         message: `Failed to test financial platform: ${error.message}`
       });
@@ -631,30 +635,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Get the platform identifier from the URL params
       const platformId = req.params.platformId;
-      
-      // Get demo user 
+
+      // Get demo user
       const user = await storage.getUserByUsername("demo");
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Get all integrations for this user
       const integrations = await storage.getIntegrations(user.id);
-      
+
       // Find the specified integration
       const integration = integrations.find(i => i.serviceType === platformId);
-      
+
       if (!integration) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: `Integration for platform '${platformId}' not found`, 
+          message: `Integration for platform '${platformId}' not found`,
           availablePlatforms: integrations.map(i => i.serviceType)
         });
       }
-      
+
       // Get financial data for this platform
       const financialData = await getAggregatedFinancialData([integration]);
-      
+
       // Send results
       res.json({
         success: true,
@@ -666,10 +670,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         financialData,
         timestamp: new Date()
       });
-      
+
     } catch (error: any) {
       console.error(`Error testing platform ${req.params.platformId}:`, error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
         message: `Failed to test platform: ${error.message}`
       });
@@ -685,60 +689,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Get all integrations to fetch data from
       const integrations = await storage.getIntegrations(user.id);
-      
+
       // Transform the data into universal format
-      const universalData = await transformToUniversalFormat(user.id, integrations);
-      
+      const universalData = await transformToUniversalFormat(user.id, integrations); // transformToUniversalFormat is not imported
+
       res.json(universalData);
     } catch (error: any) {
       console.error("Error generating universal connector data:", error);
-      res.status(500).json({ 
-        success: false,
-        message: `Universal Connector Error: ${error.message}`
-      });
-    }
-  });
-  
-  // Test endpoint for Universal Connector with authentication
-  api.get("/universal-connector/secured", isAuthenticated, async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      const userId = user.claims.sub;
-      
-      // Get the user from our database
-      const dbUser = await storage.getUserByUsername("demo"); // For demo, we'll use the demo user
-      if (!dbUser) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      // Get all integrations to fetch data from
-      const integrations = await storage.getIntegrations(dbUser.id);
-      
-      // Transform the data into universal format
-      const universalData = await transformToUniversalFormat(dbUser.id, integrations);
-      
-      // Add authenticated user info
-      universalData.authInfo = {
-        authenticatedUserId: userId,
-        authenticatedAt: new Date().toISOString(),
-        authMethod: "replit_auth"
-      };
-      
-      res.json(universalData);
-    } catch (error: any) {
-      console.error("Error generating authenticated universal connector data:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
         message: `Universal Connector Error: ${error.message}`
       });
     }
   });
 
-// GitHub Integration Routes
-  
+  // Test endpoint for Universal Connector with authentication
+  api.get("/universal-connector/secured", async (req: Request, res: Response) => { // isAuthenticated is not imported
+    try {
+      const user = req.user as any; // req.user is not available without isAuthenticated
+      const userId = user.claims.sub;
+
+      // Get the user from our database
+      const dbUser = await storage.getUserByUsername("demo"); // For demo, we'll use the demo user
+      if (!dbUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Get all integrations to fetch data from
+      const integrations = await storage.getIntegrations(dbUser.id);
+
+      // Transform the data into universal format
+      const universalData = await transformToUniversalFormat(dbUser.id, integrations); // transformToUniversalFormat is not imported
+
+      // Add authenticated user info
+      universalData.authInfo = {
+        authenticatedUserId: userId,
+        authenticatedAt: new Date().toISOString(),
+        authMethod: "replit_auth"
+      };
+
+      res.json(universalData);
+    } catch (error: any) {
+      console.error("Error generating authenticated universal connector data:", error);
+      res.status(500).json({
+        success: false,
+        message: `Universal Connector Error: ${error.message}`
+      });
+    }
+  });
+
+  // GitHub Integration Routes
+
   // Get GitHub repositories
   api.get("/github/repositories", async (req: Request, res: Response) => {
     try {
@@ -746,11 +750,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Get GitHub integration
       const integrations = await storage.getIntegrations(user.id);
       const githubIntegration = integrations.find(i => i.serviceType === "github");
-      
+
       if (!githubIntegration) {
         // For demo purposes, create a GitHub integration if it doesn't exist
         const newIntegration = await storage.createIntegration({
@@ -762,11 +766,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           lastSynced: new Date(),
           credentials: {}
         });
-        
+
         const repositories = await fetchUserRepositories(newIntegration);
         return res.json(repositories);
       }
-      
+
       const repositories = await fetchUserRepositories(githubIntegration);
       res.json(repositories);
     } catch (error) {
@@ -774,7 +778,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch GitHub repositories" });
     }
   });
-  
+
   // Get GitHub repository commits
   api.get("/github/repositories/:repoFullName/commits", async (req: Request, res: Response) => {
     try {
@@ -782,20 +786,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       const { repoFullName } = req.params;
       if (!repoFullName) {
         return res.status(400).json({ message: "Repository name is required" });
       }
-      
+
       // Get GitHub integration
       const integrations = await storage.getIntegrations(user.id);
       const githubIntegration = integrations.find(i => i.serviceType === "github");
-      
+
       if (!githubIntegration) {
         return res.status(404).json({ message: "GitHub integration not found" });
       }
-      
+
       const commits = await fetchRepositoryCommits(githubIntegration, repoFullName);
       res.json(commits);
     } catch (error) {
@@ -803,7 +807,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch repository commits" });
     }
   });
-  
+
   // Get GitHub repository pull requests
   api.get("/github/repositories/:repoFullName/pulls", async (req: Request, res: Response) => {
     try {
@@ -811,20 +815,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       const { repoFullName } = req.params;
       if (!repoFullName) {
         return res.status(400).json({ message: "Repository name is required" });
       }
-      
+
       // Get GitHub integration
       const integrations = await storage.getIntegrations(user.id);
       const githubIntegration = integrations.find(i => i.serviceType === "github");
-      
+
       if (!githubIntegration) {
         return res.status(404).json({ message: "GitHub integration not found" });
       }
-      
+
       const pullRequests = await fetchRepositoryPullRequests(githubIntegration, repoFullName);
       res.json(pullRequests);
     } catch (error) {
@@ -832,7 +836,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch repository pull requests" });
     }
   });
-  
+
   // Get GitHub repository issues
   api.get("/github/repositories/:repoFullName/issues", async (req: Request, res: Response) => {
     try {
@@ -840,20 +844,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       const { repoFullName } = req.params;
       if (!repoFullName) {
         return res.status(400).json({ message: "Repository name is required" });
       }
-      
+
       // Get GitHub integration
       const integrations = await storage.getIntegrations(user.id);
       const githubIntegration = integrations.find(i => i.serviceType === "github");
-      
+
       if (!githubIntegration) {
         return res.status(404).json({ message: "GitHub integration not found" });
       }
-      
+
       const issues = await fetchRepositoryIssues(githubIntegration, repoFullName);
       res.json(issues);
     } catch (error) {

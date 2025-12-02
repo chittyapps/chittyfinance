@@ -38,7 +38,7 @@ export default function Header() {
               <span className="text-lg font-bold gradient-text">Chitty Services</span>
             </div>
           </div>
-          
+
           <div className="flex w-full md:ml-0">
             <div className="relative w-full text-zinc-400 focus-within:text-lime-400">
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -53,14 +53,14 @@ export default function Header() {
             </div>
           </div>
         </div>
-        
+
         <div className="ml-4 flex items-center md:ml-6">
           <ThemeToggle />
-          
-          <button className="ml-3 p-1 rounded-full text-zinc-400 hover:text-lime-400 focus:outline-none transition-colors">
+
+          <button className="ml-3 p-1 rounded-full text-muted-foreground hover:text-orange-500 dark:hover:text-orange-400 focus:outline-none transition-colors">
             <Bell className="h-6 w-6" />
           </button>
-          
+
           <div className="ml-3 relative">
             <button className="flex max-w-xs bg-zinc-800 border border-zinc-700 rounded-full p-1 text-sm hover:border-lime-500 transition-colors">
               <MoreVertical className="h-6 w-6 text-zinc-300" />

@@ -10,18 +10,19 @@ interface FinancialAdviceParams {
   outstandingInvoices: number;
   previousAdvice?: string;
   userQuery?: string;
+  userId?: string; // Added userId to the interface
 }
 
-export async function getFinancialAdvice({
-  cashOnHand,
-  monthlyRevenue,
-  monthlyExpenses,
-  outstandingInvoices,
-  previousAdvice,
-  userQuery
-}: FinancialAdviceParams): Promise<string> {
-  try {
-    const basePrompt = `
+// Placeholder for buildAdviceSystemPrompt, as it's not provided in the original or changes
+// In a real scenario, this function would be defined elsewhere or imported.
+// For the purpose of this merge, we'll assume it exists and is correctly implemented.
+function buildAdviceSystemPrompt({ cashOnHand, monthlyRevenue, monthlyExpenses, outstandingInvoices }: {
+  cashOnHand: number;
+  monthlyRevenue: number;
+  monthlyExpenses: number;
+  outstandingInvoices: number;
+}): string {
+  const basePrompt = `
 You are an AI CFO assistant with expertise in financial analysis. Analyze this data:
 - Cash on Hand: $${cashOnHand.toFixed(2)}
 - Monthly Revenue: $${monthlyRevenue.toFixed(2)}
@@ -41,9 +42,23 @@ Provide:
 
 Keep responses concise but comprehensive.
 `;
+  return basePrompt;
+}
 
-    const messages = [
-      { role: "system", content: basePrompt },
+
+export async function getFinancialAdvice({
+  cashOnHand,
+  monthlyRevenue,
+  monthlyExpenses,
+  outstandingInvoices,
+  previousAdvice,
+  userQuery,
+  userId // userId is now part of the function signature
+}: FinancialAdviceParams): Promise<string> {
+  try {
+    const system = buildAdviceSystemPrompt({ cashOnHand, monthlyRevenue, monthlyExpenses, outstandingInvoices });
+    const messages: Array<{ role: "system"|"user"|"assistant"; content: string }> = [
+      { role: "system", content: system },
     ];
 
     if (previousAdvice) {
@@ -53,9 +68,9 @@ Keep responses concise but comprehensive.
     if (userQuery) {
       messages.push({ role: "user", content: userQuery });
     } else {
-      messages.push({ 
-        role: "user", 
-        content: "What financial advice can you provide based on this data? Focus on practical next steps and actionable insights." 
+      messages.push({
+        role: "user",
+        content: "What financial advice can you provide based on this data? Focus on practical next steps and actionable insights."
       });
     }
 
