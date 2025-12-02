@@ -8,6 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getServiceColor, getServiceIcon } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { toast } from "@/components/ui/use-toast";
 
 export default function Settings() {
   // Get user data
@@ -20,6 +23,12 @@ export default function Settings() {
     queryKey: ["/api/integrations"],
   });
 
+  // Get mercury accounts
+  const { data: mercuryAccounts } = useQuery<any[]>({
+    queryKey: ["/api/mercury/accounts"],
+    enabled: integrations?.some((i) => i.serviceType === "mercury_bank") ?? false,
+  });
+
   return (
     <div className="py-6">
       {/* Page Header */}
@@ -27,7 +36,7 @@ export default function Settings() {
         <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">
           Settings
         </h1>
-        
+
         <div className="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
           <span>Configure your account, integrations, and preferences.</span>
         </div>
@@ -41,7 +50,7 @@ export default function Settings() {
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="profile" className="mt-6">
             <Card>
               <CardHeader>
@@ -80,7 +89,7 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="integrations" className="mt-6">
             <Card>
               <CardHeader>
@@ -109,18 +118,60 @@ export default function Settings() {
                             <p className="text-xs text-gray-500 dark:text-gray-400">{integration.description}</p>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-4">
-                          <div className="flex items-center space-x-2">
-                            <Switch id={`integration-${integration.id}`} checked={integration.connected} />
+                        <div className="flex items-center space-x-2">
+                          {integration.serviceType === "mercury_bank" && (() => {
+                            const selected: string[] = ((integration.credentials as any)?.selectedAccountIds || []) as string[];
+                            const names = (mercuryAccounts || [])
+                              .filter(a => selected.includes(a.id))
+                              .map(a => `${a.name}${a.last4 ? ` • ${a.last4}` : ''}`);
+                            const count = selected.length || 0;
+                            return (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge variant="secondary" className="mr-1 cursor-default">
+                                      {count} {count === 1 ? 'account' : 'accounts'}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="max-w-xs whitespace-pre-line">
+                                      {names.length > 0 ? names.join('\n') : 'No account details available'}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            );
+                          })()}
+                          <div className="flex items-center space-x-2 mr-2">
+                            <Switch id={`integration-${integration.id}`} checked={integration.connected ?? false} />
                             <Label htmlFor={`integration-${integration.id}`}>
                               {integration.connected ? "Connected" : "Disconnected"}
                             </Label>
                           </div>
-                          <Button variant="outline" size="sm">Configure</Button>
+                          {integration.serviceType === "mercury_bank" && (
+                            <>
+                              <a href="/connect" target="_blank" rel="noreferrer">
+                                <Button variant="outline" size="sm">Connect</Button>
+                              </a>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-orange-500 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                                onClick={() => {
+                                  const el = document.getElementById("mercury-accounts");
+                                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                                  toast({ title: "Mercury", description: "Jumped to accounts section." });
+                                }}
+                              >
+                                Manage accounts
+                              </Button>
+                            </>
+                          )}
+                          <Button variant="outline" size="sm" className="hover:bg-orange-50 dark:hover:bg-orange-950/30">Tweak It</Button>
                         </div>
                       </div>
                     ))}
-                    
+
                     <Button className="mt-4" variant="outline">
                       Add New Integration
                     </Button>
@@ -129,7 +180,7 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="notifications" className="mt-6">
             <Card>
               <CardHeader>
@@ -149,7 +200,7 @@ export default function Settings() {
                     </div>
                     <Switch id="financial-alerts" defaultChecked />
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-medium">Invoice Reminders</h4>
@@ -159,7 +210,7 @@ export default function Settings() {
                     </div>
                     <Switch id="invoice-reminders" defaultChecked />
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-medium">AI CFO Insights</h4>
@@ -169,7 +220,7 @@ export default function Settings() {
                     </div>
                     <Switch id="ai-insights" defaultChecked />
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-medium">Account Activity</h4>
@@ -179,7 +230,7 @@ export default function Settings() {
                     </div>
                     <Switch id="account-activity" defaultChecked />
                   </div>
-                  
+
                   <div className="pt-4">
                     <Button>Save Preferences</Button>
                   </div>
