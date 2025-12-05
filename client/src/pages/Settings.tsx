@@ -8,8 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getServiceColor, getServiceIcon } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useToast } from "@/hooks/use-toast";
+import MercuryAccounts from "@/components/integrations/MercuryAccounts";
 
 export default function Settings() {
+  const { toast } = useToast();
+  type MercuryAccount = { id: string; name: string; last4?: string; type?: string; currency?: string };
   // Get user data
   const { data: user, isLoading: isLoadingUser } = useQuery<User>({
     queryKey: ["/api/session"],
@@ -20,16 +26,20 @@ export default function Settings() {
     queryKey: ["/api/integrations"],
   });
 
+// Fetch Mercury accounts (for tooltips / labels)
+  const { data: mercuryAccounts } = useQuery<MercuryAccount[]>({
+    queryKey: ["/api/mercury/accounts"],
+  });
   return (
     <div className="py-6">
       {/* Page Header */}
       <div className="px-4 sm:px-6 md:px-8">
-        <h1 className="text-2xl font-semibold gradient-text">
-          Make It Less Sh*tty
+        <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">
+          Settings
         </h1>
-        
+
         <div className="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
-          <span>Tweak everything until it's just right. No sh*tty defaults here!</span>
+          <span>Configure your account, integrations, and preferences.</span>
         </div>
       </div>
 
@@ -41,13 +51,13 @@ export default function Settings() {
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="profile" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Your Non-Sh*tty Profile</CardTitle>
+                <CardTitle>Profile Settings</CardTitle>
                 <CardDescription>
-                  Make yourself look good. We won't judge.
+                  Update your account information and preferences.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -73,20 +83,20 @@ export default function Settings() {
                       <Input id="role" defaultValue={user?.role} placeholder="Your role" />
                     </div>
                     <div className="pt-4">
-                      <Button className="bg-orange-500 hover:bg-orange-600 text-white">Make It Official</Button>
+                      <Button>Save Changes</Button>
                     </div>
                   </>
                 )}
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="integrations" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Your Money Connections</CardTitle>
+                <CardTitle>Service Integrations</CardTitle>
                 <CardDescription>
-                  Hook up all your financial sh*t in one place. We play nice with everyone.
+                  Manage connections to your financial services and productivity tools.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -106,36 +116,87 @@ export default function Settings() {
                           </div>
                           <div>
                             <h4 className="text-sm font-medium">{integration.name}</h4>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">{integration.description}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {integration.description}
+                              {integration.serviceType === "mercury_bank" && (
+                                <span className="ml-2 text-[11px] text-orange-600 dark:text-orange-400">Managed via ChittyConnect</span>
+                              )}
+                            </p>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-4">
-                          <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2">
+                          {integration.serviceType === "mercury_bank" && (() => {
+                            const selected: string[] = ((integration.credentials as any)?.selectedAccountIds || []) as string[];
+                            const names = (mercuryAccounts || [])
+                              .filter(a => selected.includes(a.id))
+                              .map(a => `${a.name}${a.last4 ? ` • ${a.last4}` : ''}`);
+                            const count = selected.length || 0;
+                            return (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge variant="secondary" className="mr-1 cursor-default">
+                                      {count} {count === 1 ? 'account' : 'accounts'}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="max-w-xs whitespace-pre-line">
+                                      {names.length > 0 ? names.join('\n') : 'No account details available'}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            );
+                          })()}
+                          <div className="flex items-center space-x-2 mr-2">
                             <Switch id={`integration-${integration.id}`} checked={integration.connected ?? false} />
                             <Label htmlFor={`integration-${integration.id}`}>
                               {integration.connected ? "Connected" : "Disconnected"}
                             </Label>
                           </div>
+                          {integration.serviceType === "mercury_bank" && (
+                            <>
+                              <a href="/connect" target="_blank" rel="noreferrer">
+                                <Button variant="outline" size="sm">Connect</Button>
+                              </a>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-orange-500 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                                onClick={() => {
+                                  const el = document.getElementById("mercury-accounts");
+                                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                                  toast({ title: "Mercury", description: "Jumped to accounts section." });
+                                }}
+                              >
+                                Manage accounts
+                              </Button>
+                            </>
+                          )}
                           <Button variant="outline" size="sm" className="hover:bg-orange-50 dark:hover:bg-orange-950/30">Tweak It</Button>
                         </div>
                       </div>
                     ))}
-                    
-                    <Button className="mt-4 bg-orange-500 hover:bg-orange-600 text-white">
-                      Hook Up More Services
+
+                    <Button className="mt-4" variant="outline">
+                      Add New Integration
                     </Button>
                   </div>
                 )}
               </CardContent>
             </Card>
+
+            <div className="mt-6">
+              <MercuryAccounts />
+            </div>
           </TabsContent>
-          
+
           <TabsContent value="notifications" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Alert Settings That Don't Suck</CardTitle>
+                <CardTitle>Notification Preferences</CardTitle>
                 <CardDescription>
-                  We'll only bug you when it's actually important. Promise.
+                  Control when and how you want to be notified.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -144,44 +205,44 @@ export default function Settings() {
                     <div>
                       <h4 className="text-sm font-medium">Financial Alerts</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        We'll let you know when sh*t gets weird.
+                        Receive alerts for unusual financial activity.
                       </p>
                     </div>
                     <Switch id="financial-alerts" defaultChecked />
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-medium">Invoice Reminders</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Never forget to get paid. That would be sh*tty.
+                        Get notified when invoices are coming due.
                       </p>
                     </div>
                     <Switch id="invoice-reminders" defaultChecked />
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-medium">AI CFO Insights</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Your AI buddy's non-sh*tty money tips.
+                        Proactive financial advice from your AI assistant.
                       </p>
                     </div>
                     <Switch id="ai-insights" defaultChecked />
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-medium">Account Activity</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Know when big sh*t happens in your accounts.
+                        Be notified about significant account activity.
                       </p>
                     </div>
                     <Switch id="account-activity" defaultChecked />
                   </div>
-                  
+
                   <div className="pt-4">
-                    <Button className="bg-orange-500 hover:bg-orange-600 text-white">Lock It In</Button>
+                    <Button>Save Preferences</Button>
                   </div>
                 </div>
               </CardContent>

@@ -25,8 +25,8 @@ export interface OptimizationRecommendation {
 }
 
 // Get all recurring charges from connected services
-export async function getRecurringCharges(userId: number): Promise<ChargeDetails[]> {
-  const integrations = await storage.getIntegrations(userId);
+export async function getRecurringCharges(userId: number | string): Promise<ChargeDetails[]> {
+  const integrations = await storage.getIntegrations(String(userId));
   const charges: ChargeDetails[] = [];
 
   for (const integration of integrations) {
@@ -45,6 +45,22 @@ export async function getRecurringCharges(userId: number): Promise<ChargeDetails
       case 'doorloop':
         const doorloopCharges = await fetchDoorLoopCharges(integration);
         charges.push(...doorloopCharges);
+        break;
+      case 'stripe':
+        const stripeCharges = await fetchStripeCharges(integration);
+        charges.push(...stripeCharges);
+        break;
+      case 'brex':
+        const brexCharges = await fetchBrexCharges(integration);
+        charges.push(...brexCharges);
+        break;
+      case 'quickbooks':
+        const quickbooksCharges = await fetchQuickBooksCharges(integration);
+        charges.push(...quickbooksCharges);
+        break;
+      case 'xero':
+        const xeroCharges = await fetchXeroCharges(integration);
+        charges.push(...xeroCharges);
         break;
     }
   }
@@ -142,6 +158,136 @@ async function fetchDoorLoopCharges(integration: Integration): Promise<ChargeDet
   ];
 }
 
+// Mock function to fetch charges from Stripe
+async function fetchStripeCharges(integration: Integration): Promise<ChargeDetails[]> {
+  // In a real implementation, this would connect to Stripe API
+  console.log(`Fetching recurring charges from Stripe for integration ID ${integration.id}`);
+  
+  // Return mock data for demo purposes
+  return [
+    {
+      id: "stripe-charge-1",
+      merchantName: "Premium Subscription Plan",
+      amount: 199.00,
+      date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      category: "Subscription",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+      subscriptionId: "sub_premium_123"
+    },
+    {
+      id: "stripe-charge-2",
+      merchantName: "Basic Subscription Plan",
+      amount: 99.00,
+      date: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000),
+      category: "Subscription",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 18 * 24 * 60 * 60 * 1000),
+      subscriptionId: "sub_basic_456"
+    }
+  ];
+}
+
+// Mock function to fetch charges from QuickBooks
+async function fetchQuickBooksCharges(integration: Integration): Promise<ChargeDetails[]> {
+  // In a real implementation, this would connect to QuickBooks API
+  console.log(`Fetching recurring charges from QuickBooks for integration ID ${integration.id}`);
+  
+  // Return mock data for demo purposes
+  return [
+    {
+      id: "qb-charge-1",
+      merchantName: "QuickBooks Online Advanced",
+      amount: 180.00,
+      date: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000),
+      category: "Accounting Software",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000),
+      subscriptionId: "qb_advanced_789"
+    },
+    {
+      id: "qb-charge-2",
+      merchantName: "TSheets Time Tracking",
+      amount: 40.00,
+      date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+      category: "Time Tracking",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000),
+      subscriptionId: "tsheets_sub_234"
+    }
+  ];
+}
+
+// Mock function to fetch charges from Xero
+async function fetchXeroCharges(integration: Integration): Promise<ChargeDetails[]> {
+  // In a real implementation, this would connect to Xero API
+  console.log(`Fetching recurring charges from Xero for integration ID ${integration.id}`);
+  
+  // Return mock data for demo purposes
+  return [
+    {
+      id: "xero-charge-1",
+      merchantName: "Xero Premium Plan",
+      amount: 60.00,
+      date: new Date(Date.now() - 22 * 24 * 60 * 60 * 1000),
+      category: "Accounting Software",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000),
+      subscriptionId: "xero_premium_567"
+    },
+    {
+      id: "xero-charge-2",
+      merchantName: "Xero Projects",
+      amount: 10.00,
+      date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      category: "Project Management",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 23 * 24 * 60 * 60 * 1000),
+      subscriptionId: "xero_projects_890"
+    }
+  ];
+}
+
+// Mock function to fetch charges from Brex
+async function fetchBrexCharges(integration: Integration): Promise<ChargeDetails[]> {
+  // In a real implementation, this would connect to Brex API
+  console.log(`Fetching recurring charges from Brex for integration ID ${integration.id}`);
+  
+  // Return mock data for demo purposes
+  return [
+    {
+      id: "brex-charge-1",
+      merchantName: "Slack Enterprise",
+      amount: 15.00,
+      date: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000),
+      category: "Communication",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 19 * 24 * 60 * 60 * 1000),
+      subscriptionId: "slack_enterprise_123"
+    },
+    {
+      id: "brex-charge-2",
+      merchantName: "Microsoft Office 365",
+      amount: 20.00,
+      date: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+      category: "Productivity",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 22 * 24 * 60 * 60 * 1000),
+      subscriptionId: "office365_sub_456"
+    },
+    {
+      id: "brex-charge-3",
+      merchantName: "Monday.com",
+      amount: 39.00,
+      date: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
+      category: "Project Management",
+      recurring: true,
+      nextChargeDate: new Date(Date.now() + 16 * 24 * 60 * 60 * 1000),
+      subscriptionId: "monday_pro_789"
+    }
+  ];
+}
+
 // Analyze charges and provide optimization recommendations
 export async function getChargeOptimizations(userId: number): Promise<OptimizationRecommendation[]> {
   const charges = await getRecurringCharges(userId);
@@ -175,6 +321,58 @@ export async function getChargeOptimizations(userId: number): Promise<Optimizati
         potentialSavings: charge.amount * 0.2, // Estimate 20% savings
         reasoning: "Cloud service providers often offer discounts for committed usage or prepayment.",
         alternativeOptions: ["Reserved instances", "Savings plans"]
+      });
+    }
+    
+    // For Accounting Software, suggest consolidation
+    if (charge.category === "Accounting Software") {
+      recommendations.push({
+        chargeId: charge.id,
+        merchantName: charge.merchantName,
+        currentAmount: charge.amount,
+        suggestedAction: 'consolidate',
+        potentialSavings: charge.amount * 0.5, // Estimate 50% savings
+        reasoning: "Multiple accounting software subscriptions detected. Consider consolidating to one platform.",
+        alternativeOptions: ["QuickBooks", "Xero", "FreshBooks"]
+      });
+    }
+    
+    // For Project Management tools, suggest consolidation
+    if (charge.category === "Project Management") {
+      recommendations.push({
+        chargeId: charge.id,
+        merchantName: charge.merchantName,
+        currentAmount: charge.amount,
+        suggestedAction: 'consolidate',
+        potentialSavings: charge.amount * 0.4, // Estimate 40% savings
+        reasoning: "Multiple project management subscriptions detected. Consolidate to reduce costs.",
+        alternativeOptions: ["Asana", "ClickUp", "Notion"]
+      });
+    }
+    
+    // For Subscription services over $150, suggest negotiation
+    if (charge.category === "Subscription" && charge.amount > 150) {
+      recommendations.push({
+        chargeId: charge.id,
+        merchantName: charge.merchantName,
+        currentAmount: charge.amount,
+        suggestedAction: 'negotiate',
+        potentialSavings: charge.amount * 0.15, // Estimate 15% savings
+        reasoning: "High-cost subscription detected. Negotiate annual pricing or bulk discounts.",
+        alternativeOptions: ["Annual prepayment", "Team license"]
+      });
+    }
+    
+    // For Communication tools, suggest consolidation
+    if (charge.category === "Communication") {
+      recommendations.push({
+        chargeId: charge.id,
+        merchantName: charge.merchantName,
+        currentAmount: charge.amount,
+        suggestedAction: 'consolidate',
+        potentialSavings: charge.amount * 0.3, // Estimate 30% savings
+        reasoning: "Multiple communication tools detected. Consider consolidating to one platform.",
+        alternativeOptions: ["Microsoft Teams", "Slack", "Discord"]
       });
     }
   }

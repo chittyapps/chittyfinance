@@ -5,28 +5,21 @@ import { Toaster } from "@/components/ui/toaster";
 import { useEffect, useState } from "react";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
-import Landing from "@/pages/Landing";
+import Login from "@/pages/Login";
+import ConnectAccounts from "@/pages/ConnectAccounts";
 import NotFound from "@/pages/not-found";
+import ValuationConsole from "@/pages/ValuationConsole";
+import Properties from "@/pages/Properties";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
+import Connections from "@/pages/Connections";
 import { User } from "@shared/schema";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { TenantProvider } from "@/contexts/TenantContext";
 
 function Router() {
   const [location] = useLocation();
-  const showSidebar = location !== "/login" && location !== "/register" && location !== "/landing";
-  const isLandingPage = location === "/landing";
-
-  if (isLandingPage) {
-    return (
-      <>
-        <Switch>
-          <Route path="/landing" component={Landing} />
-        </Switch>
-        <Toaster />
-      </>
-    );
-  }
+  const showSidebar = location !== "/login" && location !== "/register" && location !== "/connect-accounts";
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -36,7 +29,12 @@ function Router() {
         <main className="flex-1 relative overflow-y-auto focus:outline-none">
           <Switch>
             <Route path="/" component={Dashboard} />
+            <Route path="/properties" component={Properties} />
+            <Route path="/valuation/550-w-surf-504" component={ValuationConsole} />
+            <Route path="/connections" component={Connections} />
             <Route path="/settings" component={Settings} />
+            <Route path="/login" component={Login} />
+            <Route path="/connect-accounts" component={ConnectAccounts} />
             <Route component={NotFound} />
           </Switch>
         </main>
@@ -51,31 +49,45 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Auto-login for demo purposes
+    // Attempt to get the user session
     fetch("/api/session")
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          throw new Error('Not authenticated');
+        }
+        return res.json();
+      })
       .then(data => {
         setUser(data);
         setLoading(false);
       })
       .catch(err => {
         console.error("Failed to get session:", err);
+        setUser(null);
         setLoading(false);
       });
   }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background">
-        <div className="text-primary">Loading...</div>
+      <div className="flex items-center justify-center h-screen bg-zinc-950">
+        <div className="animate-spin w-8 h-8 border-4 border-lime-500 border-t-transparent rounded-full"></div>
       </div>
     );
   }
 
+  const authContextValue = {
+    user,
+    isAuthenticated: !!user,
+    isLoading: loading
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <Router />
+        <TenantProvider>
+          <Router />
+        </TenantProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

@@ -20,7 +20,7 @@ export default function FinancialSummary({ data, isLoading }: FinancialSummaryPr
           ) : (
             <div className="flex items-center">
               <div className="flex-shrink-0 bg-zinc-800 rounded-md p-3 border border-lime-500/20">
-                <CircleDollarSign className="h-6 w-6 text-orange-500 dark:text-orange-400" />
+                <CircleDollarSign className="h-6 w-6 text-lime-400" />
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
@@ -39,8 +39,8 @@ export default function FinancialSummary({ data, isLoading }: FinancialSummaryPr
         </CardContent>
         <div className="bg-zinc-800 border-t border-zinc-700 px-5 py-3">
           <div className="text-sm">
-            <a href="#" className="font-medium text-orange-500 dark:text-orange-400 hover:text-lime-300 transition-colors">
-              Dig deeper →
+            <a href="#" className="font-medium text-lime-400 hover:text-lime-300 transition-colors">
+              View details →
             </a>
           </div>
         </div>
@@ -54,7 +54,7 @@ export default function FinancialSummary({ data, isLoading }: FinancialSummaryPr
           ) : (
             <div className="flex items-center">
               <div className="flex-shrink-0 bg-zinc-800 rounded-md p-3 border border-lime-500/20">
-                <TrendingUp className="h-6 w-6 text-orange-500 dark:text-orange-400" />
+                <TrendingUp className="h-6 w-6 text-lime-400" />
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
@@ -74,8 +74,8 @@ export default function FinancialSummary({ data, isLoading }: FinancialSummaryPr
         </CardContent>
         <div className="bg-zinc-800 border-t border-zinc-700 px-5 py-3">
           <div className="text-sm">
-            <a href="#" className="font-medium text-orange-500 dark:text-orange-400 hover:text-lime-300 transition-colors">
-              Dig deeper →
+            <a href="#" className="font-medium text-lime-400 hover:text-lime-300 transition-colors">
+              View details →
             </a>
           </div>
         </div>
@@ -89,7 +89,7 @@ export default function FinancialSummary({ data, isLoading }: FinancialSummaryPr
           ) : (
             <div className="flex items-center">
               <div className="flex-shrink-0 bg-zinc-800 rounded-md p-3 border border-lime-500/20">
-                <FileText className="h-6 w-6 text-orange-500 dark:text-orange-400" />
+                <FileText className="h-6 w-6 text-lime-400" />
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
@@ -108,8 +108,8 @@ export default function FinancialSummary({ data, isLoading }: FinancialSummaryPr
         </CardContent>
         <div className="bg-zinc-800 border-t border-zinc-700 px-5 py-3">
           <div className="text-sm">
-            <a href="#" className="font-medium text-orange-500 dark:text-orange-400 hover:text-lime-300 transition-colors">
-              Dig deeper →
+            <a href="#" className="font-medium text-lime-400 hover:text-lime-300 transition-colors">
+              View details →
             </a>
           </div>
         </div>
@@ -123,7 +123,7 @@ export default function FinancialSummary({ data, isLoading }: FinancialSummaryPr
           ) : (
             <div className="flex items-center">
               <div className="flex-shrink-0 bg-zinc-800 rounded-md p-3 border border-lime-500/20">
-                <TrendingDown className="h-6 w-6 text-orange-500 dark:text-orange-400" />
+                <TrendingDown className="h-6 w-6 text-lime-400" />
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
@@ -143,8 +143,8 @@ export default function FinancialSummary({ data, isLoading }: FinancialSummaryPr
         </CardContent>
         <div className="bg-zinc-800 border-t border-zinc-700 px-5 py-3">
           <div className="text-sm">
-            <a href="#" className="font-medium text-orange-500 dark:text-orange-400 hover:text-lime-300 transition-colors">
-              Dig deeper →
+            <a href="#" className="font-medium text-lime-400 hover:text-lime-300 transition-colors">
+              View details →
             </a>
           </div>
         </div>

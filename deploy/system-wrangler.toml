@@ -1,0 +1,105 @@
+# Cloudflare Workers configuration for ChittyFinance (System Mode)
+# Deploys to Cloudflare Workers for ChittyOS ecosystem integration
+
+name = "chittyfinance"
+main = "../server/worker.ts"
+compatibility_date = "2024-11-01"
+
+# Account ID (from ChittyOS ecosystem)
+account_id = "0bc21e3a5a9de1a4cc843be9c3e98121"
+
+# Workers settings
+workers_dev = false
+
+# Routes (configure your custom domain)
+routes = [
+  { pattern = "finance.chitty.cc/*", zone_name = "chitty.cc" }
+]
+
+# Environment variables
+[vars]
+MODE = "system"
+NODE_ENV = "production"
+
+# Secrets (set with: wrangler secret put SECRET_NAME)
+# Run these commands to set secrets:
+# wrangler secret put DATABASE_URL
+# wrangler secret put OPENAI_API_KEY
+# wrangler secret put MERCURY_API_KEY
+# wrangler secret put WAVE_API_TOKEN
+# wrangler secret put STRIPE_SECRET_KEY
+# wrangler secret put CHITTY_ID_SERVICE_TOKEN
+# wrangler secret put CHITTY_AUTH_SERVICE_TOKEN
+# wrangler secret put JWT_SECRET
+
+# Build configuration
+[build]
+command = "npm run build:system"
+
+[assets]
+directory = "../dist/public"
+
+# Limits
+[limits]
+cpu_ms = 50  # 50ms CPU time per request
+
+# Triggers (Cron jobs for data sync, etc.)
+# [triggers]
+# crons = ["0 */6 * * *"]  # Every 6 hours
+
+# D1 Database binding (if using D1 instead of Neon)
+# Note: Currently using Neon PostgreSQL via DATABASE_URL
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "chittyfinance"
+# database_id = "your-d1-database-id"
+
+# KV Namespace for caching
+[[kv_namespaces]]
+binding = "CACHE"
+id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
+
+# R2 Bucket for document storage
+[[r2_buckets]]
+binding = "DOCUMENTS"
+bucket_name = "chittyfinance-documents"
+preview_bucket_name = "chittyfinance-documents-preview"
+
+# Durable Objects (Agent)
+[[durable_objects.bindings]]
+name = "CF_AGENT"
+class_name = "ChittyAgent"
+
+# Migrations for Durable Object (SQLite storage)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChittyAgent"]
+
+# Analytics Engine for usage tracking
+# [[analytics_engine_datasets]]
+# binding = "ANALYTICS"
+
+# Service bindings to other ChittyOS services
+# [[services]]
+# binding = "CHITTYID"
+# service = "chittyid"
+# environment = "production"
+
+# [[services]]
+# binding = "CHITTYAUTH"
+# service = "chittyauth"
+# environment = "production"
+
+# Development environment
+[env.staging]
+name = "chittyfinance-staging"
+vars = { MODE = "system", NODE_ENV = "staging" }
+
+# Production environment
+[env.production]
+name = "chittyfinance"
+vars = { MODE = "system", NODE_ENV = "production" }
+
+# Compatibility flags
+compatibility_flags = ["nodejs_compat"]

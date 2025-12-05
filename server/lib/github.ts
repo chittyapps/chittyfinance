@@ -1,4 +1,4 @@
-import { Integration } from "@shared/schema";
+import { Integration } from '@shared/schema';
 
 interface GitHubRepository {
   id: number;
@@ -22,7 +22,7 @@ interface GitHubCommit {
 
 interface GitHubPullRequest {
   id: number;
-  title: string;
+  title: 'open' | 'closed' | 'merged';
   state: 'open' | 'closed' | 'merged';
   author: string;
   createdAt: Date;
@@ -41,25 +41,39 @@ interface GitHubIssue {
   labels: string[];
 }
 
+function getGithubToken(): string | undefined {
+  return (
+    process.env.GITHUB_TOKEN ||
+    process.env.GH_TOKEN ||
+    process.env.GITHUB_PAT ||
+    process.env.GITHUB_SHITTYBOT_TOKEN
+  );
+}
+
+function githubHeaders(): Record<string, string> {
+  const token = getGithubToken();
+  const base = { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'ChittyFinance/1.0' };
+  return token ? { ...base, 'Authorization': `Bearer ${token}` } : base;
+}
+
+/**
+ * Fetch user repositories from GitHub
+ */
 export async function fetchUserRepositories(integration: Integration): Promise<GitHubRepository[]> {
   try {
-    if (!process.env.GITHUB_SHITTYBOT_TOKEN) {
+    if (!getGithubToken()) {
       throw new Error("GitHub token not available");
     }
 
     const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=10', {
-      headers: {
-        'Authorization': `token ${process.env.GITHUB_SHITTYBOT_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json',
-      }
+      headers: githubHeaders(),
     });
 
     if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+      throw new Error(`GitHub API error: ${response.statusText}`);
     }
 
     const data = await response.json();
-    
     return data.map((repo: any) => ({
       id: repo.id,
       name: repo.name,
@@ -69,113 +83,85 @@ export async function fetchUserRepositories(integration: Integration): Promise<G
       stars: repo.stargazers_count,
       forks: repo.forks_count,
       openIssues: repo.open_issues_count,
-      lastUpdated: new Date(repo.updated_at)
+      lastUpdated: new Date(repo.updated_at),
     }));
-  } catch (error: any) {
-    console.error("Error fetching GitHub repositories:", error.message);
+  } catch (error) {
+    console.error('Error fetching GitHub repositories:', error);
     return [];
   }
 }
 
+/**
+ * Fetch commits for a specific repository
+ */
 export async function fetchRepositoryCommits(integration: Integration, repoFullName: string): Promise<GitHubCommit[]> {
   try {
-    if (!process.env.GITHUB_SHITTYBOT_TOKEN) {
+    if (!getGithubToken()) {
       throw new Error("GitHub token not available");
     }
 
     const response = await fetch(`https://api.github.com/repos/${repoFullName}/commits?per_page=5`, {
-      headers: {
-        'Authorization': `token ${process.env.GITHUB_SHITTYBOT_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json',
-      }
+      headers: githubHeaders(),
     });
 
     if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+      throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const data = await response.json();
-    
-    return data.map((commit: any) => ({
-      id: commit.sha,
-      message: commit.commit.message,
-      author: commit.commit.author.name,
-      date: new Date(commit.commit.author.date),
-      url: commit.html_url
-    }));
-  } catch (error: any) {
-    console.error(`Error fetching commits for ${repoFullName}:`, error.message);
+    const commits = await response.json();
+    return commits;
+  } catch (error) {
+    console.error(`Error fetching commits for repository ${repoFullName}:`, error);
     return [];
   }
 }
 
+/**
+ * Fetch pull requests for a specific repository
+ */
 export async function fetchRepositoryPullRequests(integration: Integration, repoFullName: string): Promise<GitHubPullRequest[]> {
   try {
-    if (!process.env.GITHUB_SHITTYBOT_TOKEN) {
+    if (!getGithubToken()) {
       throw new Error("GitHub token not available");
     }
 
     const response = await fetch(`https://api.github.com/repos/${repoFullName}/pulls?state=all&per_page=5`, {
-      headers: {
-        'Authorization': `token ${process.env.GITHUB_SHITTYBOT_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json',
-      }
+      headers: githubHeaders(),
     });
 
     if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+      throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const data = await response.json();
-    
-    return data.map((pr: any) => ({
-      id: pr.id,
-      title: pr.title,
-      state: pr.merged_at ? 'merged' : pr.state,
-      author: pr.user.login,
-      createdAt: new Date(pr.created_at),
-      updatedAt: new Date(pr.updated_at),
-      url: pr.html_url
-    }));
-  } catch (error: any) {
-    console.error(`Error fetching pull requests for ${repoFullName}:`, error.message);
+    const pulls = await response.json();
+    return pulls;
+  } catch (error) {
+    console.error(`Error fetching pull requests for repository ${repoFullName}:`, error);
     return [];
   }
 }
 
+/**
+ * Fetch issues for a specific repository
+ */
 export async function fetchRepositoryIssues(integration: Integration, repoFullName: string): Promise<GitHubIssue[]> {
   try {
-    if (!process.env.GITHUB_SHITTYBOT_TOKEN) {
+    if (!getGithubToken()) {
       throw new Error("GitHub token not available");
     }
 
     const response = await fetch(`https://api.github.com/repos/${repoFullName}/issues?state=all&per_page=5`, {
-      headers: {
-        'Authorization': `token ${process.env.GITHUB_SHITTYBOT_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json',
-      }
+      headers: githubHeaders(),
     });
 
     if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+      throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const data = await response.json();
-    
-    return data
-      .filter((issue: any) => !issue.pull_request) // Filter out pull requests
-      .map((issue: any) => ({
-        id: issue.id,
-        title: issue.title,
-        state: issue.state,
-        author: issue.user.login,
-        createdAt: new Date(issue.created_at),
-        updatedAt: new Date(issue.updated_at),
-        url: issue.html_url,
-        labels: issue.labels.map((label: any) => label.name)
-      }));
-  } catch (error: any) {
-    console.error(`Error fetching issues for ${repoFullName}:`, error.message);
+    const issues = await response.json();
+    return issues;
+  } catch (error) {
+    console.error(`Error fetching issues for repository ${repoFullName}:`, error);
     return [];
   }
 }

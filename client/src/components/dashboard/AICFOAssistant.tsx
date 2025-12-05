@@ -1,136 +1,137 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+import React, { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Lightbulb, SendHorizontal } from "lucide-react";
-import { FormEvent, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { AiMessage } from "@shared/schema";
+import { MessageCircle, DollarSign, Send, Loader2 } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+
+interface Message {
+  role: "assistant" | "user";
+  content: string;
+  timestamp?: Date;
+}
 
 export default function AICFOAssistant() {
+  const [activeTab, setActiveTab] = useState("chat");
   const [query, setQuery] = useState("");
-  const queryClient = useQueryClient();
+  const [messages, setMessages] = useState<Message[]>([{
+    role: "assistant",
+    content: "Hello! I'm your AI CFO assistant. Ask me anything about your finances.",
+    timestamp: new Date()
+  }]);
 
-  // Fetch latest AI message
-  const { data: aiMessage, isLoading } = useQuery<AiMessage>({
-    queryKey: ["/api/ai-assistant/latest"],
-  });
-
-  // Send query to AI assistant
-  const sendQueryMutation = useMutation({
-    mutationFn: async (query: string) => {
-      const res = await apiRequest("POST", "/api/ai-assistant/query", { query });
-      return res.json();
+  const askAI = useMutation({
+    mutationFn: async (question: string) => {
+      const response = await fetch("/api/ai-assistant/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: question })
+      });
+      if (!response.ok) throw new Error("Failed to get AI response");
+      return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-assistant/latest"] });
-      setQuery("");
+    onSuccess: (data) => {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: data.content,
+        timestamp: new Date()
+      }]);
     }
   });
 
-  // Generate cost reduction plan
-  const generatePlanMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/ai-assistant/generate-plan", {});
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-assistant/latest"] });
-    }
-  });
-
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
-      sendQueryMutation.mutate(query);
-    }
+    if (!query.trim()) return;
+
+    setMessages(prev => [...prev, {
+      role: "user",
+      content: query,
+      timestamp: new Date()
+    }]);
+    
+    askAI.mutate(query);
+    setQuery("");
   };
 
-  const isLoading2 = sendQueryMutation.isPending || generatePlanMutation.isPending;
-
   return (
-    <Card className="card">
-      <CardHeader className="card-header">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg font-medium text-orange-500 dark:text-orange-400">AI CFO Assistant</CardTitle>
-          <Badge className="bg-orange-500 text-white font-medium">
-            Never Sh*tty™
-          </Badge>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="p-5">
-        <div className="bg-orange-50 dark:bg-orange-950/20 rounded-lg p-4 border border-orange-200 dark:border-orange-900">
-          <div className="flex items-start space-x-4">
-            <div className="flex-shrink-0">
-              <div className="bg-orange-100 dark:bg-orange-900/20 border border-orange-500/20 rounded-full h-10 w-10 flex items-center justify-center">
-                <Lightbulb className="h-6 w-6 text-orange-500 dark:text-orange-400" />
-              </div>
-            </div>
-            <div className="min-w-0 flex-1">
-              {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-3/4 bg-zinc-800" />
-                  <Skeleton className="h-4 w-full bg-zinc-800" />
-                  <Skeleton className="h-4 w-5/6 bg-zinc-800" />
+    <Card>
+      <Tabs value={activeTab} className="w-full" onValueChange={setActiveTab}>
+        <TabsList className="w-full border-b border-zinc-700 rounded-none p-0">
+          <TabsTrigger 
+            value="chat" 
+            className="data-[state=active]:bg-zinc-800 rounded-none flex-1"
+          >
+            <MessageCircle className="h-4 w-4 mr-2" />
+            Chat with AI CFO
+          </TabsTrigger>
+          <TabsTrigger 
+            value="analysis" 
+            className="data-[state=active]:bg-zinc-800 rounded-none flex-1"
+          >
+            <DollarSign className="h-4 w-4 mr-2" />
+            Financial Analysis
+          </TabsTrigger>
+        </TabsList>
+
+        <CardContent className="p-4">
+          <TabsContent value="chat" className="mt-0 space-y-4">
+            <div className="h-[400px] overflow-y-auto space-y-4 mb-4">
+              {messages.map((msg, i) => (
+                <div key={i} className="flex flex-col gap-2">
+                  <div className="flex items-start gap-2">
+                    <Badge variant={msg.role === "assistant" ? "default" : "secondary"}>
+                      {msg.role === "assistant" ? "AI CFO" : "You"}
+                    </Badge>
+                    <div className={`rounded-lg p-4 flex-1 ${
+                      msg.role === "assistant" ? "bg-zinc-800" : "bg-zinc-900"
+                    }`}>
+                      <p className="text-zinc-300 whitespace-pre-wrap">{msg.content}</p>
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <p className="text-sm text-foreground">
-                  <span className="font-medium text-orange-500 dark:text-orange-400">Your Non-Sh*tty CFO: </span>
-                  <span>{aiMessage?.content || "Ready to deliver actually useful financial advice. No BS, just results."}</span>
-                </p>
-              )}
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button
-                  className="bg-orange-500 text-white hover:bg-orange-600 transition-colors"
-                  disabled={isLoading2}
-                  onClick={() => generatePlanMutation.mutate()}
-                >
-                  Get Un-Sh*tty Advice
-                </Button>
-                <Button
-                  variant="outline"
-                  className="border-orange-500 text-foreground hover:bg-orange-50 dark:hover:bg-orange-950/30 hover:text-orange-600 dark:hover:text-orange-400 transition-colors"
-                  disabled={isLoading2}
-                  onClick={() => setQuery("What are my options for improving cash flow?")}
-                >
-                  Hit Me With Another
-                </Button>
-              </div>
+              ))}
             </div>
-          </div>
-        </div>
-        
-        <div className="mt-4">
-          <form onSubmit={handleSubmit}>
-            <label htmlFor="query" className="block text-sm font-medium text-orange-500 dark:text-orange-400">
-              Ask Your Never Sh*tty™ CFO
-            </label>
-            <div className="mt-1 flex rounded-md shadow-sm">
+
+            <form onSubmit={handleSubmit} className="flex gap-2">
               <Input
-                type="text"
-                name="query"
-                id="query"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="flex-1 block w-full rounded-none rounded-l-md sm:text-sm border-border bg-background text-foreground focus:border-orange-500"
-                placeholder="What's keeping your finances sh*tty? Let's fix it..."
-                disabled={isLoading2}
+                placeholder="Ask about your finances..."
+                disabled={askAI.isPending}
               />
-              <Button
-                type="submit"
-                className="-ml-px relative inline-flex items-center space-x-2 px-4 py-2 rounded-r-md bg-orange-500 text-white hover:bg-orange-600"
-                disabled={isLoading2 || !query.trim()}
-              >
-                <SendHorizontal className="h-5 w-5" />
-                <span>Send</span>
+              <Button type="submit" disabled={askAI.isPending}>
+                {askAI.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
+            </form>
+          </TabsContent>
+
+          <TabsContent value="analysis" className="mt-0">
+            <div className="space-y-4">
+              <div className="bg-zinc-800 rounded-lg p-4">
+                <h3 className="font-medium text-zinc-200 mb-2">
+                  Proactive Insights
+                </h3>
+                <p className="text-zinc-400">
+                  Based on your current financial data, here are key areas for attention:
+                </p>
+                <ul className="mt-2 space-y-2 text-zinc-300">
+                  <li>• Cash flow management and optimization</li>
+                  <li>• Revenue growth opportunities</li>
+                  <li>• Cost reduction strategies</li>
+                  <li>• Investment recommendations</li>
+                </ul>
+              </div>
             </div>
-          </form>
-        </div>
-      </CardContent>
+          </TabsContent>
+        </CardContent>
+      </Tabs>
     </Card>
   );
 }

@@ -1,0 +1,26 @@
+{
+  "name": "chittyfinance",
+  "description": "AI-powered financial operations for the ChittyOS ecosystem. Provides intelligent financial tracking, multi-account Mercury integration via ChittyConnect, and an AI CFO assistant.",
+  "version": "1.0.0",
+  "endpoints": [
+    "https://finance.chitty.cc/health",
+    "https://finance.chitty.cc/api/v1/status"
+  ],
+  "schema": {
+    "version": "1.0",
+    "entities": [
+      "users",
+      "integrations",
+      "financial_summaries",
+      "transactions",
+      "tasks",
+      "ai_messages"
+    ],
+    "relationships": []
+  },
+  "security": {
+    "authentication": "jwt",
+    "encryption": "https"
+  }
+}
+

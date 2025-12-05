@@ -42,13 +42,18 @@ export default function Landing() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link href="/login">
                 <Button size="lg" className="bg-orange-500 hover:bg-orange-600 text-white px-8">
-                  Start Free Trial
+                  Get Started
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
               <Button size="lg" variant="outline" className="border-orange-500 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30">
                 Watch 2-min Demo
               </Button>
+              <a href="/connect" target="_blank" rel="noreferrer">
+                <Button size="lg" variant="outline" className="border-orange-500 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30">
+                  Connect with ChittyConnect
+                </Button>
+              </a>
             </div>
             
             <p className="mt-4 text-sm text-muted-foreground">

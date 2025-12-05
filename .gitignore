@@ -17,3 +17,9 @@ vite.config.ts.*
 *.key
 *.pem
 *.p12
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+migrations/
