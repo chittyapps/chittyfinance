@@ -208,14 +208,19 @@ export async function analyzeTransaction(
   const redFlags: string[] = [];
   let riskScore = 0;
 
+  // Convert numeric string to number
+  const amount = typeof transaction.amount === 'string'
+    ? parseFloat(transaction.amount)
+    : transaction.amount;
+
   // Check for round dollar amounts
-  if (Math.abs(transaction.amount) % 1 === 0 && Math.abs(transaction.amount) >= 100) {
+  if (Math.abs(amount) % 1 === 0 && Math.abs(amount) >= 100) {
     redFlags.push("Round dollar amount");
     riskScore += 15;
   }
 
   // Check for unusual amounts (very large)
-  if (Math.abs(transaction.amount) > 50000) {
+  if (Math.abs(amount) > 50000) {
     redFlags.push("Unusually large amount");
     riskScore += 25;
   }
@@ -328,7 +333,7 @@ export async function detectDuplicatePayments(
     }
   }
 
-  for (const [key, transactionIds] of seen.entries()) {
+  for (const [key, transactionIds] of Array.from(seen.entries())) {
     if (transactionIds.length > 1) {
       anomalies.push({
         anomalyType: "duplicate_payment",
@@ -420,7 +425,11 @@ export async function detectRoundDollarAnomalies(
   const roundTransactions: number[] = [];
 
   for (const transaction of userTransactions) {
-    if (Math.abs(transaction.amount) % 1 === 0 && Math.abs(transaction.amount) >= 100) {
+    const amount = typeof transaction.amount === 'string'
+      ? parseFloat(transaction.amount)
+      : transaction.amount;
+
+    if (Math.abs(amount) % 1 === 0 && Math.abs(amount) >= 100) {
       roundTransactions.push(transaction.id);
     }
   }
@@ -539,7 +548,10 @@ export async function runBenfordsLawAnalysis(
     .from(transactions)
     .where(eq(transactions.userId, userId));
 
-  const amounts = userTransactions.map(t => Math.abs(t.amount));
+  const amounts = userTransactions.map((t: Transaction) => {
+    const amount = typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount;
+    return Math.abs(amount);
+  });
   const results = analyzeBenfordsLaw(amounts);
 
   // Check if analysis failed (significant deviations)
@@ -582,11 +594,15 @@ export async function traceFlowOfFunds(
   }
 
   // Build flow path (simplified - would be more complex in production)
+  const amount = typeof transaction.amount === 'string'
+    ? parseFloat(transaction.amount)
+    : transaction.amount;
+
   const path = [{
     step: 1,
     account: "Source Account",
     entity: transaction.title || "Unknown",
-    amount: Math.abs(transaction.amount),
+    amount: Math.abs(amount),
     date: transaction.date || new Date(),
     method: transaction.type === "expense" ? "payment" : "deposit"
   }];
@@ -594,7 +610,7 @@ export async function traceFlowOfFunds(
   return {
     flowId,
     path,
-    totalAmount: Math.abs(transaction.amount),
+    totalAmount: Math.abs(amount),
     ultimateBeneficiaries: [transaction.title || "Unknown"],
     traceability: "partially_traced"
   };
@@ -636,7 +652,10 @@ export async function calculateDirectLoss(
   const breakdown: { category: string; amount: number; description: string }[] = [];
 
   for (const transaction of improperTransactions) {
-    const amount = Math.abs(transaction.amount);
+    const transactionAmount = typeof transaction.amount === 'string'
+      ? parseFloat(transaction.amount)
+      : transaction.amount;
+    const amount = Math.abs(transactionAmount);
     totalDamage += amount;
 
     breakdown.push({
@@ -731,13 +750,18 @@ export async function generateExecutiveSummary(
     .from(forensicAnomalies)
     .where(eq(forensicAnomalies.investigationId, investigationId));
 
-  const improperCount = analyses.filter(a => a.legitimacyAssessment === "improper").length;
-  const questionableCount = analyses.filter(a => a.legitimacyAssessment === "questionable").length;
-  const highRiskCount = analyses.filter(a => a.riskLevel === "high").length;
+  const improperCount = analyses.filter((a: any) => a.legitimacyAssessment === "improper").length;
+  const questionableCount = analyses.filter((a: any) => a.legitimacyAssessment === "questionable").length;
+  const highRiskCount = analyses.filter((a: any) => a.riskLevel === "high").length;
 
   const totalImproper = analyses
-    .filter(a => a.legitimacyAssessment === "improper")
-    .reduce((sum, a) => sum + Math.abs(a.transactionAmount || 0), 0);
+    .filter((a: any) => a.legitimacyAssessment === "improper")
+    .reduce((sum: number, a: any) => {
+      const amount = typeof a.transactionAmount === 'string'
+        ? parseFloat(a.transactionAmount)
+        : a.transactionAmount;
+      return sum + Math.abs(amount || 0);
+    }, 0);
 
   let summary = `# Executive Summary: ${investigation.title}\n\n`;
   summary += `**Case Number:** ${investigation.caseNumber}\n`;
@@ -757,8 +781,8 @@ export async function generateExecutiveSummary(
 
   summary += `## Primary Concerns\n\n`;
   if (anomalies.length > 0) {
-    const critical = anomalies.filter(a => a.severity === "critical").length;
-    const high = anomalies.filter(a => a.severity === "high").length;
+    const critical = anomalies.filter((a: any) => a.severity === "critical").length;
+    const high = anomalies.filter((a: any) => a.severity === "high").length;
     summary += `- ${critical} critical anomalies requiring immediate attention\n`;
     summary += `- ${high} high-severity anomalies\n`;
   }
