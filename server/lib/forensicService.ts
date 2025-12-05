@@ -317,7 +317,9 @@ export async function detectDuplicatePayments(
   const seen = new Map<string, number[]>();
 
   for (const transaction of userTransactions) {
-    const key = `${transaction.amount}_${transaction.description || 'none'}_${transaction.date?.toISOString().split('T')[0]}`;
+    // Handle null/undefined dates to prevent crashes
+    const dateKey = transaction.date ? transaction.date.toISOString().split('T')[0] : 'no-date';
+    const key = `${transaction.amount}_${transaction.description || 'none'}_${dateKey}`;
 
     if (!seen.has(key)) {
       seen.set(key, [transaction.id]);
@@ -423,10 +425,15 @@ export async function detectRoundDollarAnomalies(
     }
   }
 
+  const anomalies: AnomalyDetectionResult[] = [];
+
+  // Check for empty dataset to prevent division by zero
+  if (userTransactions.length === 0) {
+    return anomalies;
+  }
+
   // Calculate percentage of round amounts
   const roundPercentage = (roundTransactions.length / userTransactions.length) * 100;
-
-  const anomalies: AnomalyDetectionResult[] = [];
 
   // If more than 30% are round amounts, flag as anomalous
   if (roundPercentage > 30) {
@@ -479,13 +486,32 @@ export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
   const results: BenfordAnalysisResult[] = [];
   let totalChiSquare = 0;
 
+  // Check for empty dataset to prevent division by zero
+  if (total === 0) {
+    // Return empty results for all digits
+    for (let digit = 1; digit <= 9; digit++) {
+      results.push({
+        digit,
+        observed: 0,
+        expected: expected[digit as keyof typeof expected],
+        deviation: -expected[digit as keyof typeof expected],
+        chiSquare: 0,
+        passed: false
+      });
+    }
+    return results;
+  }
+
   for (let digit = 1; digit <= 9; digit++) {
     const observed = (digitCounts[digit] / total) * 100;
     const expectedFreq = expected[digit as keyof typeof expected];
     const deviation = observed - expectedFreq;
 
-    // Chi-square calculation
-    const chiSquare = Math.pow(digitCounts[digit] - (total * expectedFreq / 100), 2) / (total * expectedFreq / 100);
+    // Chi-square calculation (protect against division by zero)
+    const expectedCount = total * expectedFreq / 100;
+    const chiSquare = expectedCount > 0
+      ? Math.pow(digitCounts[digit] - expectedCount, 2) / expectedCount
+      : 0;
     totalChiSquare += chiSquare;
 
     // Consider significant if deviation > 2%

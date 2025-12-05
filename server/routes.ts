@@ -6,7 +6,13 @@ import { resolveTenant } from "./middleware/tenant";
 import { getServiceBase } from "./lib/registry";
 import { getServiceAuthHeader } from "./lib/chitty-connect";
 import { z } from "zod";
-import { insertAiMessageSchema, insertIntegrationSchema, insertTaskSchema } from "@shared/schema";
+import {
+  insertAiMessageSchema,
+  insertIntegrationSchema,
+  insertTaskSchema,
+  insertForensicInvestigationSchema,
+  insertForensicEvidenceSchema
+} from "@shared/schema";
 import { db } from "./db";
 import { eq, and, inArray } from "drizzle-orm";
 import * as schema from "../database/system.schema";
@@ -1224,6 +1230,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get specific investigation
   api.get("/forensics/investigations/:id", async (req: Request, res: Response) => {
     try {
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
       const investigationId = parseInt(req.params.id);
       if (isNaN(investigationId)) {
         return res.status(400).json({ message: "Invalid investigation ID" });
@@ -1232,6 +1243,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const investigation = await getInvestigation(investigationId);
       if (!investigation) {
         return res.status(404).json({ message: "Investigation not found" });
+      }
+
+      // Authorization: Verify the investigation belongs to the requesting user
+      if (investigation.userId !== user.id) {
+        return res.status(403).json({ message: "Access denied: Investigation belongs to another user" });
       }
 
       res.json(investigation);
@@ -1249,10 +1265,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      const investigation = await createInvestigation({
+      // Input validation using Zod schema
+      const validationResult = insertForensicInvestigationSchema.safeParse({
         ...req.body,
         userId: user.id
       });
+
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid input",
+          errors: validationResult.error.errors
+        });
+      }
+
+      const investigation = await createInvestigation(validationResult.data);
 
       res.status(201).json(investigation);
     } catch (error) {
@@ -1264,9 +1290,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update investigation status
   api.patch("/forensics/investigations/:id/status", async (req: Request, res: Response) => {
     try {
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
       const investigationId = parseInt(req.params.id);
       if (isNaN(investigationId)) {
         return res.status(400).json({ message: "Invalid investigation ID" });
+      }
+
+      // Authorization: Verify ownership
+      const existing = await getInvestigation(investigationId);
+      if (!existing) {
+        return res.status(404).json({ message: "Investigation not found" });
+      }
+      if (existing.userId !== user.id) {
+        return res.status(403).json({ message: "Access denied: Investigation belongs to another user" });
       }
 
       const { status } = req.body;
@@ -1285,15 +1325,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Add evidence to investigation
   api.post("/forensics/investigations/:id/evidence", async (req: Request, res: Response) => {
     try {
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
       const investigationId = parseInt(req.params.id);
       if (isNaN(investigationId)) {
         return res.status(400).json({ message: "Invalid investigation ID" });
       }
 
-      const evidence = await addEvidence({
+      // Authorization: Verify ownership of investigation
+      const investigation = await getInvestigation(investigationId);
+      if (!investigation) {
+        return res.status(404).json({ message: "Investigation not found" });
+      }
+      if (investigation.userId !== user.id) {
+        return res.status(403).json({ message: "Access denied: Investigation belongs to another user" });
+      }
+
+      // Input validation using Zod schema
+      const validationResult = insertForensicEvidenceSchema.safeParse({
         ...req.body,
         investigationId
       });
+
+      if (!validationResult.success) {
+        return res.status(400).json({
+          message: "Invalid input",
+          errors: validationResult.error.errors
+        });
+      }
+
+      const evidence = await addEvidence(validationResult.data);
 
       res.status(201).json(evidence);
     } catch (error) {
