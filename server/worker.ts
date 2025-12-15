@@ -84,8 +84,7 @@ export default {
       console.error('Worker error:', error);
       return new Response(
         JSON.stringify({
-          error: 'Internal Server Error',
-          message: error instanceof Error ? error.message : 'Unknown error'
+          error: 'Internal Server Error'
         }),
         {
           status: 500,
