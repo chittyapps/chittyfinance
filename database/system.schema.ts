@@ -98,8 +98,8 @@ export const transactions = pgTable('transactions', {
   description: text('description').notNull(),
   date: timestamp('date').notNull(),
   payee: text('payee'),
-  propertyId: uuid('property_id'), // Links to properties table
-  unitId: uuid('unit_id'), // Links to units table
+  propertyId: uuid('property_id').references(() => properties.id), // Links to properties table
+  unitId: uuid('unit_id').references(() => units.id), // Links to units table
   externalId: text('external_id'), // For bank/Wave API sync
   reconciled: boolean('reconciled').notNull().default(false),
   metadata: jsonb('metadata'),

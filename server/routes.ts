@@ -1009,55 +1009,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Test endpoint for financial platform integration (without authentication)
-  api.get("/test-platform/:platformId", async (req: Request, res: Response) => {
-    try {
-      // Get the platform identifier from the URL params
-      const platformId = req.params.platformId;
-
-      // Get demo user
-      const user = await storage.getUserByUsername("demo");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // Get all integrations for this user
-      const integrations = await storage.getIntegrations(user.id);
-
-      // Find the specified integration
-      const integration = integrations.find(i => i.serviceType === platformId);
-
-      if (!integration) {
-        return res.status(404).json({
-          success: false,
-          message: `Integration for platform '${platformId}' not found`,
-          availablePlatforms: integrations.map(i => i.serviceType)
-        });
-      }
-
-      // Get financial data for this platform
-      const financialData = await getAggregatedFinancialData([integration]);
-
-      // Send results
-      res.json({
-        success: true,
-        platform: {
-          id: platformId,
-          name: integration.name,
-          type: integration.serviceType
-        },
-        financialData,
-        timestamp: new Date()
-      });
-
-    } catch (error: any) {
-      console.error(`Error testing platform ${req.params.platformId}:`, error);
-      res.status(500).json({
-        success: false,
-        message: `Failed to test platform: ${error.message}`
-      });
-    }
-  });
 
   // Universal Connector endpoint
   api.get("/universal-connector", async (req: Request, res: Response) => {
@@ -1849,6 +1800,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.recordWebhookEvent({ source: 'mercury', eventId, payload: req.body || null });
 
       // Coordinate with Chitty services via Registry (non-blocking)
+      // NOTE: These calls intentionally don't block webhook acknowledgment,
+      // but errors are logged for observability and debugging
       const envelope = {
         source: 'mercury',
         event_id: eventId,
@@ -1857,29 +1810,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         payload: req.body || null,
       };
       const headers = { 'content-type': 'application/json', ...getServiceAuthHeader() } as any;
+      const orchestrationErrors: string[] = [];
+
+      // Evidence service ingestion
       try {
         const evidenceBase = await getServiceBase('evidence');
-        await fetch(`${evidenceBase.replace(/\/$/, '')}/ingest`, { method: 'POST', headers, body: JSON.stringify(envelope) });
-      } catch {}
+        const res = await fetch(`${evidenceBase.replace(/\/$/, '')}/ingest`, { method: 'POST', headers, body: JSON.stringify(envelope) });
+        if (!res.ok) orchestrationErrors.push(`evidence: HTTP ${res.status}`);
+      } catch (e: any) {
+        orchestrationErrors.push(`evidence: ${e?.message || String(e)}`);
+        console.error('[Mercury Webhook] Evidence service error:', e);
+      }
+
+      // Ledger service (transaction events only)
       try {
         const kind = String(envelope.kind || '');
         if (kind.startsWith('mercury.transaction')) {
           const ledgerBase = await getServiceBase('ledger');
-          await fetch(`${ledgerBase.replace(/\/$/, '')}/ingest`, { method: 'POST', headers, body: JSON.stringify(envelope) });
+          const res = await fetch(`${ledgerBase.replace(/\/$/, '')}/ingest`, { method: 'POST', headers, body: JSON.stringify(envelope) });
+          if (!res.ok) orchestrationErrors.push(`ledger: HTTP ${res.status}`);
         }
-      } catch {}
+      } catch (e: any) {
+        orchestrationErrors.push(`ledger: ${e?.message || String(e)}`);
+        console.error('[Mercury Webhook] Ledger service error:', e);
+      }
+
+      // Chronicle audit logging
       try {
         const chronicleBase = await getServiceBase('chronicle');
         const summary = { message: `Mercury event ${envelope.kind} (${eventId})`, ts: envelope.received_at };
-        await fetch(`${chronicleBase.replace(/\/$/, '')}/entries`, { method: 'POST', headers, body: JSON.stringify(summary) });
-      } catch {}
+        const res = await fetch(`${chronicleBase.replace(/\/$/, '')}/entries`, { method: 'POST', headers, body: JSON.stringify(summary) });
+        if (!res.ok) orchestrationErrors.push(`chronicle: HTTP ${res.status}`);
+      } catch (e: any) {
+        orchestrationErrors.push(`chronicle: ${e?.message || String(e)}`);
+        console.error('[Mercury Webhook] Chronicle service error:', e);
+      }
+
+      // Logic/rule evaluation
       try {
         const logicBase = await getServiceBase('logic');
         const summary = { key: 'finance_event', data: { source: envelope.source, kind: envelope.kind } };
-        await fetch(`${logicBase.replace(/\/$/, '')}/evaluate`, { method: 'POST', headers, body: JSON.stringify(summary) });
-      } catch {}
+        const res = await fetch(`${logicBase.replace(/\/$/, '')}/evaluate`, { method: 'POST', headers, body: JSON.stringify(summary) });
+        if (!res.ok) orchestrationErrors.push(`logic: HTTP ${res.status}`);
+      } catch (e: any) {
+        orchestrationErrors.push(`logic: ${e?.message || String(e)}`);
+        console.error('[Mercury Webhook] Logic service error:', e);
+      }
 
-      res.status(202).json({ received: true });
+      // Log orchestration summary
+      if (orchestrationErrors.length > 0) {
+        console.warn(`[Mercury Webhook] Event ${eventId} acknowledged but ${orchestrationErrors.length} downstream errors:`, orchestrationErrors);
+      }
+
+      res.status(202).json({ received: true, orchestrationErrors: orchestrationErrors.length > 0 ? orchestrationErrors : undefined });
     } catch (e) {
       res.status(500).json({ message: "webhook_error" });
     }

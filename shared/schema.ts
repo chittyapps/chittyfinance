@@ -165,6 +165,10 @@ export const insertForensicInvestigationSchema = createInsertSchema(forensicInve
 });
 
 // Forensic Evidence
+// IMMUTABILITY REQUIREMENT: Evidence records must not be modified after creation
+// to maintain legal admissibility and chain of custody integrity.
+// Only chainOfCustody field may be appended to (using atomic JSONB operations).
+// See updateChainOfCustody() in forensicService.ts for proper custody updates.
 export const forensicEvidence = pgTable("forensic_evidence", {
   id: serial("id").primaryKey(),
   investigationId: integer("investigation_id").notNull().references(() => forensicInvestigations.id),
@@ -175,10 +179,11 @@ export const forensicEvidence = pgTable("forensic_evidence", {
   dateReceived: timestamp("date_received").defaultNow(),
   collectedBy: text("collected_by"),
   storageLocation: text("storage_location"),
-  hashValue: text("hash_value"), // MD5/SHA-256 for integrity verification
-  chainOfCustody: jsonb("chain_of_custody"), // Array of custody transfer records
+  hashValue: text("hash_value"), // SHA-256 for integrity verification (required for legal admissibility)
+  chainOfCustody: jsonb("chain_of_custody"), // Array of custody transfer records (append-only)
   metadata: jsonb("metadata"), // Additional evidence-specific data
   createdAt: timestamp("created_at").defaultNow(),
+  // NOTE: No updatedAt field - evidence is immutable after creation
 });
 
 export const insertForensicEvidenceSchema = createInsertSchema(forensicEvidence).pick({

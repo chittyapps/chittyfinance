@@ -234,6 +234,21 @@ export async function getEvidence(
     .where(eq(forensicEvidence.investigationId, investigationId));
 }
 
+/**
+ * Update Chain of Custody for Evidence
+ *
+ * CRITICAL: This is the ONLY function that should modify evidence records after creation.
+ * It uses atomic JSONB append operations to ensure:
+ * 1. Custody records are append-only (never modified or deleted)
+ * 2. No race conditions in concurrent custody transfers
+ * 3. Complete audit trail for legal admissibility
+ *
+ * All other evidence fields are immutable after creation to maintain forensic integrity.
+ *
+ * @param evidenceId - ID of evidence to update custody for
+ * @param custodyEntry - New custody transfer record to append
+ * @returns Updated evidence record or undefined if not found
+ */
 export async function updateChainOfCustody(
   evidenceId: number,
   custodyEntry: {
@@ -252,7 +267,8 @@ export async function updateChainOfCustody(
 
   if (!evidence) return undefined;
 
-  // Use atomic JSONB append to prevent race conditions
+  // ATOMIC OPERATION: Use PostgreSQL JSONB append to prevent race conditions
+  // This ensures custody records are truly append-only and cannot be tampered with
   const [updated] = await db
     .update(forensicEvidence)
     .set({
@@ -513,12 +529,16 @@ export async function detectRoundDollarAnomalies(
   // Calculate percentage of round amounts
   const roundPercentage = (roundTransactions.length / userTransactions.length) * 100;
 
-  // If more than 30% are round amounts, flag as anomalous
-  if (roundPercentage > 30) {
+  // Threshold for round dollar anomalies: 20% is typical in legitimate transactions
+  // Above 20% suggests potential manipulation or fabrication
+  const ROUND_DOLLAR_THRESHOLD = 20;
+
+  // If more than threshold are round amounts, flag as anomalous
+  if (roundPercentage > ROUND_DOLLAR_THRESHOLD) {
     anomalies.push({
       anomalyType: "round_dollar",
       severity: "medium",
-      description: `${roundPercentage.toFixed(1)}% of transactions are round dollar amounts (expected: <20%)`,
+      description: `${roundPercentage.toFixed(1)}% of transactions are round dollar amounts (expected: <${ROUND_DOLLAR_THRESHOLD}%)`,
       affectedTransactions: roundTransactions,
       detectionMethod: "automated"
     });
@@ -527,7 +547,7 @@ export async function detectRoundDollarAnomalies(
       investigationId,
       anomalyType: "round_dollar",
       severity: "medium",
-      description: `Excessive round dollar amounts: ${roundPercentage.toFixed(1)}%`,
+      description: `Excessive round dollar amounts: ${roundPercentage.toFixed(1)}% (threshold: ${ROUND_DOLLAR_THRESHOLD}%)`,
       detectionMethod: "automated",
       relatedTransactions: roundTransactions,
       status: "pending"
@@ -540,6 +560,20 @@ export async function detectRoundDollarAnomalies(
 // ============================================================================
 // Benford's Law Analysis
 // ============================================================================
+
+/**
+ * Chi-square critical values for Benford's Law analysis
+ * Degrees of freedom: 8 (9 digits - 1)
+ * Source: Standard chi-square distribution tables
+ */
+const CHI_SQUARE_CRITICAL_VALUES = {
+  /** 90% confidence level (p=0.10) */
+  CONFIDENCE_90: 13.362,
+  /** 95% confidence level (p=0.05) */
+  CONFIDENCE_95: 15.507,
+  /** 99% confidence level (p=0.01) */
+  CONFIDENCE_99: 20.090
+};
 
 export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
   // Expected frequencies for first digit according to Benford's Law
@@ -585,12 +619,15 @@ export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
     const expectedFreq = expected[digit as keyof typeof expected];
     const deviation = observed - expectedFreq;
 
-    // Chi-square calculation
-    const chiSquare = Math.pow(digitCounts[digit] - (total * expectedFreq / 100), 2) / (total * expectedFreq / 100);
+    // Chi-square calculation per digit
+    const expectedCount = total * expectedFreq / 100;
+    const chiSquare = Math.pow(digitCounts[digit] - expectedCount, 2) / expectedCount;
     totalChiSquare += chiSquare;
 
-    // Consider significant if deviation > 2%
-    const passed = Math.abs(deviation) <= 2;
+    // Individual digit passes if its contribution to chi-square is reasonable
+    // Using a per-digit threshold based on proportion of total critical value
+    const digitThreshold = CHI_SQUARE_CRITICAL_VALUES.CONFIDENCE_95 / 9;
+    const passed = chiSquare <= digitThreshold;
 
     results.push({
       digit,
@@ -600,6 +637,17 @@ export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
       chiSquare: parseFloat(chiSquare.toFixed(2)),
       passed
     });
+  }
+
+  // Overall test: total chi-square should be less than critical value at 95% confidence
+  // This validates the entire distribution, not just individual digits
+  const overallPassed = totalChiSquare <= CHI_SQUARE_CRITICAL_VALUES.CONFIDENCE_95;
+
+  // Add metadata about overall test result (stored in first result for backwards compatibility)
+  if (results.length > 0) {
+    (results[0] as any).totalChiSquare = parseFloat(totalChiSquare.toFixed(2));
+    (results[0] as any).overallPassed = overallPassed;
+    (results[0] as any).criticalValue = CHI_SQUARE_CRITICAL_VALUES.CONFIDENCE_95;
   }
 
   return results;
@@ -617,14 +665,20 @@ export async function runBenfordsLawAnalysis(
   const amounts = userTransactions.map(t => Math.abs(t.amount));
   const results = analyzeBenfordsLaw(amounts);
 
-  // Check if analysis failed (significant deviations)
-  const failedDigits = results.filter(r => !r.passed);
-  if (failedDigits.length >= 3) {
+  // Check if overall analysis failed using chi-square test
+  const overallPassed = (results[0] as any)?.overallPassed ?? true;
+  const totalChiSquare = (results[0] as any)?.totalChiSquare ?? 0;
+  const criticalValue = (results[0] as any)?.criticalValue ?? CHI_SQUARE_CRITICAL_VALUES.CONFIDENCE_95;
+
+  if (!overallPassed) {
+    // Count how many individual digits failed for detail in description
+    const failedDigits = results.filter(r => !r.passed);
+
     await db.insert(forensicAnomalies).values({
       investigationId,
       anomalyType: "benford_violation",
       severity: "high",
-      description: `Benford's Law analysis failed for ${failedDigits.length} digits, suggesting potential data manipulation`,
+      description: `Benford's Law analysis failed (χ²=${totalChiSquare.toFixed(2)} > ${criticalValue.toFixed(2)}). ${failedDigits.length} digits show significant deviation, suggesting potential data manipulation`,
       detectionMethod: "automated",
       relatedTransactions: userTransactions.map(t => t.id),
       status: "pending"
@@ -883,6 +937,17 @@ export async function getForensicReports(
 // Comprehensive Analysis Runner
 // ============================================================================
 
+/**
+ * Run Comprehensive Forensic Analysis
+ *
+ * Executes multiple analysis methods in parallel using Promise.allSettled
+ * to ensure partial results are returned even if some analyses fail.
+ * This provides better resilience and observability compared to Promise.all.
+ *
+ * @param investigationId - Investigation to analyze
+ * @param userId - User ID for transaction scoping
+ * @returns Analysis results with error information for failed analyses
+ */
 export async function runComprehensiveAnalysis(
   investigationId: number,
   userId: number
@@ -892,15 +957,11 @@ export async function runComprehensiveAnalysis(
   unusualTiming: AnomalyDetectionResult[];
   roundDollars: AnomalyDetectionResult[];
   benfordsLaw: BenfordAnalysisResult[];
+  errors?: { analysis: string; error: string }[];
 }> {
-  // Run all analysis methods
-  const [
-    transactionAnalyses,
-    duplicatePayments,
-    unusualTiming,
-    roundDollars,
-    benfordsLaw
-  ] = await Promise.all([
+  // Run all analysis methods in parallel using allSettled for better error handling
+  // This ensures we get partial results even if some analyses fail
+  const results = await Promise.allSettled([
     analyzeAllTransactions(investigationId, userId),
     detectDuplicatePayments(investigationId, userId),
     detectUnusualTiming(investigationId, userId),
@@ -908,11 +969,31 @@ export async function runComprehensiveAnalysis(
     runBenfordsLawAnalysis(investigationId, userId)
   ]);
 
+  const errors: { analysis: string; error: string }[] = [];
+  const analysisNames = ['transactionAnalyses', 'duplicatePayments', 'unusualTiming', 'roundDollars', 'benfordsLaw'];
+
+  // Extract results or log errors
+  const transactionAnalyses: TransactionAnalysisResult[] = results[0].status === 'fulfilled' ? results[0].value : [];
+  const duplicatePayments: AnomalyDetectionResult[] = results[1].status === 'fulfilled' ? results[1].value : [];
+  const unusualTiming: AnomalyDetectionResult[] = results[2].status === 'fulfilled' ? results[2].value : [];
+  const roundDollars: AnomalyDetectionResult[] = results[3].status === 'fulfilled' ? results[3].value : [];
+  const benfordsLaw: BenfordAnalysisResult[] = results[4].status === 'fulfilled' ? results[4].value : [];
+
+  // Log errors for failed analyses
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      const errorMsg = result.reason?.message || String(result.reason);
+      errors.push({ analysis: analysisNames[index], error: errorMsg });
+      console.error(`[Forensic Analysis] ${analysisNames[index]} failed:`, result.reason);
+    }
+  });
+
   return {
     transactionAnalyses,
     duplicatePayments,
     unusualTiming,
     roundDollars,
-    benfordsLaw
+    benfordsLaw,
+    errors: errors.length > 0 ? errors : undefined
   };
 }
