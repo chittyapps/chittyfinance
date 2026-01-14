@@ -1,36 +1,39 @@
 # Fetch TurboTenant General Ledger
 
-Use browser automation to export the general ledger from TurboTenant's REI Accounting module.
+Use browser automation to view TurboTenant ledger and sync to Google Sheets.
+
+## Target Google Sheet
+https://docs.google.com/spreadsheets/d/1mOMFTrsaxzoqCDVhWlGpseNla-s7--3Ehsg7wL_jvII
 
 ## Workflow
 
-1. **Navigate to TurboTenant**
+1. **Open TurboTenant**
    - Go to https://rental.turbotenant.com/
    - Wait for user to complete login if not already authenticated
 
-2. **Navigate to Finance/Accounting**
-   - Look for "Accounting" or "Finance" in the navigation menu
-   - Click to open the accounting dashboard
+2. **Navigate to Accounting**
+   - Look for "Accounting" or "Finance" in the navigation
+   - Click to open the accounting/REI Hub dashboard
 
-3. **Export General Ledger**
-   - Find the "Reports" or "General Ledger" section
-   - Look for export/download button (usually CSV or Excel icon)
-   - Set date range to "All Time" or maximum available range
-   - Download the CSV file
+3. **View General Ledger**
+   - Find "Reports" or "General Ledger" section
+   - Set date range to "All Time" or maximum range
+   - View all transactions
 
-4. **Save and Process**
-   - Save the file to: /home/user/chittyfinance/data/turbotenant-ledger.csv
-   - After download, run the analysis:
+4. **Copy Data to Google Sheets**
+   - Select all ledger data (Ctrl+A or select table)
+   - Copy the data (Ctrl+C)
+   - Open the target Google Sheet in a new tab
+   - Paste data into the sheet (Ctrl+V)
+   - Or: Export CSV from TurboTenant, then File > Import in Google Sheets
+
+5. **Run Analysis**
+   - After data is in Google Sheets, fetch and analyze:
      ```
-     npx ts-node scripts/import-turbotenant.ts data/turbotenant-ledger.csv --analyze --output data/corrected-ledger.csv
+     npx ts-node scripts/fetch-turbotenant-ledger.ts --analyze
      ```
-
-5. **Report Results**
-   - Show summary of transactions found
-   - Highlight any categorization issues
-   - List items needing manual review
 
 ## Notes
-- Wait for user authentication - do not attempt to enter credentials
-- If export options include format selection, prefer CSV over Excel
-- If multiple properties are available, export all or ask user which to include
+- Wait for user authentication - do not enter credentials
+- If TurboTenant has direct "Export to Google Sheets" option, use that
+- Preserve all columns: Date, Description, Account, Debit, Credit, Property
