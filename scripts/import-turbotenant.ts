@@ -125,7 +125,6 @@ function extractPropertyCode(row: TurboTenantRow): string | null {
 // Identify issues with the transaction
 function identifyIssues(row: TurboTenantRow, accountCode: string): string[] {
   const issues: string[] = [];
-  const account = getAccountByCode(accountCode);
 
   // Check for suspense accounts
   if (accountCode.startsWith('9')) {
@@ -355,9 +354,12 @@ function printAnalysis(analysis: ImportAnalysis): void {
   console.log(`   Net:                ${formatCurrency(analysis.totalCredits - analysis.totalDebits)}`);
 
   console.log('\n✅ CATEGORIZATION CONFIDENCE');
-  console.log(`   High Confidence:    ${analysis.highConfidence} (${(analysis.highConfidence / analysis.totalTransactions * 100).toFixed(1)}%)`);
-  console.log(`   Medium Confidence:  ${analysis.mediumConfidence} (${(analysis.mediumConfidence / analysis.totalTransactions * 100).toFixed(1)}%)`);
-  console.log(`   Low/Uncategorized:  ${analysis.lowConfidence} (${(analysis.lowConfidence / analysis.totalTransactions * 100).toFixed(1)}%)`);
+  const pct = (count: number) => analysis.totalTransactions > 0
+    ? (count / analysis.totalTransactions * 100).toFixed(1)
+    : '0.0';
+  console.log(`   High Confidence:    ${analysis.highConfidence} (${pct(analysis.highConfidence)}%)`);
+  console.log(`   Medium Confidence:  ${analysis.mediumConfidence} (${pct(analysis.mediumConfidence)}%)`);
+  console.log(`   Low/Uncategorized:  ${analysis.lowConfidence} (${pct(analysis.lowConfidence)}%)`);
 
   console.log('\n🏠 BY PROPERTY');
   for (const [prop, data] of Object.entries(analysis.byProperty).sort((a, b) => b[1].count - a[1].count)) {
