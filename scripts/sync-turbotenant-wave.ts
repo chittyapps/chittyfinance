@@ -271,14 +271,14 @@ async function buildWaveAccountMapping(
   const mapping = new Map<AccountCode, string>();
 
   // Map REI accounts to Wave accounts by name matching
-  for (const [code, reiAccount] of Object.entries(REI_CHART_OF_ACCOUNTS)) {
+  for (const reiAccount of REI_CHART_OF_ACCOUNTS) {
     const waveAccount = findMatchingWaveAccount(reiAccount.name, allAccounts);
     if (waveAccount) {
-      mapping.set(code as AccountCode, waveAccount.id);
+      mapping.set(reiAccount.code as AccountCode, waveAccount.id);
     }
   }
 
-  console.log(`Mapped ${mapping.size} of ${Object.keys(REI_CHART_OF_ACCOUNTS).length} REI accounts to Wave`);
+  console.log(`Mapped ${mapping.size} of ${REI_CHART_OF_ACCOUNTS.length} REI accounts to Wave`);
 
   return mapping;
 }

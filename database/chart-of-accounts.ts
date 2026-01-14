@@ -1,6 +1,9 @@
 // REI Chart of Accounts for ARIBIA LLC Property Portfolio
 // Based on IRS Schedule E categories and real estate accounting best practices
 
+// Account code type for type safety
+export type AccountCode = string;
+
 export interface AccountDefinition {
   code: string;
   name: string;
