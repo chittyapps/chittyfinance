@@ -1,17 +1,20 @@
 #!/usr/bin/env npx ts-node
 /**
- * TurboTenant General Ledger Import Script
+ * TurboTenant General Ledger Analysis Tool
  *
- * Imports CSV exports from TurboTenant's REI Accounting module
- * and properly categorizes transactions according to the REI Chart of Accounts.
+ * Analyzes CSV exports from TurboTenant's REI Accounting module and suggests
+ * proper categorization according to the REI Chart of Accounts (IRS Schedule E).
+ *
+ * This is an ANALYSIS tool - it does not import data into the database.
+ * Review the output and use the corrected CSV to update your accounting system.
  *
  * Usage:
- *   npx ts-node scripts/import-turbotenant.ts <csv-file> [--dry-run] [--output <file>]
+ *   npx ts-node scripts/import-turbotenant.ts <csv-file> [--analyze] [--output <file>]
  *
  * Options:
- *   --dry-run    Preview changes without writing to database
- *   --output     Output corrected ledger to file (CSV or JSON)
- *   --analyze    Show categorization analysis and issues
+ *   --analyze    Show detailed categorization analysis and issues
+ *   --output     Export corrected ledger to CSV file
+ *   --help       Show usage information
  */
 
 import * as fs from 'fs';
@@ -20,11 +23,17 @@ import { parse } from 'csv-parse/sync';
 import {
   findAccountCode,
   getAccountByCode,
-  ARIBIA_PROPERTY_MAP,
+  DEFAULT_PROPERTY_MAPPINGS,
+  buildPropertyMap,
   TURBOTENANT_CATEGORY_MAP,
   REI_CHART_OF_ACCOUNTS,
-  type AccountDefinition
+  type AccountDefinition,
+  type PropertyMapping
 } from '../database/chart-of-accounts';
+
+// Build property lookup map from default mappings
+// In production, this should be loaded from the database
+const PROPERTY_MAP = buildPropertyMap(DEFAULT_PROPERTY_MAPPINGS);
 
 interface TurboTenantRow {
   Date: string;
@@ -76,18 +85,65 @@ interface ImportAnalysis {
 }
 
 // Parse amount from string (handles currency symbols, commas, negatives)
-function parseAmount(value: string | undefined): number {
+// Returns cents as integer to avoid floating point precision issues
+function parseAmountCents(value: string | undefined): number {
   if (!value) return 0;
   const cleaned = value.replace(/[$,]/g, '').replace(/[()]/g, '-').trim();
   const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+  if (isNaN(num)) return 0;
+  // Convert to cents and round to avoid floating point errors
+  return Math.round(num * 100);
+}
+
+// Convert cents to dollars for display
+function centsToDollars(cents: number): number {
+  return cents / 100;
+}
+
+// Sanitize string for CSV export to prevent CSV injection
+// Prefixes dangerous characters with single quote
+function sanitizeCsvValue(value: string): string {
+  if (!value) return '';
+  const dangerous = ['=', '+', '-', '@', '\t', '\r', '\n'];
+  const trimmed = value.trim();
+  if (dangerous.some(char => trimmed.startsWith(char))) {
+    return `'${trimmed}`;
+  }
+  return trimmed;
+}
+
+// Validate CSV has required columns
+function validateCsvStructure(records: TurboTenantRow[]): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (records.length === 0) {
+    return { valid: true, errors: [] }; // Empty is valid, just no data
+  }
+
+  const firstRow = records[0];
+  const requiredColumns = ['Date', 'Description'];
+  const amountColumns = ['Amount', 'Debit', 'Credit'];
+
+  for (const col of requiredColumns) {
+    if (!(col in firstRow)) {
+      errors.push(`Missing required column: ${col}`);
+    }
+  }
+
+  // Need at least one amount column
+  const hasAmountColumn = amountColumns.some(col => col in firstRow);
+  if (!hasAmountColumn) {
+    errors.push(`Missing amount column. Need one of: ${amountColumns.join(', ')}`);
+  }
+
+  return { valid: errors.length === 0, errors };
 }
 
 // Extract property code from description or property field
 function extractPropertyCode(row: TurboTenantRow): string | null {
   // Check Property field first
   if (row.Property) {
-    for (const [code, info] of Object.entries(ARIBIA_PROPERTY_MAP)) {
+    for (const [code, info] of Object.entries(PROPERTY_MAP)) {
       if (row.Property.toLowerCase().includes(info.name.toLowerCase())) {
         return code;
       }
@@ -101,23 +157,35 @@ function extractPropertyCode(row: TurboTenantRow): string | null {
   const match = desc.match(/\((\d{2})\)/);
   if (match) {
     const code = match[1];
-    if (ARIBIA_PROPERTY_MAP[code]) {
+    if (PROPERTY_MAP[code]) {
       return code;
     }
   }
 
   // Check for property names in description
-  for (const [code, info] of Object.entries(ARIBIA_PROPERTY_MAP)) {
+  for (const [code, info] of Object.entries(PROPERTY_MAP)) {
     if (desc.toLowerCase().includes(info.name.toLowerCase())) {
       return code;
     }
   }
 
-  // Check for addresses
-  if (desc.includes('541 W Addison') || desc.includes('Addison')) return '01';
-  if (desc.includes('Unit 504') || desc.includes('Cozy')) return '02';
-  if (desc.includes('Unit 211') || desc.includes('City Studio') || desc.includes('C211')) return '03';
-  if (desc.includes('Carrera 76') || desc.includes('Morada') || desc.includes('Colombia')) return '04';
+  // Check for addresses using property mappings
+  for (const [code, info] of Object.entries(PROPERTY_MAP)) {
+    // Extract key parts of address for matching
+    const addrParts = info.address.toLowerCase().split(',')[0].split(' ');
+    const streetNum = addrParts.find(p => /^\d+$/.test(p));
+    const streetName = addrParts.find(p => /^[a-z]+$/i.test(p) && p.length > 2);
+
+    if (streetNum && desc.includes(streetNum) && streetName && desc.toLowerCase().includes(streetName.toLowerCase())) {
+      return code;
+    }
+
+    // Also check for unit numbers
+    const unitMatch = info.address.match(/Unit\s+(\w+)/i);
+    if (unitMatch && desc.includes(unitMatch[1])) {
+      return code;
+    }
+  }
 
   return null;
 }
@@ -187,21 +255,24 @@ function categorizeTransaction(row: TurboTenantRow): CategorizedTransaction {
   const description = row.Description || '';
   const originalCategory = row.Category || row.Account || '';
 
-  // Determine amount and type
-  let amount = 0;
+  // Determine amount (in cents) and type
+  let amountCents = 0;
   let type: 'debit' | 'credit' = 'debit';
 
-  if (row.Debit && parseAmount(row.Debit) !== 0) {
-    amount = parseAmount(row.Debit);
+  if (row.Debit && parseAmountCents(row.Debit) !== 0) {
+    amountCents = parseAmountCents(row.Debit);
     type = 'debit';
-  } else if (row.Credit && parseAmount(row.Credit) !== 0) {
-    amount = parseAmount(row.Credit);
+  } else if (row.Credit && parseAmountCents(row.Credit) !== 0) {
+    amountCents = parseAmountCents(row.Credit);
     type = 'credit';
   } else if (row.Amount) {
-    amount = parseAmount(row.Amount);
-    type = amount >= 0 ? 'credit' : 'debit';
-    amount = Math.abs(amount);
+    amountCents = parseAmountCents(row.Amount);
+    type = amountCents >= 0 ? 'credit' : 'debit';
+    amountCents = Math.abs(amountCents);
   }
+
+  // Convert to dollars for storage (keeping cents internally for precision)
+  const amount = centsToDollars(amountCents);
 
   // Find account code
   const accountCode = findAccountCode(description, originalCategory);
@@ -396,7 +467,7 @@ function printAnalysis(analysis: ImportAnalysis): void {
   console.log('\n' + '='.repeat(60));
 }
 
-// Export to CSV
+// Export to CSV with injection protection
 function exportToCsv(transactions: CategorizedTransaction[], outputPath: string): void {
   const headers = [
     'Date', 'Description', 'Amount', 'Type',
@@ -404,19 +475,29 @@ function exportToCsv(transactions: CategorizedTransaction[], outputPath: string)
     'Property', 'Schedule E Line', 'Tax Deductible', 'Confidence', 'Issues'
   ];
 
+  // Helper to escape and sanitize CSV field
+  const csvField = (value: string): string => {
+    const sanitized = sanitizeCsvValue(value);
+    // Escape quotes and wrap in quotes if contains comma, quote, or newline
+    if (sanitized.includes(',') || sanitized.includes('"') || sanitized.includes('\n')) {
+      return `"${sanitized.replace(/"/g, '""')}"`;
+    }
+    return sanitized;
+  };
+
   const rows = transactions.map(tx => [
     tx.date.toISOString().split('T')[0],
-    `"${tx.description.replace(/"/g, '""')}"`,
+    csvField(tx.description),
     tx.amount.toFixed(2),
     tx.type,
-    `"${tx.originalCategory}"`,
+    csvField(tx.originalCategory),
     tx.suggestedAccountCode,
-    `"${tx.suggestedAccountName}"`,
+    csvField(tx.suggestedAccountName),
     tx.propertyName || '',
     tx.scheduleELine || '',
     tx.taxDeductible ? 'Yes' : 'No',
     tx.confidence,
-    `"${tx.issues.join('; ')}"`,
+    csvField(tx.issues.join('; ')),
   ]);
 
   const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -467,19 +548,23 @@ async function main(): Promise<void> {
 
   if (help || !csvFile) {
     console.log(`
-TurboTenant General Ledger Import Script
+TurboTenant General Ledger Analysis Tool
+
+Analyzes CSV exports from TurboTenant's REI Accounting module and suggests
+proper categorization according to REI Chart of Accounts (IRS Schedule E).
 
 Usage:
   npx ts-node scripts/import-turbotenant.ts <csv-file> [options]
 
 Options:
-  --dry-run       Preview without database changes
-  --output <file> Export corrected ledger to CSV
-  --analyze       Show detailed analysis report
+  --analyze       Show detailed analysis report (default if no --output)
+  --output <file> Export corrected ledger to CSV with suggested categories
   --help          Show this help message
 
 Example:
   npx ts-node scripts/import-turbotenant.ts ./ledger.csv --analyze --output ./corrected.csv
+
+Note: This is an analysis tool. Review the output and make corrections manually.
     `);
     if (!help && !csvFile) {
       console.error('\nError: CSV file path is required');
@@ -498,13 +583,29 @@ Example:
   const csvContent = fs.readFileSync(csvFile, 'utf-8');
 
   // Parse CSV
-  const records: TurboTenantRow[] = parse(csvContent, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-  });
+  let records: TurboTenantRow[];
+  try {
+    records = parse(csvContent, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+    });
+  } catch (error) {
+    console.error(`Error parsing CSV: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    process.exit(1);
+  }
 
   console.log(`   Found ${records.length} transactions`);
+
+  // Validate CSV structure
+  const validation = validateCsvStructure(records);
+  if (!validation.valid) {
+    console.error('\n❌ CSV validation failed:');
+    for (const err of validation.errors) {
+      console.error(`   - ${err}`);
+    }
+    process.exit(1);
+  }
 
   // Categorize all transactions
   console.log('\n🔄 Categorizing transactions...');

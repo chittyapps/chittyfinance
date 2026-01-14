@@ -212,13 +212,34 @@ export const TURBOTENANT_CATEGORY_MAP: Record<string, string> = {
   'Other': '9010',
 };
 
-// Property mapping for ARIBIA LLC
-export const ARIBIA_PROPERTY_MAP: Record<string, { name: string; tenantSlug: string; address: string }> = {
-  '01': { name: 'Lakeside Loft', tenantSlug: 'aribia-lakeside-loft', address: '541 W Addison St, Unit 3S, Chicago, IL' },
-  '02': { name: 'Cozy Castle', tenantSlug: 'aribia-cozy-castle', address: '550 W Surf St, Unit 504, Chicago, IL' },
-  '03': { name: 'City Studio', tenantSlug: 'aribia-city-studio', address: '550 W Surf St, Unit 211, Chicago, IL' },
-  '04': { name: 'Morada Mami', tenantSlug: 'aribia-morada-mami', address: 'Carrera 76 A # 53-215, Medellin, Colombia' },
-};
+// Property mapping interface - loaded from database or config at runtime
+export interface PropertyMapping {
+  code: string;
+  name: string;
+  tenantSlug: string;
+  address: string;
+  tenantId?: string; // UUID from database
+}
+
+// Default property mappings for offline/standalone use
+// In production, these should be loaded from the properties table in the database
+// See: database/seeds/it-can-be-llc.ts for the canonical property definitions
+export const DEFAULT_PROPERTY_MAPPINGS: PropertyMapping[] = [
+  // TurboTenant property codes from historical ledger exports
+  { code: '01', name: 'Lakeside Loft', tenantSlug: 'aribia-lakeside-loft', address: '541 W Addison St, Unit 3S, Chicago, IL' },
+  { code: '02', name: 'Cozy Castle', tenantSlug: 'aribia-cozy-castle', address: '550 W Surf St, Unit 504, Chicago, IL' },
+  { code: '03', name: 'City Studio', tenantSlug: 'aribia-city-studio', address: '550 W Surf St, Unit C211, Chicago, IL' },
+  { code: '04', name: 'Morada Mami', tenantSlug: 'aribia-morada-mami', address: 'Carrera 76 A # 53-215, Medellin, Colombia' },
+];
+
+// Build lookup map from property array
+export function buildPropertyMap(properties: PropertyMapping[]): Record<string, PropertyMapping> {
+  const map: Record<string, PropertyMapping> = {};
+  for (const prop of properties) {
+    map[prop.code] = prop;
+  }
+  return map;
+}
 
 // Helper to find COA code from description
 export function findAccountCode(description: string, category?: string): string {
