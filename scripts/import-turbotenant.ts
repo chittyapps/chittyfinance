@@ -422,11 +422,48 @@ function exportToCsv(transactions: CategorizedTransaction[], outputPath: string)
   console.log(`\n✅ Exported to ${outputPath}`);
 }
 
+// Parse command line arguments
+function parseArgs(args: string[]): { csvFile: string | null; dryRun: boolean; analyze: boolean; outputFile: string | null; help: boolean } {
+  const result = {
+    csvFile: null as string | null,
+    dryRun: false,
+    analyze: false,
+    outputFile: null as string | null,
+    help: false,
+  };
+
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+    if (arg === '--help' || arg === '-h') {
+      result.help = true;
+    } else if (arg === '--dry-run') {
+      result.dryRun = true;
+    } else if (arg === '--analyze') {
+      result.analyze = true;
+    } else if (arg === '--output' || arg === '-o') {
+      i++;
+      if (i < args.length && !args[i].startsWith('-')) {
+        result.outputFile = args[i];
+      }
+    } else if (!arg.startsWith('-')) {
+      // Positional argument (CSV file)
+      if (!result.csvFile) {
+        result.csvFile = arg;
+      }
+    }
+    i++;
+  }
+
+  return result;
+}
+
 // Main function
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  const { csvFile, dryRun, analyze, outputFile, help } = parseArgs(args);
 
-  if (args.length === 0 || args.includes('--help')) {
+  if (help || !csvFile) {
     console.log(`
 TurboTenant General Ledger Import Script
 
@@ -442,14 +479,12 @@ Options:
 Example:
   npx ts-node scripts/import-turbotenant.ts ./ledger.csv --analyze --output ./corrected.csv
     `);
+    if (!help && !csvFile) {
+      console.error('\nError: CSV file path is required');
+      process.exit(1);
+    }
     return;
   }
-
-  const csvFile = args[0];
-  const dryRun = args.includes('--dry-run');
-  const analyze = args.includes('--analyze');
-  const outputIdx = args.indexOf('--output');
-  const outputFile = outputIdx >= 0 ? args[outputIdx + 1] : null;
 
   // Read CSV file
   if (!fs.existsSync(csvFile)) {
@@ -487,9 +522,14 @@ Example:
   }
 
   // Summary
-  if (!dryRun) {
-    console.log('\n💡 To import into ChittyFinance database, run:');
-    console.log('   npm run db:import:turbotenant <csv-file>');
+  if (!dryRun && outputFile) {
+    console.log('\n💡 Next steps:');
+    console.log('   1. Review the corrected CSV for accuracy');
+    console.log('   2. Make manual corrections to any low-confidence items');
+    console.log('   3. Use the corrected data to update your accounting system');
+  } else if (!dryRun) {
+    console.log('\n💡 To export corrected ledger, run:');
+    console.log(`   npx ts-node scripts/import-turbotenant.ts ${csvFile} --output corrected-ledger.csv`);
   }
 }
 
