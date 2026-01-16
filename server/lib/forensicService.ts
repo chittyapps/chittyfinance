@@ -234,6 +234,13 @@ export async function getEvidence(
     .where(eq(forensicEvidence.investigationId, investigationId));
 }
 
+/**
+ * Append a custody entry to an evidence item's chain of custody atomically.
+ *
+ * @param evidenceId - Identifier of the evidence record to update
+ * @param custodyEntry - Details of the custody transfer including `transferredTo`, `transferredBy`, `timestamp`, `location`, and `purpose`
+ * @returns The updated `ForensicEvidence` when the record exists and was updated, or `undefined` if no evidence with the given `evidenceId` was found
+ */
 export async function updateChainOfCustody(
   evidenceId: number,
   custodyEntry: {
@@ -270,7 +277,13 @@ export function calculateFileHash(content: Buffer): string {
 
 // ============================================================================
 // Transaction Analysis
-// ============================================================================
+/**
+ * Assess a single transaction for forensic red flags and assign a risk score and classification.
+ *
+ * @param investigationId - Identifier of the investigation to which the transaction belongs
+ * @param transaction - The transaction record to evaluate
+ * @returns A TransactionAnalysisResult containing `transactionId`, `riskLevel` (`"high" | "medium" | "low"`), `legitimacyAssessment` (`"proper" | "questionable" | "improper" | "unable_to_determine"`), an array of detected `redFlags`, and the numeric `score`
+ */
 
 export async function analyzeTransaction(
   investigationId: number,
@@ -336,6 +349,15 @@ export async function analyzeTransaction(
   };
 }
 
+/**
+ * Runs risk analysis on every transaction for a user and returns the per-transaction results.
+ *
+ * Also persists a batched set of transaction analysis records linked to the investigation.
+ *
+ * @param investigationId - ID of the investigation to associate persisted analysis records with
+ * @param userId - ID of the user whose transactions will be analyzed
+ * @returns An array of TransactionAnalysisResult objects, one per analyzed transaction
+ */
 export async function analyzeAllTransactions(
   investigationId: number,
   userId: number
@@ -696,7 +718,19 @@ export async function getFlowOfFunds(
 
 // ============================================================================
 // Damage Calculation Methods
-// ============================================================================
+/**
+ * Compute the total direct loss based on a set of transactions identified as improper.
+ *
+ * When `improperTransactionIds` is empty, returns a DamageCalculation with `totalDamage` 0 and an empty breakdown.
+ *
+ * @param investigationId - Identifier of the investigation for which the calculation is performed
+ * @param improperTransactionIds - Array of transaction IDs considered improper; amounts for these transactions are summed
+ * @returns A DamageCalculation containing:
+ *  - `method`: `"direct_loss"`,
+ *  - `totalDamage`: sum of absolute amounts for the identified transactions,
+ *  - `breakdown`: per-transaction entries with category, amount, and description,
+ *  - `confidenceLevel`, `assumptions`, and `limitations` describing the calculation context
+ */
 
 export async function calculateDirectLoss(
   investigationId: number,
@@ -800,7 +834,13 @@ export function calculatePreJudgmentInterest(
 
 // ============================================================================
 // Report Generation
-// ============================================================================
+/**
+ * Builds a formatted executive summary report for the specified investigation.
+ *
+ * @param investigationId - ID of the investigation to summarize
+ * @returns A formatted executive summary string containing case details, key findings, estimated damages, primary concerns, and recommendations
+ * @throws If no investigation with the given `investigationId` exists
+ */
 
 export async function generateExecutiveSummary(
   investigationId: number
