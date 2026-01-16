@@ -1,14 +1,20 @@
 import jwt, { JwtPayload } from "jsonwebtoken"
-import jwksClient from "jwks-rsa"
+// Make jwks-rsa optional to avoid type errors if not installed
+let jwksClient: any
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  jwksClient = require("jwks-rsa")
+} catch {}
 
 const issuer = process.env.CHITTY_CONNECT_ISSUER || "https://connect.chitty.cc"
 const audience = process.env.CHITTY_CONNECT_AUDIENCE || "finance"
 const jwksUri = process.env.CHITTY_CONNECT_JWKS_URL || `${issuer}/.well-known/jwks.json`
 
-const client = jwksClient({ jwksUri })
+const client = jwksClient ? jwksClient({ jwksUri }) : undefined
 
 function getKey(header: any, cb: any) {
-  client.getSigningKey(header.kid, function (err, key) {
+  if (!client) return cb(new Error("jwks-rsa not available"))
+  client.getSigningKey(header.kid, function (err: any, key: any) {
     if (err) return cb(err)
     const signingKey = (key as any).getPublicKey()
     cb(null, signingKey)

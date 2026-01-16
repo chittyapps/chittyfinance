@@ -1,30 +1,28 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from 'ws';
+import { drizzle as drizzlePostgres } from "drizzle-orm/node-postgres";
+import { drizzle as drizzleSQLite } from "drizzle-orm/better-sqlite3";
+import { Pool } from "pg";
+import Database from "better-sqlite3";
 
-// NOTE: For now the server still uses the legacy shared schema.
-// We'll migrate routes/storage to the system/standalone schemas next.
-import * as schema from '@shared/schema';
+import * as systemSchema from "../database/system.schema";
+import * as standaloneSchema from "../database/standalone.schema";
 
-const MODE = process.env.MODE || 'standalone';
+const MODE = process.env.MODE || "standalone";
 
-let db: any;
-let pool: Pool | undefined;
+let db;
+let schema;
 
-if (MODE === 'system') {
-  console.log('🔧 Database: Postgres (Neon) [system mode]');
-  neonConfig.webSocketConstructor = ws;
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error('DATABASE_URL must be set. Did you forget to configure .env?');
-  }
-  pool = new Pool({ connectionString });
-  db = drizzle({ client: pool, schema });
+if (MODE === "system") {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
+  db = drizzlePostgres(pool, { schema: systemSchema });
+  schema = systemSchema;
+  console.log("🟢 ChittyFinance DB: System Mode (Postgres/Neon)");
 } else {
-  // Standalone mode uses in-memory storage via server/storage.ts.
-  // We still export a placeholder so imports succeed without crashing.
-  console.log('🧪 Database: Standalone (in-memory storage)');
-  db = {} as any;
+  const sqlite = new Database("./chittyfinance.db");
+  db = drizzleSQLite(sqlite, { schema: standaloneSchema });
+  schema = standaloneSchema;
+  console.log("🟢 ChittyFinance DB: Standalone Mode (SQLite)");
 }
 
-export { db, schema, pool };
+export { db, schema };

@@ -1,0 +1,151 @@
+TENANT STATEMENT - CORRECTED
+====================================================================================================
+
+TENANT: Alexis Pheng
+EMAIL: acpheng@gmail.com
+PHONE: 804-665-8632
+PROPERTY: City Studio at The Commodore
+ADDRESS: 550 W Surf St C211, Chicago, IL 60657
+LEASE ID: 690e47b7d84b610e20287ca2
+LEASE TERM: November 8, 2025 → December 15, 2026
+MONTHLY RENT: $2,650.00
+STATEMENT DATE: December 9, 2025
+
+====================================================================================================
+
+CHARGES POSTED:
+
+Date           Description                              Charge        Paid    Balance    Status
+----------------------------------------------------------------------------------------------------
+Nov 6, 2025    Pro-Rated Rent (Nov 8-30)              $2,031.67  $2,031.67      $0.00    PAID ✅
+Nov 6, 2025    Cleaning Fee                             $250.00    $250.00      $0.00    PAID ✅
+Nov 6, 2025    Administration Fee                       $250.00    $250.00      $0.00    PAID ✅
+Nov 6, 2025    Move-In Fee                              $250.00    $250.00      $0.00    PAID ✅
+Nov 6, 2025    Management Fee (WAIVED)                  $250.00    $250.00      $0.00    CREDIT
+               ---------------------------------------------------------------------------------
+               November 2025 Total:                   $3,031.67  $3,031.67      $0.00    PAID ✅
+
+Dec 1, 2025    Prorated Rent (Dec 1-15)               $1,282.26      $0.00  $1,282.26    DUE ❌
+               ---------------------------------------------------------------------------------
+               December 2025 Total:                   $1,282.26      $0.00  $1,282.26    DUE ❌
+
+----------------------------------------------------------------------------------------------------
+TOTAL CHARGES:                                        $4,313.93
+TOTAL PAID:                                          -$3,031.67
+TOTAL CREDITS:                                         -$250.00 (Management fee waived)
+====================================================================================================
+CURRENT BALANCE DUE:                                  $1,282.26
+====================================================================================================
+
+⚠️  PAYMENT OVERDUE
+
+Outstanding Charge:
+  • December 1-15, 2025 Prorated Rent: $1,282.26 ❌
+  • Charge Posted: December 1, 2025
+  • Days Overdue: 8 days (as of December 9, 2025)
+
+====================================================================================================
+
+PAYMENT HISTORY:
+
+Date           Method/Reference        Applied To                                        Amount
+----------------------------------------------------------------------------------------------------
+Nov 6, 2025    EPAY (Ref: 2g3gah)      November move-in charges                      $2,781.67
+Nov 6, 2025    Credit Applied          Management Fee Waived                           $250.00
+               ---------------------------------------------------------------------------------
+               Total Payments:                                                       $3,031.67
+
+December 2025: NO PAYMENTS RECEIVED ❌
+
+====================================================================================================
+
+DETAILED TRANSACTION TIMELINE:
+
+Nov 6, 2025    CHARGE      Pro-Rated Rent (Nov 8-30)                $2,031.67    Balance: $2,031.67
+Nov 6, 2025    CHARGE      Cleaning Fee                               $250.00    Balance: $2,281.67
+Nov 6, 2025    CHARGE      Administration Fee                         $250.00    Balance: $2,531.67
+Nov 6, 2025    CHARGE      Move-In Fee                                $250.00    Balance: $2,781.67
+Nov 6, 2025    PAYMENT     EPAY (Ref: 2g3gah)                      -$2,781.67    Balance:       $0.00 ✅
+Nov 6, 2025    CREDIT      Management Fee Waived                      -$250.00    Balance:       $0.00 ✅
+Nov 7, 2025    NOTICE      Payment confirmation email sent
+Dec 1, 2025    CHARGE      Prorated Rent (Dec 1-15)                 $1,282.26    Balance:   $1,282.26
+Dec 1, 2025    NOTICE      "Final Day to Pay Rent" reminder sent
+Dec 3, 2025    NOTICE      "Rent Payment Overdue" notice sent
+Dec 4, 2025    NOTICE      "Rent Payment Overdue" notice sent
+Dec 5, 2025    NOTICE      "Rent Payment Overdue" notice sent
+Dec 6, 2025    NOTICE      "Rent Payment Overdue" notice sent
+Dec 7, 2025    NOTICE      "Rent Payment Overdue" notice sent
+Dec 8, 2025    NOTICE      "Rent Payment Overdue" notice sent
+Dec 9, 2025    NOTICE      "Rent Payment Overdue" notice sent
+               ---------------------------------------------------------------------------------
+Dec 9, 2025    CURRENT BALANCE:                                                     $1,282.26 ❌
+
+====================================================================================================
+
+ACCOUNT ANALYSIS:
+
+✅ November 2025: All charges paid in full on November 6, 2025
+   - Move-in charges: $2,781.67
+   - Credits applied: $250.00 (management fee waived)
+   - Total paid: $3,031.67
+
+❌ December 2025: Outstanding balance
+   - Charge posted: $1,282.26 (prorated for Dec 1-15)
+   - Payments received: $0.00
+   - Balance due: $1,282.26
+   - Status: OVERDUE (8 days past due as of Dec 9)
+
+====================================================================================================
+
+LEASE NOTES:
+
+• Lease started November 8, 2025 (mid-month move-in)
+• November rent was prorated for November 8-30 (23 days)
+• December rent is prorated for December 1-15 (15 days)
+• Full monthly rent of $2,650 will begin December 16, 2025
+• Tenant has been compliant with all previous payments
+• Renters insurance required but not yet provided (see separate notice)
+
+====================================================================================================
+
+NEXT CHARGE DUE:
+
+Dec 16, 2025   Full Monthly Rent (Dec 16-31)                              $1,367.74 (estimated)
+               (16 days at $2,650/month daily rate)
+
+Jan 1, 2026    Full Monthly Rent (January 2026)                           $2,650.00
+
+====================================================================================================
+
+CONTACT INFORMATION:
+
+Tenant:                Property Manager:
+Alexis Pheng           Chicago Furnished Condos by ARIBIA
+acpheng@gmail.com      [Property manager contact]
+804-665-8632           [Property manager phone]
+
+====================================================================================================
+
+PAYMENT INSTRUCTIONS:
+
+To make a payment:
+1. Log in to tenant portal at [portal URL]
+2. Use EPAY for instant processing
+3. Reference: Lease 690e47b7d84b610e20287ca2
+
+For questions about this statement, please contact property management.
+
+====================================================================================================
+
+STATEMENT NOTES:
+
+This statement is generated from DoorLoop property management system data as of December 9, 2025.
+All amounts are in USD. Late fees may apply per lease agreement and Chicago RLTO guidelines.
+
+Data Source: DoorLoop API Complete Archive (doorloop-complete-archive-2025-12-09.json)
+Generated: December 9, 2025
+Statement Period: November 2025 - December 2025
+
+====================================================================================================
+END OF STATEMENT
+====================================================================================================

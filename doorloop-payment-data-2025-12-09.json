@@ -1,0 +1,21 @@
+{
+  "timestamp": "2025-12-09T20:49:53.653Z",
+  "data": {
+    "lease-payments": {
+      "error": 404,
+      "details": "<!DOCTYPE html><html lang=\"en\" style=\"\" data-color-mode=\"system\" class=\" useReactApp  \"><head><meta charset=\"utf-8\"><meta name=\"readme-deploy\" content=\"5.544.0\"><meta name=\"readme-subdomain\" content=\""
+    },
+    "lease-charges": {
+      "error": 404,
+      "details": "<!DOCTYPE html><html lang=\"en\" style=\"\" data-color-mode=\"system\" class=\" useReactApp  \"><head><meta charset=\"utf-8\"><meta name=\"readme-deploy\" content=\"5.544.0\"><meta name=\"readme-subdomain\" content=\""
+    },
+    "lease-credits": {
+      "error": 404,
+      "details": "<!DOCTYPE html><html lang=\"en\" style=\"\" data-color-mode=\"system\" class=\" useReactApp  \"><head><meta charset=\"utf-8\"><meta name=\"readme-deploy\" content=\"5.544.0\"><meta name=\"readme-subdomain\" content=\""
+    },
+    "lease-reversed-payments": {
+      "error": 404,
+      "details": "<!DOCTYPE html><html lang=\"en\" style=\"\" data-color-mode=\"system\" class=\" useReactApp  \"><head><meta charset=\"utf-8\"><meta name=\"readme-deploy\" content=\"5.544.0\"><meta name=\"readme-subdomain\" content=\""
+    }
+  }
+}

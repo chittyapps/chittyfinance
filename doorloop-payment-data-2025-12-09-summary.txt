@@ -1,0 +1,8 @@
+
+DOORLOOP PAYMENT DATA ARCHIVE
+Generated: 2025-12-09T20:49:53.664Z
+
+lease-payments: 0 records
+lease-charges: 0 records
+lease-credits: 0 records
+lease-reversed-payments: 0 records
