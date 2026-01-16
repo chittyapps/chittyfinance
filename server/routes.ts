@@ -1619,6 +1619,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid investigation ID" });
       }
 
+      // Get current user
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Authorization check: verify investigation ownership
+      const investigation = await verifyInvestigationOwnership(investigationId, user.id);
+      if (!investigation) {
+        return res.status(404).json({ message: "Investigation not found or access denied" });
+      }
+
       // Validate input data
       const validation = insertForensicFlowOfFundsSchema.safeParse({
         ...req.body,
@@ -1765,6 +1777,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const investigationId = parseInt(req.params.id);
       if (isNaN(investigationId)) {
         return res.status(400).json({ message: "Invalid investigation ID" });
+      }
+
+      // Get current user
+      const user = await storage.getUserByUsername("demo");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Authorization check: verify investigation ownership
+      const investigation = await verifyInvestigationOwnership(investigationId, user.id);
+      if (!investigation) {
+        return res.status(404).json({ message: "Investigation not found or access denied" });
       }
 
       // Validate input data
