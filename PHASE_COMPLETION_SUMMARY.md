@@ -94,9 +94,7 @@ server/
 ├── index.ts                     # Express server entry
 ├── routes.ts                    # API route definitions (multi-tenant aware)
 ├── db.ts                        # Mode-aware database connection
-├── storage.ts                   # Standalone storage (SQLite)
-├── storage-system.ts            # System storage (PostgreSQL, multi-tenant)
-├── storage-adapter.ts           # Unified storage interface
+├── storage.ts                   # Unified storage with MODE-based logic (SQLite + PostgreSQL)
 ├── middleware/
 │   ├── auth.ts                  # ChittyConnect + service auth
 │   └── tenant.ts                # Tenant resolution & validation
