@@ -95,6 +95,15 @@ const custodyUpdateSchema = z.object({
   purpose: z.string().min(1)
 });
 
+/**
+ * Register HTTP API routes on the provided Express application and return the created HTTP server.
+ *
+ * Registers a comprehensive set of endpoints (including API routes under `/api`, health/status/metrics,
+ * integration webhooks, OAuth callbacks, forensic routes, AI assistant endpoints, and admin utilities)
+ * on the given app and constructs an HTTP server for it.
+ *
+ * @returns The Node HTTP Server instance created for the configured Express app
+ */
 export async function registerRoutes(app: Express): Promise<Server> {
   // Create API router
   const api = express.Router();
