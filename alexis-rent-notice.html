@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rent Payment Notice - Alexis Pheng</title>
+    <style>
+        @page {
+            margin: 0.75in;
+            size: letter;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: white;
+        }
+
+        .page {
+            max-width: 8.5in;
+            margin: 0 auto;
+            background: white;
+            padding: 0.5in;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+            color: white;
+            padding: 30px 40px;
+            margin: -0.5in -0.5in 30px -0.5in;
+            border-bottom: 4px solid #ffc107;
+        }
+
+        .company-name {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .company-tagline {
+            font-size: 14px;
+            color: #ffc107;
+            font-weight: 500;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .company-info {
+            font-size: 11px;
+            color: #e3f2fd;
+            margin-top: 10px;
+            line-height: 1.4;
+        }
+
+        /* Document Info */
+        .document-info {
+            background: #f5f5f5;
+            padding: 20px;
+            border-left: 4px solid #1a237e;
+            margin-bottom: 30px;
+        }
+
+        .document-info h2 {
+            color: #1a237e;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .info-value {
+            color: #333;
+        }
+
+        /* Alert Box */
+        .alert-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 30px 0;
+            position: relative;
+        }
+
+        .alert-icon {
+            font-size: 24px;
+            color: #ff6f00;
+            margin-right: 10px;
+        }
+
+        .alert-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #ff6f00;
+            margin-bottom: 10px;
+        }
+
+        .alert-content {
+            font-size: 14px;
+            color: #333;
+        }
+
+        /* Amount Due Box */
+        .amount-due {
+            background: #ffebee;
+            border: 3px solid #c62828;
+            border-radius: 10px;
+            padding: 25px;
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .amount-label {
+            font-size: 16px;
+            font-weight: 600;
+            color: #c62828;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .amount-value {
+            font-size: 48px;
+            font-weight: 700;
+            color: #c62828;
+            line-height: 1;
+        }
+
+        .amount-note {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        /* Content */
+        .content {
+            margin: 30px 0;
+        }
+
+        .content h3 {
+            color: #1a237e;
+            font-size: 16px;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            padding-bottom: 5px;
+            border-bottom: 2px solid #e3f2fd;
+        }
+
+        .content p {
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-align: justify;
+        }
+
+        .content ul {
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+
+        .content li {
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        /* Table */
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+
+        .info-table th {
+            background: #1a237e;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .info-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .info-table tr:nth-child(even) {
+            background: #f5f5f5;
+        }
+
+        .status-paid {
+            color: #2e7d32;
+            font-weight: 600;
+        }
+
+        .status-due {
+            color: #c62828;
+            font-weight: 600;
+        }
+
+        /* Payment Methods */
+        .payment-methods {
+            background: #e3f2fd;
+            border-left: 4px solid #1976d2;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .payment-method {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #bbdefb;
+        }
+
+        .payment-method-title {
+            font-weight: 700;
+            color: #1976d2;
+            margin-bottom: 8px;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .signature {
+            margin-top: 30px;
+        }
+
+        .signature-name {
+            font-weight: 700;
+            color: #1a237e;
+            font-size: 14px;
+        }
+
+        .signature-title {
+            color: #666;
+            font-size: 13px;
+        }
+
+        /* Highlight */
+        .highlight {
+            background: #fff9c4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-bold {
+            font-weight: 700;
+        }
+
+        @media print {
+            .page {
+                padding: 0;
+            }
+            .header {
+                margin: 0 0 30px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <!-- Header -->
+        <div class="header">
+            <div class="company-name">Chicago Furnished Condos by ARIBIA</div>
+            <div class="company-tagline">Premium Short-Term & Furnished Rentals</div>
+            <div class="company-info">
+                ARIBIA LLC - MGMT | 550 W Surf St, Chicago, IL 60657<br>
+                Email: [property.manager@aribia.com] | Phone: [312-XXX-XXXX]
+            </div>
+        </div>
+
+        <!-- Document Info -->
+        <div class="document-info">
+            <h2>RENT PAYMENT NOTICE</h2>
+            <div class="info-row">
+                <span class="info-label">Tenant Name:</span>
+                <span class="info-value">Alexis Pheng</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Property:</span>
+                <span class="info-value">City Studio at The Commodore - Unit C211</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Address:</span>
+                <span class="info-value">550 W Surf St C211, Chicago, IL 60657</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Lease ID:</span>
+                <span class="info-value">690e47b7d84b610e20287ca2</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Notice Date:</span>
+                <span class="info-value">December 9, 2025</span>
+            </div>
+        </div>
+
+        <!-- Amount Due -->
+        <div class="amount-due">
+            <div class="amount-label">⚠️ Amount Due Immediately</div>
+            <div class="amount-value">$1,282.26</div>
+            <div class="amount-note">December 1-15, 2025 Prorated Rent | 8 Days Overdue</div>
+        </div>
+
+        <!-- Alert Box -->
+        <div class="alert-box">
+            <div class="alert-title"><span class="alert-icon">⚠️</span>Action Required: Outstanding Rent Payment</div>
+            <div class="alert-content">
+                Your December rent payment is <span class="highlight">8 days past due</span>. Please submit payment immediately to avoid additional late fees and maintain your good tenant standing.
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+            <p>Dear Alexis,</p>
+
+            <p>I hope this message finds you well. I'm reaching out regarding your December rent payment for City Studio at The Commodore. Our records indicate that the prorated rent payment of <span class="text-bold">$1,282.26</span> for December 1-15, 2025 has not yet been received and is now <span class="text-bold">8 days past due</span> as of December 9, 2025.</p>
+
+            <h3>Account Summary</h3>
+
+            <table class="info-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Nov 6, 2025</td>
+                        <td>Pro-Rated Rent (Nov 8-30)</td>
+                        <td>$2,031.67</td>
+                        <td>$0.00</td>
+                        <td class="status-paid">PAID ✓</td>
+                    </tr>
+                    <tr>
+                        <td>Nov 6, 2025</td>
+                        <td>Move-In Fees</td>
+                        <td>$750.00</td>
+                        <td>$0.00</td>
+                        <td class="status-paid">PAID ✓</td>
+                    </tr>
+                    <tr>
+                        <td>Nov 6, 2025</td>
+                        <td>Management Fee (Waived)</td>
+                        <td>-$250.00</td>
+                        <td>$0.00</td>
+                        <td class="status-paid">CREDIT</td>
+                    </tr>
+                    <tr style="background: #ffebee;">
+                        <td><strong>Dec 1, 2025</strong></td>
+                        <td><strong>Prorated Rent (Dec 1-15)</strong></td>
+                        <td><strong>$1,282.26</strong></td>
+                        <td><strong>$1,282.26</strong></td>
+                        <td class="status-due">OVERDUE ✗</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Acknowledgment of Previous Payment</h3>
+            <p>We want to acknowledge that your November payment was received on time and in full ($2,781.67 paid on November 6, 2025). We appreciate your prompt payment, which is why we're reaching out personally to address this month's outstanding balance.</p>
+
+            <h3>Payment Methods</h3>
+
+            <div class="payment-methods">
+                <div class="payment-method">
+                    <div class="payment-method-title">Option 1: Tenant Portal (Recommended)</div>
+                    <ul>
+                        <li>Instant processing via EPAY</li>
+                        <li>Log in at: [Portal URL]</li>
+                        <li>Reference Lease ID: 690e47b7d84b610e20287ca2</li>
+                    </ul>
+                </div>
+
+                <div class="payment-method">
+                    <div class="payment-method-title">Option 2: Bank Transfer</div>
+                    <ul>
+                        <li>[Bank transfer details]</li>
+                        <li>[Account information]</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>Important Late Fee Information</h3>
+            <p>Per your lease agreement and the Chicago Residential Landlord and Tenant Ordinance (RLTO), late fees may apply as follows:</p>
+            <ul>
+                <li><strong>Late Fee Calculation:</strong> $10 for the first $500 + 5% of the remaining balance</li>
+                <li><strong>Applicable Late Fee:</strong> $49.11 ($10 + 5% of $782.26)</li>
+                <li><strong>To Avoid Late Fees:</strong> Payment must be received by <span class="highlight">December 12, 2025</span></li>
+            </ul>
+
+            <h3>Additional Compliance Matter</h3>
+            <p>We've also noticed that proof of renters insurance has not been provided as required by your lease agreement. Please submit documentation of active coverage to avoid monthly compliance charges.</p>
+
+            <h3>Upcoming Rent Schedule</h3>
+            <p>Please note that your full monthly rent schedule is as follows:</p>
+            <ul>
+                <li><strong>December 16, 2025:</strong> Full monthly rent begins ($2,650/month)</li>
+                <li><strong>January 1, 2026:</strong> Regular monthly billing ($2,650/month)</li>
+            </ul>
+
+            <h3>Next Steps</h3>
+            <p>Please remit payment of <span class="text-bold">$1,282.26</span> by <span class="text-bold">December 12, 2025</span> to maintain your account in good standing.</p>
+
+            <p>If you're experiencing financial difficulty or have questions about your account, please contact me directly. We're here to work with you and discuss payment plan options if needed.</p>
+
+            <h3>Contact Information</h3>
+            <ul>
+                <li><strong>Phone:</strong> [Property Manager Phone]</li>
+                <li><strong>Email:</strong> [Property Manager Email]</li>
+                <li><strong>Office Hours:</strong> Monday - Friday, 9:00 AM - 5:00 PM CST</li>
+            </ul>
+
+            <p>We value you as a tenant and look forward to resolving this matter promptly. Thank you for your immediate attention.</p>
+
+            <!-- Signature -->
+            <div class="signature">
+                <p>Best regards,</p>
+                <br>
+                <div class="signature-name">[Property Manager Name]</div>
+                <div class="signature-title">Property Manager</div>
+                <div class="signature-title">Chicago Furnished Condos by ARIBIA</div>
+                <div class="signature-title">[Phone] | [Email]</div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer text-center">
+            <p><strong>Chicago Furnished Condos by ARIBIA</strong> | A Division of ARIBIA LLC - MGMT</p>
+            <p>550 W Surf St, Chicago, IL 60657 | [Website URL]</p>
+            <p style="margin-top: 10px; font-size: 11px; color: #999;">
+                This notice is sent in accordance with your lease agreement and the Chicago Residential Landlord and Tenant Ordinance (RLTO).
+                Please retain this document for your records.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Auto-print dialog when document loads (optional)
+        // window.onload = function() { window.print(); }
+    </script>
+</body>
+</html>

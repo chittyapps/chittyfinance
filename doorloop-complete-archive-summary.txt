@@ -1,0 +1,34 @@
+DOORLOOP COMPLETE DATA ARCHIVE
+================================================================================
+Created: 2025-12-10T03:10:55.531Z
+
+📊 DATA SUMMARY:
+
+  ✅ communications: 50 records
+  ✅ files: 50 records
+  ✅ notes: 4 records
+  ✅ properties: 6 records
+  ✅ units: 8 records
+  ✅ leases: 16 records
+  ✅ tenants: 50 records
+  ✅ owners: 8 records
+  ✅ vendors: 20 records
+  ✅ lease_charges: 50 records
+  ✅ lease_payments: 50 records
+  ✅ lease_credits: 37 records
+  ✅ lease_reversed_payments: 0 records
+  ✅ expenses: 5 records
+  ✅ vendor_bills: 50 records
+  ✅ notifications: 50 records
+  ✅ accounts: 50 records
+  ✅ tasks: 50 records
+  ✅ rent_roll: 8 records
+
+🎯 TOTAL RECORDS: 562
+
+📁 FILES:
+  • doorloop-complete-archive-2025-12-09.json (complete JSON archive)
+  • doorloop-complete-archive-summary.txt (this file)
+
+✅ ARCHIVE COMPLETE
+================================================================================

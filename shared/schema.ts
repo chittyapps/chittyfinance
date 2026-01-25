@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, real, varchar, index, uniqueIndex, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, real, varchar, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -206,7 +206,7 @@ export const forensicTransactionAnalysis = pgTable("forensic_transaction_analysi
   investigationId: integer("investigation_id").notNull().references(() => forensicInvestigations.id),
   transactionId: integer("transaction_id").references(() => transactions.id),
   transactionDate: timestamp("transaction_date"),
-  transactionAmount: numeric("transaction_amount", { precision: 12, scale: 2 }),
+  transactionAmount: real("transaction_amount"),
   transactionDescription: text("transaction_description"),
   riskLevel: text("risk_level").notNull(), // 'high', 'medium', 'low'
   legitimacyAssessment: text("legitimacy_assessment"), // 'proper', 'questionable', 'improper', 'unable_to_determine'
@@ -215,10 +215,7 @@ export const forensicTransactionAnalysis = pgTable("forensic_transaction_analysi
   analyzedBy: text("analyzed_by"),
   analyzedAt: timestamp("analyzed_at").defaultNow(),
   evidenceReferences: jsonb("evidence_references"), // Links to related evidence
-}, (table) => ({
-  investigationIdIdx: index("forensic_analysis_investigation_id_idx").on(table.investigationId),
-  riskLevelIdx: index("forensic_analysis_risk_level_idx").on(table.riskLevel),
-}));
+});
 
 export const insertForensicTransactionAnalysisSchema = createInsertSchema(forensicTransactionAnalysis).pick({
   investigationId: true,
@@ -248,10 +245,7 @@ export const forensicAnomalies = pgTable("forensic_anomalies", {
   reviewNotes: text("review_notes"),
   reviewedBy: text("reviewed_by"),
   reviewedAt: timestamp("reviewed_at"),
-}, (table) => ({
-  investigationIdIdx: index("forensic_anomalies_investigation_id_idx").on(table.investigationId),
-  severityIdx: index("forensic_anomalies_severity_idx").on(table.severity),
-}));
+});
 
 export const insertForensicAnomalySchema = createInsertSchema(forensicAnomalies).pick({
   investigationId: true,
@@ -272,7 +266,7 @@ export const forensicFlowOfFunds = pgTable("forensic_flow_of_funds", {
   flowName: text("flow_name").notNull(),
   sourceAccount: text("source_account").notNull(),
   destinationAccount: text("destination_account").notNull(),
-  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  amount: real("amount").notNull(),
   transactionDate: timestamp("transaction_date"),
   transferMethod: text("transfer_method"), // 'wire', 'check', 'ach', 'cash', 'other'
   intermediaries: jsonb("intermediaries"), // Array of intermediate accounts/entities
@@ -374,3 +368,14 @@ export type InsertForensicFlowOfFunds = z.infer<typeof insertForensicFlowOfFunds
 
 export type ForensicReport = typeof forensicReports.$inferSelect;
 export type InsertForensicReport = z.infer<typeof insertForensicReportSchema>;
+
+// --- Webhook Events Table (Standalone Mode Stub) ---
+export const webhookEvents = pgTable("webhook_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  source: text("source").notNull(),
+  type: text("type"),
+  payload: text("payload"),
+  createdAt: text("created_at").notNull().default("now"),
+});
+
+export type NewWebhookEvent = typeof webhookEvents.$inferInsert;

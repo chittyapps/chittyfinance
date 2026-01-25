@@ -14,8 +14,8 @@ export function useAuth() {
   });
 
   return {
-    user: user || authContext.user,
-    isLoading: isLoading || authContext.isLoading,
-    isAuthenticated: !!user || authContext.isAuthenticated,
+    user: (user as any) ?? authContext.user,
+    isLoading: Boolean(isLoading) || authContext.isLoading,
+    isAuthenticated: Boolean(user) || authContext.isAuthenticated,
   };
 }

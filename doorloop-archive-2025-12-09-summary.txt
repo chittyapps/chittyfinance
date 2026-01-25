@@ -1,0 +1,92 @@
+
+================================================================================
+DOORLOOP HISTORICAL ARCHIVE
+================================================================================
+Generated: 2025-12-09T20:41:58.093Z
+Purpose: Complete backup before API access termination
+
+DATA SUMMARY:
+  Properties: 6
+  Leases: 16
+  Tenants: 50
+  Units: 8
+  Expenses: 5
+  Payments: NOT ACCESSIBLE
+
+PROPERTIES:
+  1. City Studio at The Commodore (RESIDENTIAL_CONDO)
+  2. Commodore Greenbriar Garage Parking (COMMERCIAL_PARKING)
+  3. Cozy Castle at The Commodore (RESIDENTIAL_CONDO)
+  4. Lakeside Loft at Addison Lakeshore West (RESIDENTIAL_CONDO)
+  5. Morada Mami at Urbanizacion Plaza de Colores (RESIDENTIAL_CONDO)
+  6. Villa Vista at 4343 Clarendon (RESIDENTIAL_CONDO)
+
+TENANTS:
+  1. Aaron Rowe - no email
+  2. Abby Hershman - no email
+  3. Abigail Adnani - no email
+  4. Alejandro (Cozy) Arias - no email
+  5. Alejandro Arias - no email
+  6. Alex Graham - no email
+  7. Alex Medina - no email
+  8. Alexa Chavin - no email
+  9. Alexandria Wanas - no email
+  10. Alexis Pheng - no email
+  11. Andrew Fedyn - no email
+  12. Anthony Varbero - no email
+  13. Bradley Dushman - no email
+  14. Brittany Hudson - no email
+  15. Brooke Kasprowicz - no email
+  16. Camilo Arias - no email
+  17. Casey Green - no email
+  18. Charles Sloan - no email
+  19. Chris Tellarico - no email
+  20. Craig Berger - no email
+
+ACTIVE LEASES:
+  1. Lease 6723e2afb02a8c43fac8c323
+     Property: N/A
+     Tenant: N/A
+     Rent: $0
+     Balance: $0
+
+  2. Lease 672fee66df972da6cdd8803f
+     Property: N/A
+     Tenant: N/A
+     Rent: $0
+     Balance: $0
+
+  3. Lease 67b372810de58346acb44ee2
+     Property: N/A
+     Tenant: N/A
+     Rent: $0
+     Balance: $0
+
+  4. Lease 68edba84f76949d646060293
+     Property: N/A
+     Tenant: N/A
+     Rent: $0
+     Balance: $0
+
+  5. Lease 6908e70552b021750d43d4df
+     Property: N/A
+     Tenant: N/A
+     Rent: $0
+     Balance: $0
+
+  6. Lease 690e47b7d84b610e20287ca2
+     Property: N/A
+     Tenant: N/A
+     Rent: $0
+     Balance: $0
+
+FILES GENERATED:
+  - doorloop-archive-2025-12-09.json (complete JSON archive)
+  - doorloop-archive-2025-12-09-summary.txt (this summary)
+
+IMPORTANT NOTES:
+  - Payment history NOT accessible (requires DoorLoop premium plan)
+  - Some detailed fields return N/A (API limitations)
+  - This is your last backup before API access expires
+  - Keep these files permanently for historical reference
+================================================================================

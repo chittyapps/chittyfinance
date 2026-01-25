@@ -79,6 +79,55 @@ export interface WaveTransaction {
   category?: string;
 }
 
+export interface WaveAccount {
+  id: string;
+  name: string;
+  type: {
+    name: string;
+    value: string; // ASSET, LIABILITY, INCOME, EXPENSE, EQUITY
+  };
+  subtype?: {
+    name: string;
+    value: string;
+  };
+  isArchived: boolean;
+}
+
+export type WaveAccountType = 'ASSET' | 'LIABILITY' | 'INCOME' | 'EXPENSE' | 'EQUITY';
+export type WaveTransactionDirection = 'DEPOSIT' | 'WITHDRAWAL';
+export type WaveBalanceType = 'INCREASE' | 'DECREASE' | 'DEBIT' | 'CREDIT';
+
+export interface WaveMoneyTransactionInput {
+  businessId: string;
+  externalId: string; // Unique ID to prevent duplicates
+  date: string; // YYYY-MM-DD
+  description: string;
+  notes?: string;
+  anchor: {
+    accountId: string; // Bank/cash account
+    amount: number;
+    direction: WaveTransactionDirection;
+  };
+  lineItems: Array<{
+    accountId: string; // Category account (income/expense)
+    amount: number;
+    balance: WaveBalanceType;
+    description?: string;
+  }>;
+}
+
+export interface WaveMoneyTransactionResult {
+  didSucceed: boolean;
+  inputErrors: Array<{
+    code: string;
+    path: string[];
+    message: string;
+  }>;
+  transaction: {
+    id: string;
+  } | null;
+}
+
 /**
  * Wave API Client
  */
@@ -295,6 +344,111 @@ export class WaveAPIClient {
     );
 
     return data.business.expenses.edges.map(edge => edge.node);
+  }
+
+  /**
+   * Get accounts for a business by type
+   * Use to find account IDs for transactions
+   */
+  async getAccounts(businessId: string, types?: WaveAccountType[]): Promise<WaveAccount[]> {
+    const query = `
+      query GetAccounts($businessId: ID!, $types: [AccountTypeValue!]) {
+        business(id: $businessId) {
+          accounts(types: $types, page: 1, pageSize: 100) {
+            edges {
+              node {
+                id
+                name
+                type {
+                  name
+                  value
+                }
+                subtype {
+                  name
+                  value
+                }
+                isArchived
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const data = await this.graphql<{ business: { accounts: { edges: Array<{ node: WaveAccount }> } } }>(
+      query,
+      { businessId, types }
+    );
+
+    return data.business.accounts.edges
+      .map(edge => edge.node)
+      .filter(account => !account.isArchived);
+  }
+
+  /**
+   * Create a money transaction (deposit or withdrawal)
+   * This is equivalent to creating a transaction in Wave's UI
+   */
+  async createMoneyTransaction(input: WaveMoneyTransactionInput): Promise<WaveMoneyTransactionResult> {
+    const mutation = `
+      mutation CreateMoneyTransaction($input: MoneyTransactionCreateInput!) {
+        moneyTransactionCreate(input: $input) {
+          didSucceed
+          inputErrors {
+            code
+            path
+            message
+          }
+          transaction {
+            id
+          }
+        }
+      }
+    `;
+
+    const data = await this.graphql<{ moneyTransactionCreate: WaveMoneyTransactionResult }>(
+      mutation,
+      { input }
+    );
+
+    return data.moneyTransactionCreate;
+  }
+
+  /**
+   * Create multiple transactions in batch
+   * Returns results for each transaction
+   */
+  async createMoneyTransactionsBatch(
+    inputs: WaveMoneyTransactionInput[]
+  ): Promise<Array<{ input: WaveMoneyTransactionInput; result: WaveMoneyTransactionResult }>> {
+    const results: Array<{ input: WaveMoneyTransactionInput; result: WaveMoneyTransactionResult }> = [];
+
+    // Wave doesn't support batch mutations, so we process sequentially
+    // with a small delay to avoid rate limiting
+    for (const input of inputs) {
+      try {
+        const result = await this.createMoneyTransaction(input);
+        results.push({ input, result });
+
+        // Small delay between requests to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        results.push({
+          input,
+          result: {
+            didSucceed: false,
+            inputErrors: [{
+              code: 'API_ERROR',
+              path: [],
+              message: error instanceof Error ? error.message : 'Unknown error',
+            }],
+            transaction: null,
+          },
+        });
+      }
+    }
+
+    return results;
   }
 
   /**

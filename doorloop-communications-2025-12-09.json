@@ -1,0 +1,1457 @@
+{
+  "data": [
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20656710590",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-09T19:29:13.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6938789863bf353f41089e24",
+      "createdAt": "2025-12-09T19:29:28.874Z",
+      "updatedAt": "2025-12-09T19:29:28.874Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20656707810",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-09T19:29:09.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69387896cd52921334a61275",
+      "createdAt": "2025-12-09T19:29:26.548Z",
+      "updatedAt": "2025-12-09T19:29:26.548Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20554472815",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-08T19:25:55.000Z",
+      "type": "EMAIL",
+      "openedAt": [],
+      "clickedAt": [],
+      "status": "SENT",
+      "id": "69372660e017c25a5fa7a5eb",
+      "createdAt": "2025-12-08T19:26:25.671Z",
+      "updatedAt": "2025-12-08T19:26:25.671Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20554461741",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-08T19:25:43.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6937264632fba2be2952cfb9",
+      "createdAt": "2025-12-08T19:25:58.392Z",
+      "updatedAt": "2025-12-08T19:25:58.392Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20502179325",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-07T19:43:00.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6935d8dbea9375bb76a0ac37",
+      "createdAt": "2025-12-07T19:43:23.685Z",
+      "updatedAt": "2025-12-07T19:43:23.685Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20502172389",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-07T19:42:47.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6935d8cfe64c1e50d9e11428",
+      "createdAt": "2025-12-07T19:43:11.492Z",
+      "updatedAt": "2025-12-07T19:43:11.492Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20472235658",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-06T19:40:58.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "693486d5cf216a55c1032874",
+      "createdAt": "2025-12-06T19:41:09.451Z",
+      "updatedAt": "2025-12-06T19:41:09.451Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20472233786",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-06T19:40:53.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "693486dab65a2de22ca0bc9e",
+      "createdAt": "2025-12-06T19:41:14.728Z",
+      "updatedAt": "2025-12-06T19:41:14.728Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20441848374",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-05T20:24:01.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69333f71b65a2de22cc5d5f6",
+      "createdAt": "2025-12-05T20:24:18.338Z",
+      "updatedAt": "2025-12-05T20:24:18.338Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20441845097",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-05T20:23:55.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69333f68b65a2de22cc5c137",
+      "createdAt": "2025-12-05T20:24:09.441Z",
+      "updatedAt": "2025-12-05T20:24:09.441Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20392048665",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-04T18:28:11.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6931d2c94d3872356c74c626",
+      "createdAt": "2025-12-04T18:28:25.496Z",
+      "updatedAt": "2025-12-04T18:28:25.496Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20392045832",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-04T18:28:07.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6931d2c4e01757038bbd82b9",
+      "createdAt": "2025-12-04T18:28:21.105Z",
+      "updatedAt": "2025-12-04T18:28:21.105Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20347140538",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-03T18:20:06.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69307f63e7675c281fb1b749",
+      "createdAt": "2025-12-03T18:20:19.470Z",
+      "updatedAt": "2025-12-03T18:20:19.470Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "20347138739",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-03T18:20:03.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69307f6263886358710ecd2a",
+      "createdAt": "2025-12-03T18:20:19.033Z",
+      "updatedAt": "2025-12-03T18:20:19.033Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Login from New Device",
+      "bodyPreview": "Login from New Device\n ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎...",
+      "from": {
+        "displayName": "DoorLoop Customer Success",
+        "address": "support@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "nick@chicagofurnishedcondos.com",
+          "linkedToType": "USER",
+          "linkedToId": "66d7924a42b01404fb70d9a4"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-02T01:23:43.910Z",
+      "type": "EMAIL",
+      "openedAt": [],
+      "clickedAt": [],
+      "bouncedAt": "2025-12-02T01:23:45.838Z",
+      "status": "BOUNCED",
+      "id": "692e3f9f24656e3afc3e5704",
+      "createdAt": "2025-12-02T01:23:44.060Z",
+      "updatedAt": "2025-12-02T01:23:45.838Z",
+      "createdBy": "66d7924a42b01404fb70d9a4",
+      "updatedBy": "66d7924a42b01404fb70d9a4"
+    },
+    {
+      "subject": "Reminder: Final Day to Pay Rent",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 46164556,
+      "intercomReceiptId": "20238669524",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-01T22:52:28.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "692e1c3e37be07cd5a22dc2b",
+      "createdAt": "2025-12-01T22:52:47.473Z",
+      "updatedAt": "2025-12-01T22:52:47.473Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Reminder: Final Day to Pay Rent",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 46164556,
+      "intercomReceiptId": "20238664110",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-12-01T22:52:21.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "692e1c36d28385a8a51f11eb",
+      "createdAt": "2025-12-01T22:52:39.096Z",
+      "updatedAt": "2025-12-01T22:52:39.096Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Your Monthly Rent Reminder - Simplify Payments with Our Portal App!!",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 49201400,
+      "intercomReceiptId": "19713808831",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-21T18:24:16.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6920ae5c06948f01d2ccde8c",
+      "createdAt": "2025-11-21T18:24:28.682Z",
+      "updatedAt": "2025-11-21T18:24:28.682Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Your Monthly Rent Reminder - Simplify Payments with Our Portal App!!",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 49201400,
+      "intercomReceiptId": "19713805867",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-21T18:24:10.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6920ae5aff2201d5ccd202ac",
+      "createdAt": "2025-11-21T18:24:27.195Z",
+      "updatedAt": "2025-11-21T18:24:27.195Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Review & Pay: Rent Charges Have Been Posted to Your Account",
+      "bodyPreview": "Review & Pay: Rent Charges Have Been Posted to Your Account\n ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌...",
+      "from": {
+        "displayName": "Chicago Furnished Condos by ARIBIA",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-16T17:54:18.605Z",
+      "type": "EMAIL",
+      "openedAt": [
+        "2025-11-16T17:54:29.776Z"
+      ],
+      "clickedAt": [],
+      "status": "OPENED",
+      "id": "691a0fcaaf2be6b36d7e9d55",
+      "createdAt": "2025-11-16T17:54:19.268Z",
+      "updatedAt": "2025-11-16T17:54:29.786Z"
+    },
+    {
+      "subject": "Review & Pay: Rent Charges Have Been Posted to Your Account",
+      "bodyPreview": "Review & Pay: Rent Charges Have Been Posted to Your Account\n ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌ ‍‎‏﻿ ‌...",
+      "from": {
+        "displayName": "Chicago Furnished Condos by ARIBIA",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-16T17:54:07.234Z",
+      "type": "EMAIL",
+      "openedAt": [],
+      "clickedAt": [],
+      "status": "DELIVERED",
+      "id": "691a0fbfaf2be6b36d7e8664",
+      "createdAt": "2025-11-16T17:54:07.646Z",
+      "updatedAt": "2025-11-16T17:54:09.729Z"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19418043408",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-15T19:04:16.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6918cebe28be987fd793d81d",
+      "createdAt": "2025-11-15T19:04:31.007Z",
+      "updatedAt": "2025-11-15T19:04:31.007Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19418042232",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-15T19:04:14.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6918cec2190e541e11a60eb4",
+      "createdAt": "2025-11-15T19:04:34.473Z",
+      "updatedAt": "2025-11-15T19:04:34.473Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19379771946",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-14T17:58:49.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69176dea71d571e49ff061b1",
+      "createdAt": "2025-11-14T17:59:06.898Z",
+      "updatedAt": "2025-11-14T17:59:06.898Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19379769129",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-14T17:58:45.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69176de371d571e49ff04cb7",
+      "createdAt": "2025-11-14T17:59:00.025Z",
+      "updatedAt": "2025-11-14T17:59:00.025Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19331615084",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-13T18:06:17.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69161e2a4e5288abf4aa7501",
+      "createdAt": "2025-11-13T18:06:34.817Z",
+      "updatedAt": "2025-11-13T18:06:34.817Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19331613083",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-13T18:06:15.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69161e284f441e53ab416170",
+      "createdAt": "2025-11-13T18:06:32.886Z",
+      "updatedAt": "2025-11-13T18:06:32.886Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19299911466",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-13T01:06:14.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69152f1a78baca5bc2180d25",
+      "createdAt": "2025-11-13T01:06:34.479Z",
+      "updatedAt": "2025-11-13T01:06:34.479Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19299909928",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-13T01:06:10.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69152f1978baca5bc2180ada",
+      "createdAt": "2025-11-13T01:06:33.728Z",
+      "updatedAt": "2025-11-13T01:06:33.728Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19243325489",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-11T21:23:41.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6913a96f20f7dee6f39b6490",
+      "createdAt": "2025-11-11T21:23:59.340Z",
+      "updatedAt": "2025-11-11T21:23:59.340Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19243323843",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-11T21:23:37.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6913a96b110eecc750d5b104",
+      "createdAt": "2025-11-11T21:23:55.499Z",
+      "updatedAt": "2025-11-11T21:23:55.499Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19188022365",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-10T21:27:19.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "69125902efe3055bbc8699c1",
+      "createdAt": "2025-11-10T21:28:35.752Z",
+      "updatedAt": "2025-11-10T21:28:35.752Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19188021616",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-10T21:27:17.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "691258c6fa424dda5f87f391",
+      "createdAt": "2025-11-10T21:27:34.670Z",
+      "updatedAt": "2025-11-10T21:27:34.670Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19126207763",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-09T18:27:16.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6910dd14bd54b6d720c8dd3d",
+      "createdAt": "2025-11-09T18:27:33.870Z",
+      "updatedAt": "2025-11-09T18:27:33.870Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19126204509",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-09T18:27:08.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "6910dd13503c402cb034c368",
+      "createdAt": "2025-11-09T18:27:31.903Z",
+      "updatedAt": "2025-11-09T18:27:31.903Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19083988579",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-08T09:21:04.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690f0b921e6e4399310a34eb",
+      "createdAt": "2025-11-08T09:21:23.150Z",
+      "updatedAt": "2025-11-08T09:21:23.150Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19083987568",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-08T09:21:00.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690f0b97481ff3bbfe7f763e",
+      "createdAt": "2025-11-08T09:21:27.296Z",
+      "updatedAt": "2025-11-08T09:21:27.296Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19067821157",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-07T20:59:26.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690e5dba1e04f0977ce0565f",
+      "createdAt": "2025-11-07T20:59:39.275Z",
+      "updatedAt": "2025-11-07T20:59:39.275Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19067821050",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-07T20:59:26.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690e5dbd444fa56938549d57",
+      "createdAt": "2025-11-07T20:59:42.208Z",
+      "updatedAt": "2025-11-07T20:59:42.208Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Thank you for your payment! View your receipt",
+      "bodyPreview": "PAYMENT RECEIPT\n\n\nPROPERTY: 550 W SURF ST\n\nUnit: City Studio Chicago\nPayment date: 11/07/2025\nTot...",
+      "from": {
+        "displayName": "Chicago Furnished Condos by ARIBIA",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "acpheng@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "690a54a0d7957c1c19576b89"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-07T19:39:27.283Z",
+      "type": "EMAIL",
+      "openedAt": [
+        "2025-11-07T19:39:42.083Z"
+      ],
+      "clickedAt": [],
+      "status": "OPENED",
+      "id": "690e4aef0622feffe4beb1ce",
+      "createdAt": "2025-11-07T19:39:27.409Z",
+      "updatedAt": "2025-11-07T19:39:42.084Z"
+    },
+    {
+      "subject": "Payment Received",
+      "subjectType": "PAYMENT_RECEIVED",
+      "bodyPreview": "Thank you for your payment! [Chicago Furnished Condos by ARIBIA]: received your\npayment of $2,531...",
+      "from": {
+        "address": "+18727580300",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "displayName": "Alexis Pheng",
+          "address": "8046658632",
+          "linkedToType": "TENANT",
+          "linkedToId": "690a54a0d7957c1c19576b89"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-07T19:39:25.781Z",
+      "type": "TEXT",
+      "externalId": "40319a5f-d4b5-42a1-a53f-fcd9430a09fe",
+      "openedAt": [],
+      "clickedAt": [],
+      "status": "DELIVERED",
+      "id": "690e4aed0622feffe4beb02c",
+      "createdAt": "2025-11-07T19:39:26.231Z",
+      "updatedAt": "2025-11-07T19:39:27.736Z"
+    },
+    {
+      "subject": "Property Manager New Number",
+      "subjectType": "WELCOME_TEXT_MESSAGE",
+      "bodyPreview": "Hi Alexis, This is Chicago Furnished Condos, your property manager. My new\nnumber is +18727580300...",
+      "from": {
+        "address": "+18727580300",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "displayName": "Alexis Pheng",
+          "address": "8046658632",
+          "linkedToType": "TENANT",
+          "linkedToId": "690a54a0d7957c1c19576b89"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-07T19:25:46.523Z",
+      "type": "TEXT",
+      "externalId": "40319a5f-c831-4973-98d1-3cdb89cb7294",
+      "openedAt": [],
+      "clickedAt": [],
+      "status": "DELIVERED",
+      "id": "690e47bad84b610e202885d2",
+      "createdAt": "2025-11-07T19:25:46.608Z",
+      "updatedAt": "2025-11-07T19:25:47.649Z",
+      "createdBy": "66d7924a42b01404fb70d9a4",
+      "updatedBy": "66d7924a42b01404fb70d9a4"
+    },
+    {
+      "subject": "Your Chicago Furnished Condos by ARIBIA Tenant Portal is Ready!",
+      "subjectType": "TENANT_PORTAL_INVITE",
+      "bodyPreview": "[Chicago Furnished Condos by ARIBIA]: Hi Alexis, access your Tenant Portal for\n550 W Surf St. Pay...",
+      "from": {
+        "address": "+18727580300",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "displayName": "Alexis Pheng",
+          "address": "8046658632",
+          "linkedToType": "TENANT",
+          "linkedToId": "690a54a0d7957c1c19576b89"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-07T19:25:45.997Z",
+      "type": "TEXT",
+      "externalId": "40319a5f-c82f-47b6-84e9-ca30ee28f1ae",
+      "openedAt": [],
+      "clickedAt": [],
+      "status": "DELIVERED",
+      "communicationKey": "Portal_Invitation",
+      "id": "690e47b9d84b610e202884a9",
+      "createdAt": "2025-11-07T19:25:46.087Z",
+      "updatedAt": "2025-11-07T19:25:47.131Z",
+      "createdBy": "66d7924a42b01404fb70d9a4",
+      "updatedBy": "66d7924a42b01404fb70d9a4"
+    },
+    {
+      "subject": "Your Chicago Furnished Condos by ARIBIA Tenant Portal is Ready!",
+      "bodyPreview": "WELCOME TO YOUR TENANT PORTAL, ALEXIS!\n\n\n 1. Pay your rent and set-up automatic payments\n 2. Subm...",
+      "from": {
+        "displayName": "Chicago Furnished Condos by ARIBIA",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "acpheng@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "690a54a0d7957c1c19576b89"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-07T19:25:45.628Z",
+      "type": "EMAIL",
+      "openedAt": [
+        "2025-11-07T19:26:16.014Z"
+      ],
+      "clickedAt": [
+        "2025-11-07T19:26:19.005Z"
+      ],
+      "status": "CLICKED",
+      "communicationKey": "Portal_Invitation",
+      "id": "690e47b9d84b610e2028843c",
+      "createdAt": "2025-11-07T19:25:45.822Z",
+      "updatedAt": "2025-11-07T19:26:19.006Z",
+      "createdBy": "66d7924a42b01404fb70d9a4",
+      "updatedBy": "66d7924a42b01404fb70d9a4"
+    },
+    {
+      "subject": "New Screening Reports Ready for Review!",
+      "bodyPreview": "Reports Ready For Review\n\nBackground check for Alexis Pheng\n\nHi Cynthia,\n\nThe screening reports f...",
+      "from": {
+        "displayName": "DoorLoop Customer Success",
+        "address": "support@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "cs8410@yahoo.com",
+          "linkedToType": "USER",
+          "linkedToId": "672e53689d163d671219b381"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-06T20:39:06.562Z",
+      "type": "EMAIL",
+      "openedAt": [
+        "2025-11-06T20:53:45.178Z"
+      ],
+      "clickedAt": [],
+      "status": "OPENED",
+      "id": "690d076a702a7fce3c495609",
+      "createdAt": "2025-11-06T20:39:06.846Z",
+      "updatedAt": "2025-11-06T20:53:45.179Z"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19012241502",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-06T18:13:37.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690ce564e775e56d53cffb6c",
+      "createdAt": "2025-11-06T18:13:56.410Z",
+      "updatedAt": "2025-11-06T18:13:56.410Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "19012238502",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-06T18:13:33.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690ce5626a423fdb23b15325",
+      "createdAt": "2025-11-06T18:13:54.799Z",
+      "updatedAt": "2025-11-06T18:13:54.799Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "18963620364",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-05T21:15:32.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690bbe846494580c6e88c8ac",
+      "createdAt": "2025-11-05T21:15:48.163Z",
+      "updatedAt": "2025-11-05T21:15:48.163Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "672fee05d1726be175ab4a64",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "18963618817",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "aariasmont@hotmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "672fedebdf972da6cdd85d7e"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-05T21:15:29.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690bbe846494580c6e88c935",
+      "createdAt": "2025-11-05T21:15:48.958Z",
+      "updatedAt": "2025-11-05T21:15:48.958Z",
+      "createdBy": "672fedebdf972da6cdd85d7e",
+      "updatedBy": "672fedebdf972da6cdd85d7e"
+    },
+    {
+      "subject": "Attention: Your Rent Payment Is Overdue",
+      "bodyPreview": "*",
+      "intercomContactId": "67465b45183ce7b1ada7ffa3",
+      "intercomTemplateId": 41991914,
+      "intercomReceiptId": "18900902452",
+      "from": {
+        "displayName": "Chicago Furnished Condos",
+        "address": "noreply@doorloop.com",
+        "linkedToType": "SYSTEM"
+      },
+      "to": [
+        {
+          "address": "ariaslulu1@gmail.com",
+          "linkedToType": "TENANT",
+          "linkedToId": "67465b43a769174ae0469fd8"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "sentAt": "2025-11-04T18:29:29.000Z",
+      "type": "EMAIL",
+      "status": "SENT",
+      "id": "690a4614bd9be41ba8014844",
+      "createdAt": "2025-11-04T18:29:40.849Z",
+      "updatedAt": "2025-11-04T18:29:40.849Z",
+      "createdBy": "67465b43a769174ae0469fd8",
+      "updatedBy": "67465b43a769174ae0469fd8"
+    }
+  ],
+  "total": 1270
+}
