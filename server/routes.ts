@@ -64,6 +64,55 @@ import { transformToUniversalFormat } from "./lib/universal";
 // and defer auth at route level where needed.
 const MODE = process.env.MODE || 'standalone';
 
+// Forensic investigation validation schemas and constants
+const ALLOWED_INVESTIGATION_STATUSES = ['open', 'in_progress', 'completed', 'closed'] as const;
+
+const createInvestigationSchema = z.object({
+  caseNumber: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  allegations: z.string().optional(),
+  investigationPeriodStart: z.string().datetime().optional(),
+  investigationPeriodEnd: z.string().datetime().optional(),
+  status: z.enum(ALLOWED_INVESTIGATION_STATUSES).optional(),
+  leadInvestigator: z.string().optional(),
+  metadata: z.any().optional()
+});
+
+const updateStatusSchema = z.object({
+  status: z.enum(ALLOWED_INVESTIGATION_STATUSES)
+});
+
+const addEvidenceSchema = z.object({
+  evidenceNumber: z.string().min(1),
+  type: z.string().min(1),
+  description: z.string().min(1),
+  source: z.string().min(1),
+  dateReceived: z.string().datetime().optional(),
+  collectedBy: z.string().optional(),
+  storageLocation: z.string().optional(),
+  hashValue: z.string().optional(),
+  chainOfCustody: z.any().optional(),
+  metadata: z.any().optional()
+});
+
+const custodyUpdateSchema = z.object({
+  transferredTo: z.string().min(1),
+  transferredBy: z.string().min(1),
+  location: z.string().min(1),
+  purpose: z.string().min(1)
+});
+
+/**
+ * Registers and mounts the application's HTTP API routes onto the provided Express app.
+ *
+ * This attaches a large set of endpoints under /api (status, session, tenants, integrations,
+ * financials, GitHub, forensics, webhooks, admin tooling, documentation, and metrics), plus a few
+ * top-level helper routes, and a set of webhook endpoints; it then creates and returns an HTTP server.
+ *
+ * @param app - The Express application to attach routes to.
+ * @returns The created HTTP server instance wrapping the provided Express app.
+ */
 export async function registerRoutes(app: Express): Promise<Server> {
   // Create API router
   const api = express.Router();
