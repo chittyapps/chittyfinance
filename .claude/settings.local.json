@@ -1,4 +1,3 @@
-
 {
   "permissions": {
     "allow": [
@@ -22,7 +21,8 @@
       "Bash(pkill:*)",
       "Bash(open -a \"Google Drive\")",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(op item list:*)"
     ],
     "deny": []
   }

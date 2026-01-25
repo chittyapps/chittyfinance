@@ -1,0 +1,225 @@
+🔍 PULLING ALL DOORLOOP DATA...
+
+📊 PROPERTIES:
+================================================================================
+
+1. City Studio at The Commodore (ID: 66d7aad23cf0357c2a3c9430)
+   Address: N/A, Chicago
+   Type: RESIDENTIAL_CONDO
+   Units: 0
+   Status: N/A
+
+2. Commodore Greenbriar Garage Parking (ID: 67a052ed16df553a3343d43a)
+   Address: N/A, Chicago
+   Type: COMMERCIAL_PARKING
+   Units: 0
+   Status: N/A
+
+3. Cozy Castle at The Commodore (ID: 675925395b874464a179e308)
+   Address: N/A, Chicago
+   Type: RESIDENTIAL_CONDO
+   Units: 0
+   Status: N/A
+
+4. Lakeside Loft at Addison Lakeshore West (ID: 66d7ab0b7d9e29734b945ed1)
+   Address: N/A, Chicago
+   Type: RESIDENTIAL_CONDO
+   Units: 0
+   Status: N/A
+
+5. Morada Mami at Urbanizacion Plaza de Colores (ID: 66d84c71fbcbdfe7b37ac4da)
+   Address: N/A, Medellín
+   Type: RESIDENTIAL_CONDO
+   Units: 0
+   Status: N/A
+
+6. Villa Vista at 4343 Clarendon (ID: 66d7ab44d4cadc2baed6af30)
+   Address: N/A, Chicago
+   Type: RESIDENTIAL_CONDO
+   Units: 0
+   Status: N/A
+
+✅ Total properties: 6
+
+📋 LEASES:
+================================================================================
+
+📗 ACTIVE LEASES (6):
+
+1. Lease ID: 6723e2afb02a8c43fac8c323
+   Status: ACTIVE
+   Property ID: N/A
+   Tenant ID: N/A
+
+2. Lease ID: 672fee66df972da6cdd8803f
+   Status: ACTIVE
+   Property ID: N/A
+   Tenant ID: N/A
+
+3. Lease ID: 67b372810de58346acb44ee2
+   Status: ACTIVE
+   Property ID: N/A
+   Tenant ID: N/A
+
+4. Lease ID: 68edba84f76949d646060293
+   Status: ACTIVE
+   Property ID: N/A
+   Tenant ID: N/A
+
+5. Lease ID: 6908e70552b021750d43d4df
+   Status: ACTIVE
+   Property ID: N/A
+   Tenant ID: N/A
+
+6. Lease ID: 690e47b7d84b610e20287ca2
+   Status: ACTIVE
+   Property ID: N/A
+   Tenant ID: N/A
+
+📕 INACTIVE LEASES (10):
+
+1. Lease ID: 6756e945beba587561bd0ac7
+   Status: INACTIVE
+
+2. Lease ID: 6788408e779ed2f2a74f9bf7
+   Status: INACTIVE
+
+3. Lease ID: 6783b0f5f65a91c717ecfeee
+   Status: INACTIVE
+
+4. Lease ID: 672f61bea97d79a9c95364fa
+   Status: INACTIVE
+
+5. Lease ID: 675baede3c6b132b2c1f1008
+   Status: INACTIVE
+
+6. Lease ID: 67a056f01630229f75e892e3
+   Status: INACTIVE
+
+7. Lease ID: 6764c4c586794fabc57f0971
+   Status: INACTIVE
+
+8. Lease ID: 67e584d0f68f530893f576a7
+   Status: INACTIVE
+
+9. Lease ID: 683e2f6366831813ed62b87f
+   Status: INACTIVE
+
+10. Lease ID: 6903a464bb04eba4f8b66c51
+   Status: INACTIVE
+
+🔍 DETAILED LEASE INFORMATION:
+================================================================================
+
+📄 Fetching details for lease 6723e2afb02a8c43fac8c323...
+   Property: N/A
+   Property Address: N/A
+   Tenant: N/A
+   Tenant Email: N/A
+   Rent: $0
+   Balance Due: $0
+   Start Date: N/A
+   End Date: N/A
+   Status: ACTIVE
+
+📄 Fetching details for lease 672fee66df972da6cdd8803f...
+   Property: N/A
+   Property Address: N/A
+   Tenant: N/A
+   Tenant Email: N/A
+   Rent: $0
+   Balance Due: $0
+   Start Date: N/A
+   End Date: N/A
+   Status: ACTIVE
+
+📄 Fetching details for lease 67b372810de58346acb44ee2...
+   Property: N/A
+   Property Address: N/A
+   Tenant: N/A
+   Tenant Email: N/A
+   Rent: $0
+   Balance Due: $0
+   Start Date: N/A
+   End Date: N/A
+   Status: ACTIVE
+
+📄 Fetching details for lease 68edba84f76949d646060293...
+   Property: N/A
+   Property Address: N/A
+   Tenant: N/A
+   Tenant Email: N/A
+   Rent: $0
+   Balance Due: $0
+   Start Date: N/A
+   End Date: N/A
+   Status: ACTIVE
+
+📄 Fetching details for lease 6908e70552b021750d43d4df...
+   Property: N/A
+   Property Address: N/A
+   Tenant: N/A
+   Tenant Email: N/A
+   Rent: $0
+   Balance Due: $0
+   Start Date: N/A
+   End Date: N/A
+   Status: ACTIVE
+
+📄 Fetching details for lease 690e47b7d84b610e20287ca2...
+   Property: N/A
+   Property Address: N/A
+   Tenant: N/A
+   Tenant Email: N/A
+   Rent: $0
+   Balance Due: $0
+   Start Date: N/A
+   End Date: N/A
+   Status: ACTIVE
+
+💰 PAYMENTS:
+================================================================================
+❌ Payments not accessible: Invalid JSON response
+   (This typically requires a DoorLoop premium subscription)
+
+
+🔍 TRYING OTHER ENDPOINTS:
+================================================================================
+
+Trying /tenants?limit=100...
+   ✅ Found 50 items
+
+Trying /units?limit=100...
+   ✅ Found 8 items
+
+Trying /transactions?limit=100...
+   ❌ Invalid JSON response
+
+Trying /expenses?limit=100...
+   ✅ Found 5 items
+   Sample: {
+  "register": [
+    {},
+    {
+      "cleared": true,
+      "plaidTransaction": "67884be1f5751d5d4532f8d2"
+    }
+  ],
+  "date": "2025-01-15",
+  "reference": "625464",
+  "id": "67ca4d1527451e7e45ef7b98",
+  "createdAt": "2025-03-07T01:34:13.376Z",
+  "updatedAt": "2025-03-07T01:34:13.385Z",
+  "created
+
+Trying /maintenance?limit=100...
+   ❌ Invalid JSON response
+
+
+================================================================================
+📊 SUMMARY OF ACCESSIBLE DATA
+================================================================================
+Properties: 6
+Leases: 16
+Payments: NOT ACCESSIBLE
+================================================================================

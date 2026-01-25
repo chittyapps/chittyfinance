@@ -171,8 +171,8 @@ function TaskItem({ task, index }: TaskItemProps) {
     });
   };
 
-  const priorityClass = getPriorityClass(task.priority);
-  const priorityLabel = getLabelForPriority(task.priority);
+  const priorityClass = getPriorityClass(task.priority ?? "");
+  const priorityLabel = getLabelForPriority(task.priority ?? "");
 
   return (
     <motion.li

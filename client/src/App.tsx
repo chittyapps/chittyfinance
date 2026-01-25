@@ -2,7 +2,7 @@ import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { useEffect, useState, createContext } from "react";
+import { createContext, useEffect, useMemo, useState } from "react";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
@@ -16,17 +16,6 @@ import Connections from "@/pages/Connections";
 import { User } from "@shared/schema";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TenantProvider } from "@/contexts/TenantContext";
-
-// Create AuthContext
-export const AuthContext = createContext<{
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-}>({
-  user: null,
-  isAuthenticated: false,
-  isLoading: true
-});
 
 function Router() {
   const [location] = useLocation();
@@ -54,6 +43,18 @@ function Router() {
     </div>
   );
 }
+
+export type AuthContextValue = {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+};
+
+export const AuthContext = createContext<AuthContextValue>({
+  user: null,
+  isAuthenticated: false,
+  isLoading: true,
+});
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -87,11 +88,11 @@ function App() {
     );
   }
 
-  const authContextValue = {
+  const authContextValue = useMemo<AuthContextValue>(() => ({
     user,
     isAuthenticated: !!user,
-    isLoading: loading
-  };
+    isLoading: loading,
+  }), [user, loading]);
 
   return (
     <QueryClientProvider client={queryClient}>
