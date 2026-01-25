@@ -225,6 +225,12 @@ export async function addEvidence(
   return evidence;
 }
 
+/**
+ * Fetches all evidence records for a given investigation.
+ *
+ * @param investigationId - Identifier of the investigation whose evidence should be retrieved
+ * @returns An array of `ForensicEvidence` records associated with the investigation
+ */
 export async function getEvidence(
   investigationId: number
 ): Promise<ForensicEvidence[]> {
@@ -235,19 +241,11 @@ export async function getEvidence(
 }
 
 /**
- * Update Chain of Custody for Evidence
+ * Appends a custody transfer record to an evidence item's chain of custody, preserving an append-only audit trail and returning the updated evidence.
  *
- * CRITICAL: This is the ONLY function that should modify evidence records after creation.
- * It uses atomic JSONB append operations to ensure:
- * 1. Custody records are append-only (never modified or deleted)
- * 2. No race conditions in concurrent custody transfers
- * 3. Complete audit trail for legal admissibility
- *
- * All other evidence fields are immutable after creation to maintain forensic integrity.
- *
- * @param evidenceId - ID of evidence to update custody for
- * @param custodyEntry - New custody transfer record to append
- * @returns Updated evidence record or undefined if not found
+ * @param evidenceId - ID of the evidence to update
+ * @param custodyEntry - Custody transfer details to append: `transferredTo`, `transferredBy`, `timestamp`, `location`, and `purpose`
+ * @returns The updated evidence record, or `undefined` if no evidence with the given ID exists
  */
 export async function updateChainOfCustody(
   evidenceId: number,
@@ -502,6 +500,14 @@ export async function detectUnusualTiming(
   return anomalies;
 }
 
+/**
+ * Detects whether a user's transactions contain an unusually high proportion of round-dollar amounts for an investigation.
+ *
+ * If the proportion of transactions with absolute integer amounts >= 100 exceeds 20%, a medium-severity
+ * `round_dollar` anomaly is created (persisted to `forensicAnomalies` with status `"pending"`) and returned.
+ *
+ * @returns An array of detected anomalies containing anomaly metadata and the IDs of affected transactions; returns an empty array if no anomaly is detected.
+ */
 export async function detectRoundDollarAnomalies(
   investigationId: number,
   userId: number
@@ -575,6 +581,27 @@ const CHI_SQUARE_CRITICAL_VALUES = {
   CONFIDENCE_99: 20.090
 };
 
+/**
+ * Analyzes a list of numeric amounts against Benford's Law and returns per-first-digit statistics and pass/fail indicators.
+ *
+ * Computes the observed percentage for each leading digit (1–9), the expected frequency per Benford's distribution,
+ * the deviation, and a chi-square contribution for each digit. The function also computes a total chi-square for the
+ * distribution and marks the overall test as passed or failed against the module's 95% chi-square critical value.
+ *
+ * @param amounts - An array of numeric amounts (e.g., transaction values). Negative values are handled by magnitude; non-numeric or empty inputs yield zero counts.
+ * @returns An array of results for digits 1 through 9. Each element contains:
+ *   - `digit`: the leading digit (1–9),
+ *   - `observed`: observed percentage of amounts with that leading digit,
+ *   - `expected`: expected percentage according to Benford's Law,
+ *   - `deviation`: `observed - expected`,
+ *   - `chiSquare`: chi-square contribution from that digit,
+ *   - `passed`: `true` if the digit's chi-square contribution is within the per-digit threshold, `false` otherwise.
+ *
+ * The first element (digit 1) also includes metadata fields:
+ *   - `totalChiSquare`: sum of per-digit chi-square contributions,
+ *   - `overallPassed`: `true` if `totalChiSquare` is less than or equal to the 95% critical value,
+ *   - `criticalValue`: the 95% chi-square critical value used for the overall decision.
+ */
 export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
   // Expected frequencies for first digit according to Benford's Law
   const expected = {
@@ -653,6 +680,13 @@ export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
   return results;
 }
 
+/**
+ * Performs Benford's Law analysis on the specified user's transaction amounts and records a `benford_violation` anomaly for the investigation when the overall chi-square test fails.
+ *
+ * @param investigationId - ID of the investigation to associate with a recorded anomaly if the analysis fails
+ * @param userId - ID of the user whose transactions will be analyzed
+ * @returns An array of per-digit Benford analysis results. Each element contains `digit`, `observed`, `expected`, `deviation`, `chiSquare`, and `passed`. The first element also includes `totalChiSquare`, `overallPassed`, and `criticalValue` as metadata summarizing the overall chi-square test result.
+ */
 export async function runBenfordsLawAnalysis(
   investigationId: number,
   userId: number
@@ -938,15 +972,11 @@ export async function getForensicReports(
 // ============================================================================
 
 /**
- * Run Comprehensive Forensic Analysis
+ * Run multiple forensic analyses for a single investigation and return aggregated results.
  *
- * Executes multiple analysis methods in parallel using Promise.allSettled
- * to ensure partial results are returned even if some analyses fail.
- * This provides better resilience and observability compared to Promise.all.
- *
- * @param investigationId - Investigation to analyze
- * @param userId - User ID for transaction scoping
- * @returns Analysis results with error information for failed analyses
+ * @param investigationId - ID of the investigation to analyze
+ * @param userId - ID of the user whose transactions should be used as the analysis scope
+ * @returns An object with the results arrays for `transactionAnalyses`, `duplicatePayments`, `unusualTiming`, `roundDollars`, and `benfordsLaw`; includes an optional `errors` array of `{ analysis, error }` entries for any analyses that failed
  */
 export async function runComprehensiveAnalysis(
   investigationId: number,
