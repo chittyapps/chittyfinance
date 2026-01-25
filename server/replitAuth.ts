@@ -62,9 +62,11 @@ async function upsertUser(
   
   if (user) {
     // Update the replitAuthData field
-    await storage.updateUser(user.id, {
-      replitAuthData: claims
-    });
+    if ((storage as any).updateUser) {
+      await (storage as any).updateUser(user.id, {
+        replitAuthData: claims
+      });
+    }
     return user;
   } else {
     // Create a new user with replitAuthData

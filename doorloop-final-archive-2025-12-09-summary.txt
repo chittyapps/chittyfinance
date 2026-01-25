@@ -1,0 +1,51 @@
+DOORLOOP FINAL ARCHIVE SUMMARY
+================================================================================
+Date: 2025-12-10T03:08:28.148Z
+
+🎯 ALEXIS PHENG - DECEMBER 2025 RENT STATUS:
+
+   CHARGE POSTED:
+   Date: December 1, 2025
+   Amount: $1,282.26
+   Description: Prorated Rent December 1-15
+   
+   PAYMENT STATUS:
+   ❌ NO PAYMENT RECEIVED
+   Balance Due: $1,282.26 (OVERDUE)
+
+   EVIDENCE:
+   • Daily overdue notices sent Dec 3-9, 2025
+   • Last payment received: Nov 6, 2025 ($2,781.67 total)
+   • Lease-charges endpoint shows balance: $1,282.26
+   • Lease-payments endpoint shows 0 Dec 2025 payments
+   • Lease details show overdueBalance: $1,282.26
+
+📋 LEASE DETAILS:
+   Tenant: Alexis Pheng
+   Email: acpheng@gmail.com
+   Phone: 804-665-8632
+   Property: City Studio at The Commodore
+   Address: 550 W Surf St C211, Chicago IL
+   Lease Term: Nov 8, 2025 → Dec 15, 2026
+   Monthly Rent: $2,650
+   Status: ACTIVE
+   Insurance: NO_INSURANCE (required but not provided)
+
+📊 ARCHIVED DATA:
+
+   ✅ rent-roll: 8 records
+   ❌ profit-and-loss-summary: Error - 400
+   ❌ cash-flow-statement: Error - 400
+   ❌ balance-sheet-summary: Error - 400
+   ✅ notes: 4 records
+   ✅ files: 50 records
+
+Total archived records: 62
+
+📦 PREVIOUS ARCHIVES:
+   • doorloop-archive-2025-12-09.json (properties, leases, tenants)
+   • doorloop-communications-2025-12-09.json (50 communications)
+   • Comprehensive endpoint testing (65 endpoints tested)
+
+✅ ARCHIVE COMPLETE
+================================================================================

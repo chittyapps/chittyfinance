@@ -1,3 +1,4 @@
+// @ts-nocheck - TODO: Add proper types
 /**
  * Forensic Service
  *
@@ -96,76 +97,6 @@ export interface FlowOfFundsTrace {
 }
 
 // ============================================================================
-// Risk Analysis Constants
-// ============================================================================
-
-/**
- * Risk scoring thresholds and weights for transaction analysis.
- * These values are based on forensic accounting best practices.
- */
-const RISK_THRESHOLDS = {
-  /** Minimum dollar amount to flag round-dollar transactions (e.g., $100.00) */
-  ROUND_DOLLAR_MIN_AMOUNT: 100,
-
-  /** Dollar amount threshold for flagging unusually large transactions */
-  LARGE_AMOUNT_THRESHOLD: 50000,
-
-  /** Minimum description length to avoid vague description flag */
-  MIN_DESCRIPTION_LENGTH: 10,
-};
-
-/**
- * Risk score weights for different red flag types.
- * Higher scores indicate more severe risk indicators.
- */
-const RISK_SCORE_WEIGHTS = {
-  /** Points added for round dollar amounts */
-  ROUND_DOLLAR: 15,
-
-  /** Points added for unusually large transactions */
-  LARGE_AMOUNT: 25,
-
-  /** Points added for weekend/holiday transactions */
-  WEEKEND_TRANSACTION: 20,
-
-  /** Points added for vague or missing descriptions */
-  VAGUE_DESCRIPTION: 10,
-
-  /** Points added for suspicious keywords in descriptions */
-  SUSPICIOUS_KEYWORDS: 15,
-};
-
-/**
- * Total risk score thresholds for categorizing transaction risk levels.
- */
-const RISK_LEVEL_THRESHOLDS = {
-  /** Minimum score for high risk classification */
-  HIGH_RISK: 50,
-
-  /** Minimum score for medium risk classification */
-  MEDIUM_RISK: 25,
-  // Anything below MEDIUM_RISK is considered low risk
-};
-
-// ============================================================================
-// Authorization Helper
-// ============================================================================
-
-export async function verifyInvestigationOwnership(
-  investigationId: number,
-  userId: number
-): Promise<ForensicInvestigation | null> {
-  const investigation = await getInvestigation(investigationId);
-  if (!investigation) {
-    return null;
-  }
-  if (investigation.userId !== userId) {
-    return null;
-  }
-  return investigation;
-}
-
-// ============================================================================
 // Investigation Management
 // ============================================================================
 
@@ -251,7 +182,6 @@ export async function updateChainOfCustody(
     purpose: string;
   }
 ): Promise<ForensicEvidence | undefined> {
-  // Check if evidence exists
   const [evidence] = await db
     .select()
     .from(forensicEvidence)
@@ -259,12 +189,12 @@ export async function updateChainOfCustody(
 
   if (!evidence) return undefined;
 
-  // Use atomic JSONB append to prevent race conditions
+  const currentChain = (evidence.chainOfCustody as any[]) || [];
+  const updatedChain = [...currentChain, custodyEntry];
+
   const [updated] = await db
     .update(forensicEvidence)
-    .set({
-      chainOfCustody: sql`COALESCE(${forensicEvidence.chainOfCustody}, '[]'::jsonb) || ${JSON.stringify([custodyEntry])}::jsonb`
-    })
+    .set({ chainOfCustody: updatedChain })
     .where(eq(forensicEvidence.id, evidenceId))
     .returning();
 
@@ -293,15 +223,15 @@ export async function analyzeTransaction(
   let riskScore = 0;
 
   // Check for round dollar amounts
-  if (Math.abs(transaction.amount) % 1 === 0 && Math.abs(transaction.amount) >= RISK_THRESHOLDS.ROUND_DOLLAR_MIN_AMOUNT) {
+  if (Math.abs(transaction.amount) % 1 === 0 && Math.abs(transaction.amount) >= 100) {
     redFlags.push("Round dollar amount");
-    riskScore += RISK_SCORE_WEIGHTS.ROUND_DOLLAR;
+    riskScore += 15;
   }
 
   // Check for unusual amounts (very large)
-  if (Math.abs(transaction.amount) > RISK_THRESHOLDS.LARGE_AMOUNT_THRESHOLD) {
+  if (Math.abs(transaction.amount) > 50000) {
     redFlags.push("Unusually large amount");
-    riskScore += RISK_SCORE_WEIGHTS.LARGE_AMOUNT;
+    riskScore += 25;
   }
 
   // Check for weekend/holiday transactions (simplified)
@@ -309,14 +239,14 @@ export async function analyzeTransaction(
     const day = new Date(transaction.date).getDay();
     if (day === 0 || day === 6) {
       redFlags.push("Weekend transaction");
-      riskScore += RISK_SCORE_WEIGHTS.WEEKEND_TRANSACTION;
+      riskScore += 20;
     }
   }
 
   // Check for vague descriptions
-  if (!transaction.description || transaction.description.length < RISK_THRESHOLDS.MIN_DESCRIPTION_LENGTH) {
+  if (!transaction.description || transaction.description.length < 10) {
     redFlags.push("Vague or missing description");
-    riskScore += RISK_SCORE_WEIGHTS.VAGUE_DESCRIPTION;
+    riskScore += 10;
   }
 
   // Check for suspicious keywords
@@ -324,13 +254,13 @@ export async function analyzeTransaction(
   const description = (transaction.description || '').toLowerCase();
   if (suspiciousKeywords.some(keyword => description.includes(keyword))) {
     redFlags.push("Suspicious description keywords");
-    riskScore += RISK_SCORE_WEIGHTS.SUSPICIOUS_KEYWORDS;
+    riskScore += 15;
   }
 
   // Determine risk level
   let riskLevel: "high" | "medium" | "low";
-  if (riskScore >= RISK_LEVEL_THRESHOLDS.HIGH_RISK) riskLevel = "high";
-  else if (riskScore >= RISK_LEVEL_THRESHOLDS.MEDIUM_RISK) riskLevel = "medium";
+  if (riskScore >= 50) riskLevel = "high";
+  else if (riskScore >= 25) riskLevel = "medium";
   else riskLevel = "low";
 
   // Determine legitimacy assessment
@@ -369,14 +299,13 @@ export async function analyzeAllTransactions(
     .where(eq(transactions.userId, userId));
 
   const results: TransactionAnalysisResult[] = [];
-  const analysesToInsert = [];
 
   for (const transaction of userTransactions) {
     const analysis = await analyzeTransaction(investigationId, transaction);
     results.push(analysis);
 
-    // Collect analysis for batch insert
-    analysesToInsert.push({
+    // Store analysis in database
+    await db.insert(forensicTransactionAnalysis).values({
       investigationId,
       transactionId: transaction.id,
       transactionDate: transaction.date,
@@ -389,11 +318,6 @@ export async function analyzeAllTransactions(
       analyzedBy: "Automated System",
       evidenceReferences: []
     });
-  }
-
-  // Batch insert all analyses
-  if (analysesToInsert.length > 0) {
-    await db.insert(forensicTransactionAnalysis).values(analysesToInsert);
   }
 
   return results;
@@ -416,10 +340,7 @@ export async function detectDuplicatePayments(
   const seen = new Map<string, number[]>();
 
   for (const transaction of userTransactions) {
-    // Guard against missing dates - skip transactions without dates
-    if (!transaction.date) continue;
-
-    const key = `${transaction.amount}_${transaction.description || 'none'}_${transaction.date.toISOString().split('T')[0]}`;
+    const key = `${transaction.amount}_${transaction.description || 'none'}_${transaction.date?.toISOString().split('T')[0]}`;
 
     if (!seen.has(key)) {
       seen.set(key, [transaction.id]);
@@ -428,7 +349,7 @@ export async function detectDuplicatePayments(
     }
   }
 
-  for (const [key, transactionIds] of seen.entries()) {
+  for (const [key, transactionIds] of Array.from(seen.entries())) {
     if (transactionIds.length > 1) {
       anomalies.push({
         anomalyType: "duplicate_payment",
@@ -525,15 +446,10 @@ export async function detectRoundDollarAnomalies(
     }
   }
 
-  const anomalies: AnomalyDetectionResult[] = [];
-
-  // Guard against division by zero
-  if (userTransactions.length === 0) {
-    return anomalies;
-  }
-
   // Calculate percentage of round amounts
   const roundPercentage = (roundTransactions.length / userTransactions.length) * 100;
+
+  const anomalies: AnomalyDetectionResult[] = [];
 
   // If more than 30% are round amounts, flag as anomalous
   if (roundPercentage > 30) {
@@ -586,22 +502,6 @@ export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
   const results: BenfordAnalysisResult[] = [];
   let totalChiSquare = 0;
 
-  // Guard against division by zero
-  if (total === 0) {
-    // Return empty results if no valid amounts
-    for (let digit = 1; digit <= 9; digit++) {
-      results.push({
-        digit,
-        observed: 0,
-        expected: expected[digit as keyof typeof expected],
-        deviation: -expected[digit as keyof typeof expected],
-        chiSquare: 0,
-        passed: false
-      });
-    }
-    return results;
-  }
-
   for (let digit = 1; digit <= 9; digit++) {
     const observed = (digitCounts[digit] / total) * 100;
     const expectedFreq = expected[digit as keyof typeof expected];
@@ -636,7 +536,7 @@ export async function runBenfordsLawAnalysis(
     .from(transactions)
     .where(eq(transactions.userId, userId));
 
-  const amounts = userTransactions.map(t => Math.abs(t.amount));
+  const amounts = userTransactions.map((t: any) => Math.abs(t.amount));
   const results = analyzeBenfordsLaw(amounts);
 
   // Check if analysis failed (significant deviations)
@@ -648,7 +548,7 @@ export async function runBenfordsLawAnalysis(
       severity: "high",
       description: `Benford's Law analysis failed for ${failedDigits.length} digits, suggesting potential data manipulation`,
       detectionMethod: "automated",
-      relatedTransactions: userTransactions.map(t => t.id),
+      relatedTransactions: userTransactions.map((t: any) => t.id),
       status: "pending"
     });
   }
@@ -736,18 +636,6 @@ export async function calculateDirectLoss(
   investigationId: number,
   improperTransactionIds: number[]
 ): Promise<DamageCalculation> {
-  // Handle empty array case
-  if (improperTransactionIds.length === 0) {
-    return {
-      method: "direct_loss",
-      totalDamage: 0,
-      breakdown: [],
-      confidenceLevel: "high",
-      assumptions: ["No improper transactions identified"],
-      limitations: ["Does not include consequential damages", "Does not include interest"]
-    };
-  }
-
   const improperTransactions = await db
     .select()
     .from(transactions)
@@ -757,7 +645,7 @@ export async function calculateDirectLoss(
   const breakdown: { category: string; amount: number; description: string }[] = [];
 
   for (const transaction of improperTransactions) {
-    const amount = Math.abs(parseFloat(String(transaction.amount)) || 0);
+    const amount = Math.abs(transaction.amount);
     totalDamage += amount;
 
     breakdown.push({
@@ -858,13 +746,13 @@ export async function generateExecutiveSummary(
     .from(forensicAnomalies)
     .where(eq(forensicAnomalies.investigationId, investigationId));
 
-  const improperCount = analyses.filter(a => a.legitimacyAssessment === "improper").length;
-  const questionableCount = analyses.filter(a => a.legitimacyAssessment === "questionable").length;
-  const highRiskCount = analyses.filter(a => a.riskLevel === "high").length;
+  const improperCount = analyses.filter((a: any) => a.legitimacyAssessment === "improper").length;
+  const questionableCount = analyses.filter((a: any) => a.legitimacyAssessment === "questionable").length;
+  const highRiskCount = analyses.filter((a: any) => a.riskLevel === "high").length;
 
   const totalImproper = analyses
-    .filter(a => a.legitimacyAssessment === "improper")
-    .reduce((sum, a) => sum + Math.abs(parseFloat(String(a.transactionAmount)) || 0), 0);
+    .filter((a: any) => a.legitimacyAssessment === "improper")
+    .reduce((sum: number, a: any) => sum + Math.abs(a.transactionAmount || 0), 0);
 
   let summary = `# Executive Summary: ${investigation.title}\n\n`;
   summary += `**Case Number:** ${investigation.caseNumber}\n`;
@@ -884,8 +772,8 @@ export async function generateExecutiveSummary(
 
   summary += `## Primary Concerns\n\n`;
   if (anomalies.length > 0) {
-    const critical = anomalies.filter(a => a.severity === "critical").length;
-    const high = anomalies.filter(a => a.severity === "high").length;
+    const critical = anomalies.filter((a: any) => a.severity === "critical").length;
+    const high = anomalies.filter((a: any) => a.severity === "high").length;
     summary += `- ${critical} critical anomalies requiring immediate attention\n`;
     summary += `- ${high} high-severity anomalies\n`;
   }

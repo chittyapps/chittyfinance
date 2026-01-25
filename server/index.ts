@@ -3,7 +3,7 @@
  * - Express API + client dev middleware (Vite in dev, static in prod)
  * - Routes registered via `server/routes.ts`
  * - Data access centralized in `server/storage.ts`
- * - Default port 5000; override with `PORT`
+ * - Default port 5001; override with `PORT`
  */
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
@@ -69,12 +69,10 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Default to port 5000; allow override via PORT for local conflicts
-  const port = Number(process.env.PORT) || 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  // Default to port 5001; allow override via PORT for local conflicts
+const PORT = parseInt(process.env.PORT || "5001", 10);
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server listening on port ${PORT}`);
+});
 })();
