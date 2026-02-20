@@ -64,6 +64,7 @@ export interface BenfordAnalysisResult {
   expected: number;
   deviation: number;
   chiSquare: number;
+  zScore: number;
   passed: boolean;
 }
 
@@ -594,12 +595,13 @@ const CHI_SQUARE_CRITICAL_VALUES = {
  *   - `observed`: observed percentage of amounts with that leading digit,
  *   - `expected`: expected percentage according to Benford's Law,
  *   - `deviation`: `observed - expected`,
- *   - `chiSquare`: chi-square contribution from that digit,
- *   - `passed`: `true` if the digit's chi-square contribution is within the per-digit threshold, `false` otherwise.
+ *   - `chiSquare`: chi-square contribution from that digit (for the overall goodness-of-fit test),
+ *   - `zScore`: proportion z-test statistic for this digit, z = (p_obs - p_exp) / SE,
+ *   - `passed`: `true` if |zScore| <= 1.96 (two-tailed, 95% confidence).
  *
  * The first element (digit 1) also includes metadata fields:
  *   - `totalChiSquare`: sum of per-digit chi-square contributions,
- *   - `overallPassed`: `true` if `totalChiSquare` is less than or equal to the 95% critical value,
+ *   - `overallPassed`: `true` if `totalChiSquare` is less than or equal to the 95% critical value (15.507, 8 df),
  *   - `criticalValue`: the 95% chi-square critical value used for the overall decision.
  */
 export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
@@ -635,26 +637,34 @@ export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
         expected: expected[digit as keyof typeof expected],
         deviation: -expected[digit as keyof typeof expected],
         chiSquare: 0,
+        zScore: 0,
         passed: false
       });
     }
     return results;
   }
 
+  // Z-test critical value for two-tailed test at 95% confidence
+  const Z_CRITICAL_95 = 1.96;
+
   for (let digit = 1; digit <= 9; digit++) {
     const observed = (digitCounts[digit] / total) * 100;
     const expectedFreq = expected[digit as keyof typeof expected];
     const deviation = observed - expectedFreq;
 
-    // Chi-square calculation per digit
+    // Chi-square contribution per digit (for the overall goodness-of-fit test)
     const expectedCount = total * expectedFreq / 100;
     const chiSquare = Math.pow(digitCounts[digit] - expectedCount, 2) / expectedCount;
     totalChiSquare += chiSquare;
 
-    // Individual digit passes if its contribution to chi-square is reasonable
-    // Using a per-digit threshold based on proportion of total critical value
-    const digitThreshold = CHI_SQUARE_CRITICAL_VALUES.CONFIDENCE_95 / 9;
-    const passed = chiSquare <= digitThreshold;
+    // Per-digit significance: proportion z-test
+    // H0: p_observed = p_expected for this digit
+    // z = (p_obs - p_exp) / sqrt(p_exp * (1 - p_exp) / n)
+    const pObs = digitCounts[digit] / total;
+    const pExp = expectedFreq / 100;
+    const standardError = Math.sqrt(pExp * (1 - pExp) / total);
+    const zScore = standardError > 0 ? (pObs - pExp) / standardError : 0;
+    const passed = Math.abs(zScore) <= Z_CRITICAL_95;
 
     results.push({
       digit,
@@ -662,6 +672,7 @@ export function analyzeBenfordsLaw(amounts: number[]): BenfordAnalysisResult[] {
       expected: expectedFreq,
       deviation: parseFloat(deviation.toFixed(2)),
       chiSquare: parseFloat(chiSquare.toFixed(2)),
+      zScore: parseFloat(zScore.toFixed(4)),
       passed
     });
   }

@@ -31,6 +31,7 @@ describe('analyzeBenfordsLaw', () => {
     results.forEach(r => {
       expect(r.observed).toBe(0);
       expect(r.chiSquare).toBe(0);
+      expect(r.zScore).toBe(0);
       expect(r.passed).toBe(false);
     });
   });
@@ -120,6 +121,62 @@ describe('analyzeBenfordsLaw', () => {
     expect(digit1.observed).toBeGreaterThan(0); // -100 → 1xx
     expect(digit2.observed).toBeGreaterThan(0); // -200 → 2xx
     expect(digit3.observed).toBeGreaterThan(0); // -300 → 3xx
+  });
+
+  it('includes zScore field on every result', () => {
+    const amounts = [100, 200, 300, 400, 500];
+    const results = analyzeBenfordsLaw(amounts);
+    results.forEach(r => {
+      expect(r).toHaveProperty('zScore');
+      expect(typeof r.zScore).toBe('number');
+    });
+  });
+
+  it('per-digit passed uses z-test: |zScore| <= 1.96', () => {
+    // Generate Benford-conforming data so z-scores should be small
+    const benfordAmounts: number[] = [];
+    const distribution = [301, 176, 125, 97, 79, 67, 58, 51, 46];
+    distribution.forEach((count, i) => {
+      const digit = i + 1;
+      for (let j = 0; j < count; j++) {
+        benfordAmounts.push(parseFloat(`${digit}.${Math.floor(Math.random() * 99)}`));
+      }
+    });
+    const results = analyzeBenfordsLaw(benfordAmounts);
+    results.forEach(r => {
+      if (r.passed) {
+        expect(Math.abs(r.zScore)).toBeLessThanOrEqual(1.96);
+      } else {
+        expect(Math.abs(r.zScore)).toBeGreaterThan(1.96);
+      }
+    });
+  });
+
+  it('computes z-score as (pObs - pExp) / sqrt(pExp*(1-pExp)/n)', () => {
+    // 2 amounts: one starts with 1, one with 2 → n=2
+    const amounts = [100, 200];
+    const results = analyzeBenfordsLaw(amounts);
+    const digit1 = results.find(r => r.digit === 1)!;
+
+    // pObs = 1/2 = 0.5, pExp = 0.301
+    const pObs = 0.5;
+    const pExp = 0.301;
+    const se = Math.sqrt(pExp * (1 - pExp) / 2);
+    const expectedZ = (pObs - pExp) / se;
+    expect(digit1.zScore).toBeCloseTo(expectedZ, 3);
+  });
+
+  it('flags digit as failed when z-score exceeds 1.96', () => {
+    // All 100 amounts start with 9 → digit 9 has z >> 1.96, digit 1 has z << -1.96
+    const amounts = Array.from({ length: 100 }, (_, i) => 9000 + i);
+    const results = analyzeBenfordsLaw(amounts);
+    const digit9 = results.find(r => r.digit === 9)!;
+    const digit1 = results.find(r => r.digit === 1)!;
+
+    expect(digit9.passed).toBe(false);
+    expect(digit9.zScore).toBeGreaterThan(1.96);
+    expect(digit1.passed).toBe(false);
+    expect(digit1.zScore).toBeLessThan(-1.96);
   });
 });
 
