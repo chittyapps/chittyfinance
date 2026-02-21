@@ -145,7 +145,7 @@ CREATE TABLE transaction_links (
 
   -- ChittyLedger side
   document_id UUID NOT NULL REFERENCES financial_documents(id),
-  fact_ids UUID[] NOT NULL,                   -- Array of financial_fact IDs used for matching
+  fact_ids UUID[] NOT NULL,                   -- Array of financial_facts.id values used for matching
 
   -- ChittyFinance side
   tenant_id UUID NOT NULL,
