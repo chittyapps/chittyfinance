@@ -292,6 +292,10 @@ CREATE INDEX idx_reconciliation_conflicts_document_id ON reconciliation_conflict
 -- financial_audit_log
 CREATE INDEX idx_financial_audit_log_document_id ON financial_audit_log(document_id);
 CREATE INDEX idx_financial_audit_log_tenant_id ON financial_audit_log(tenant_id);
+
+-- reconciliation_signals (ChittyFinance table)
+CREATE INDEX idx_reconciliation_signals_tenant_status ON reconciliation_signals(tenant_id, status);
+CREATE INDEX idx_reconciliation_signals_document_id ON reconciliation_signals(document_id);
 ```
 
 ## Reconciliation Signal Schema
@@ -331,6 +335,7 @@ interface ReconciliationSignal {
 
     // For match events
     match?: {
+      linkId?: string;           // Optional transaction_links.id for correlation
       transactionId: string;
       confidence: number;
       method: string;
@@ -338,6 +343,7 @@ interface ReconciliationSignal {
 
     // For conflict events
     conflict?: {
+      conflictId?: string;       // Optional reconciliation_conflicts.id for correlation
       type: string;
       severity: string;
       expected: string;
@@ -361,7 +367,7 @@ interface ReconciliationSignal {
 
 ```typescript
 // Add to transactions table (system.schema.ts)
-reconciliationSource: text('reconciliation_source'),  // ChittyLedger document_id
+reconciliationSource: uuid('reconciliation_source'),  // ChittyLedger financial_documents.id (UUID)
 reconciliationScore: decimal('reconciliation_score', { precision: 3, scale: 2 }),
 reconciledAt: timestamp('reconciled_at'),
 
