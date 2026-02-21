@@ -1,10 +1,10 @@
-# ChittyLedger - Finance: Design Specification
+# ChittyLedger-Finance: Design Specification
 
 > Integration design for ChittyLedger's financial vertical and how ChittyFinance consumes it
 
 ## Concept
 
-ChittyLedger provides core immutable ledger infrastructure (trust scoring, chain of custody, fact extraction, contradiction detection). **ChittyLedger - Finance** is a vertical that maps these capabilities to financial document processing and transaction reconciliation.
+ChittyLedger provides core immutable ledger infrastructure (trust scoring, chain of custody, fact extraction, contradiction detection). **ChittyLedger-Finance** is a vertical that maps these capabilities to financial document processing and transaction reconciliation.
 
 ChittyFinance does **not** own document intake or parsing. It consumes structured financial signals from ChittyLedger-Finance for reconciliation against its bank/accounting API data.
 
