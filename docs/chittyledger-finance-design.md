@@ -289,7 +289,7 @@ interface ReconciliationSignal {
 ### What ChittyFinance needs to add
 
 1. **Signal consumer** - Endpoint or queue listener for reconciliation signals
-2. **`reconciled` flag** - Already exists on `transactions` table (`system.schema.ts:104`)
+2. **`reconciled` flag** - Already exists as `transactions.reconciled` in `database/system.schema.ts`
 3. **`reconciliation_source`** - New field: which document/fact confirmed the transaction
 4. **Conflict dashboard** - UI to review and resolve reconciliation conflicts
 5. **Document viewer** - Link to view source document in R2
