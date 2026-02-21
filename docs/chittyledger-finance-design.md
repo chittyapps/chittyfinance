@@ -158,7 +158,6 @@ CREATE TABLE transaction_links (
 
   -- ChittyLedger side
   document_id UUID NOT NULL REFERENCES financial_documents(id),
-  fact_ids UUID[] NOT NULL,                   -- Array of financial_facts.id values used for matching
 
   -- ChittyFinance side
   tenant_id UUID NOT NULL,
@@ -178,6 +177,23 @@ CREATE TABLE transaction_links (
 
   metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+### `transaction_link_facts`
+
+Junction table linking transaction_links to the specific financial_facts used for matching.
+This provides proper FK integrity that UUID[] arrays cannot enforce.
+
+```sql
+CREATE TABLE transaction_link_facts (
+  transaction_link_id UUID NOT NULL REFERENCES transaction_links(id) ON DELETE CASCADE,
+  financial_fact_id UUID NOT NULL REFERENCES financial_facts(id) ON DELETE CASCADE,
+  
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  -- Composite primary key prevents duplicate fact associations
+  PRIMARY KEY (transaction_link_id, financial_fact_id)
 );
 ```
 
@@ -283,6 +299,10 @@ CREATE INDEX idx_financial_facts_tenant_id ON financial_facts(tenant_id);
 CREATE INDEX idx_transaction_links_document_id ON transaction_links(document_id);
 CREATE INDEX idx_transaction_links_transaction_id ON transaction_links(transaction_id);
 CREATE INDEX idx_transaction_links_tenant_id ON transaction_links(tenant_id);
+
+-- transaction_link_facts (junction table)
+CREATE INDEX idx_transaction_link_facts_link_id ON transaction_link_facts(transaction_link_id);
+CREATE INDEX idx_transaction_link_facts_fact_id ON transaction_link_facts(financial_fact_id);
 
 -- reconciliation_conflicts
 CREATE INDEX idx_reconciliation_conflicts_tenant_id ON reconciliation_conflicts(tenant_id);
