@@ -334,6 +334,10 @@ reconciliationSignals: pgTable('reconciliation_signals', {
 
 ```
 POST /api/reconciliation/signals    -- Receive signals from ChittyLedger-Finance
+                                    -- Requires: Service-to-service authentication
+                                    -- - mTLS or OAuth bearer token
+                                    -- - HMAC-signed payload verification
+                                    -- - Reject unsigned/invalid requests
 GET  /api/reconciliation/pending    -- List unmatched documents
 GET  /api/reconciliation/conflicts  -- List active conflicts
 POST /api/reconciliation/confirm    -- Manually confirm a match
@@ -341,12 +345,52 @@ POST /api/reconciliation/dismiss    -- Dismiss a conflict
 GET  /api/transactions/:id/documents -- View linked source documents
 ```
 
+#### Security: Reconciliation Signals Authentication
+
+**Critical**: The `/api/reconciliation/signals` endpoint must enforce strong service-to-service authentication to prevent unauthorized signal injection. Without authentication, an attacker could forge `ReconciliationSignal` payloads with arbitrary `tenantId`, `documentId`, or `transactionId` values, causing ChittyFinance to:
+- Mark transactions as reconciled incorrectly
+- Create fake conflicts
+- Corrupt financial state
+
+**Required authentication mechanisms** (implement at least one):
+
+1. **Service Binding (preferred for same CF account)**:
+   - Use Cloudflare Service Bindings for direct service-to-service calls
+   - No exposed HTTP endpoint
+   - Built-in authentication via CF platform
+
+2. **HMAC-signed payloads**:
+   - Shared secret between ChittyLedger-Finance and ChittyFinance
+   - Each signal includes `signature` field: HMAC-SHA256 of payload + timestamp
+   - Reject requests with missing, expired (>5min), or invalid signatures
+   - Example: `signature = HMAC-SHA256(secret, payload + timestamp)`
+
+3. **OAuth 2.0 Client Credentials** (service-to-service):
+   - ChittyLedger-Finance obtains access token from ChittyAuth
+   - Include `Authorization: Bearer {token}` header
+   - ChittyFinance validates token with ChittyAuth
+
+4. **Mutual TLS (mTLS)**:
+   - Both services present certificates
+   - Cloudflare Workers supports mTLS via custom certificates
+   - Verify client certificate at edge
+
+**Implementation checklist**:
+- [ ] Choose authentication method based on deployment architecture
+- [ ] Add signature/token validation to `/api/reconciliation/signals` handler
+- [ ] Log all authentication failures with source IP and payload hash
+- [ ] Reject requests with invalid tenant IDs (verify tenant exists in ChittyFinance)
+- [ ] Rate limit by source IP/service identity
+- [ ] Store rejected signals in audit log for security review
+
 ## Infrastructure
 
 ### Shared R2 Bucket Strategy
 
+**Bucket name**: `chittyfinance-documents` (aligns with existing `deploy/system-wrangler.toml` configuration)
+
 ```
-chittyos-financial-documents (R2)
+chittyfinance-documents (R2)
 ├── {tenant_id}/
 │   ├── receipts/
 │   │   └── {document_id}.pdf
@@ -358,8 +402,24 @@ chittyos-financial-documents (R2)
 │       └── {document_id}.csv
 ```
 
-Both ChittyLedger-Finance and ChittyFinance bind to this bucket.
-ChittyLedger-Finance writes. ChittyFinance reads.
+Both ChittyLedger-Finance and ChittyFinance bind to this bucket (binding name: `DOCUMENTS`).
+- **ChittyLedger-Finance**: Write access (uploads processed documents)
+- **ChittyFinance**: Read access (retrieves documents for viewing)
+
+**Existing ChittyFinance configuration** (`deploy/system-wrangler.toml:63-67`):
+```toml
+[[r2_buckets]]
+binding = "DOCUMENTS"
+bucket_name = "chittyfinance-documents"
+preview_bucket_name = "chittyfinance-documents-preview"
+```
+
+**Required for ChittyLedger-Finance**: Add identical R2 bucket binding in its `wrangler.toml`:
+```toml
+[[r2_buckets]]
+binding = "DOCUMENTS"
+bucket_name = "chittyfinance-documents"
+```
 
 ### Signal Delivery Options
 
