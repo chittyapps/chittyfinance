@@ -321,7 +321,7 @@ reconciliationSignals: pgTable('reconciliation_signals', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   signalId: text('signal_id').notNull().unique(),
   signalType: text('signal_type').notNull(),
-  documentId: text('document_id').notNull(),  // ChittyLedger financial_documents.id
+  documentId: uuid('document_id').notNull(),  // ChittyLedger financial_documents.id
   transactionId: uuid('transaction_id').references(() => transactions.id),
   payload: jsonb('payload'),
   status: text('status').notNull().default('pending'),  // 'pending', 'processed', 'ignored'
