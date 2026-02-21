@@ -20,7 +20,7 @@ ChittyFinance does **not** own document intake or parsing. It consumes structure
 
 ## Data Flow
 
-```
+```text
                 ChittyTrace                  ChittyLedger-Finance             ChittyFinance
                 ───────────                  ────────────────────             ─────────────
   Email ───┐
@@ -332,7 +332,7 @@ reconciliationSignals: pgTable('reconciliation_signals', {
 
 ### API Endpoints (ChittyFinance)
 
-```
+```text
 POST /api/reconciliation/signals    -- Receive signals from ChittyLedger-Finance
 GET  /api/reconciliation/pending    -- List unmatched documents
 GET  /api/reconciliation/conflicts  -- List active conflicts
@@ -345,7 +345,7 @@ GET  /api/transactions/:id/documents -- View linked source documents
 
 ### Shared R2 Bucket Strategy
 
-```
+```text
 chittyos-financial-documents (R2)
 ├── {tenant_id}/
 │   ├── receipts/
