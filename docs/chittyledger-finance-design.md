@@ -14,7 +14,7 @@ ChittyFinance does **not** own document intake or parsing. It consumes structure
 |---|---|---|
 | `masterEvidence` | `financial_documents` | Receipts, invoices, statements, payment confirmations |
 | `atomicFacts` | `financial_facts` | Extracted: amount, vendor, date, category, account ref |
-| `evidenceTiers` | `financial_source_tiers` | Bank API (1.0) > statement PDF (0.9) > email receipt (0.7) > manual (0.4) |
+| `evidenceTiers` | `financial_documents.source_trust_tier` / `financial_documents.trust_score` | Bank API (1.0) > statement PDF (0.9) > email receipt (0.7) > manual (0.4) |
 | `chainOfCustodyLog` | `financial_audit_log` | Who uploaded, processed, matched, modified |
 | `contradictions` | `reconciliation_conflicts` | Amount mismatch, duplicate charge, missing receipt |
 
