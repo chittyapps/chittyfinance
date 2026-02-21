@@ -79,6 +79,19 @@ CREATE TABLE financial_documents (
   source_trust_tier INTEGER NOT NULL,         -- 1-8 (see trust tiers above)
   trust_score DECIMAL(3,2) NOT NULL,          -- 0.40 - 1.00
 
+  -- Enforce tier↔score consistency and valid range
+  CHECK (trust_score >= 0.00 AND trust_score <= 1.00),
+  CHECK (
+    (source_trust_tier = 1 AND trust_score = 1.00) OR
+    (source_trust_tier = 2 AND trust_score = 0.95) OR
+    (source_trust_tier = 3 AND trust_score = 0.90) OR
+    (source_trust_tier = 4 AND trust_score = 0.85) OR
+    (source_trust_tier = 5 AND trust_score = 0.70) OR
+    (source_trust_tier = 6 AND trust_score = 0.60) OR
+    (source_trust_tier = 7 AND trust_score = 0.50) OR
+    (source_trust_tier = 8 AND trust_score = 0.40)
+  ),
+
   -- Document metadata
   title TEXT NOT NULL,
   file_key TEXT,                              -- R2 object key (shared bucket or ChittyTrace bucket)
