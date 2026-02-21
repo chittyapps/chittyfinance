@@ -20,7 +20,7 @@ ChittyFinance does **not** own document intake or parsing. It consumes structure
 
 ## Data Flow
 
-```
+```text
                 ChittyTrace                  ChittyLedger-Finance             ChittyFinance
                 ───────────                  ────────────────────             ─────────────
   Email ───┐
@@ -113,7 +113,7 @@ CREATE TABLE financial_documents (
 
   metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()   -- Requires BEFORE UPDATE trigger (see trigger note below)
 );
 ```
 
@@ -217,7 +217,7 @@ CREATE TABLE reconciliation_conflicts (
 
   metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()   -- Requires BEFORE UPDATE trigger (see trigger note below)
 );
 ```
 
@@ -245,6 +245,55 @@ CREATE TABLE financial_audit_log (
 );
 ```
 
+### Migration Notes
+
+**`updated_at` trigger requirement**: PostgreSQL does not auto-update `DEFAULT now()` columns on `UPDATE`. The migration must include a trigger for `financial_documents` and `reconciliation_conflicts`:
+
+```sql
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_financial_documents_updated_at
+  BEFORE UPDATE ON financial_documents
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_reconciliation_conflicts_updated_at
+  BEFORE UPDATE ON reconciliation_conflicts
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+```
+
+**Recommended indexes** (required for multi-tenant performance at scale):
+
+```sql
+-- financial_documents
+CREATE INDEX idx_financial_documents_tenant_id ON financial_documents(tenant_id);
+CREATE INDEX idx_financial_documents_status ON financial_documents(status);
+CREATE INDEX idx_financial_documents_origin_ref ON financial_documents(origin_ref);
+
+-- financial_facts
+CREATE INDEX idx_financial_facts_document_id ON financial_facts(document_id);
+CREATE INDEX idx_financial_facts_tenant_id ON financial_facts(tenant_id);
+
+-- transaction_links
+CREATE INDEX idx_transaction_links_document_id ON transaction_links(document_id);
+CREATE INDEX idx_transaction_links_transaction_id ON transaction_links(transaction_id);
+CREATE INDEX idx_transaction_links_tenant_id ON transaction_links(tenant_id);
+
+-- reconciliation_conflicts
+CREATE INDEX idx_reconciliation_conflicts_tenant_id ON reconciliation_conflicts(tenant_id);
+CREATE INDEX idx_reconciliation_conflicts_status ON reconciliation_conflicts(status);
+CREATE INDEX idx_reconciliation_conflicts_document_id ON reconciliation_conflicts(document_id);
+
+-- financial_audit_log
+CREATE INDEX idx_financial_audit_log_document_id ON financial_audit_log(document_id);
+CREATE INDEX idx_financial_audit_log_tenant_id ON financial_audit_log(tenant_id);
+```
+
 ## Reconciliation Signal Schema
 
 Events emitted by ChittyLedger-Finance for downstream consumption.
@@ -253,6 +302,7 @@ These can be delivered via Cloudflare Queues, webhooks, or polled via API.
 ```typescript
 interface ReconciliationSignal {
   id: string;                    // Signal UUID
+  version: '1.0';                // Schema version for forward compatibility
   type:
     | 'document.ingested'        // New financial doc available
     | 'facts.extracted'          // Facts ready for matching
@@ -332,7 +382,7 @@ reconciliationSignals: pgTable('reconciliation_signals', {
 
 ### API Endpoints (ChittyFinance)
 
-```
+```text
 POST /api/reconciliation/signals    -- Receive signals from ChittyLedger-Finance
 GET  /api/reconciliation/pending    -- List unmatched documents
 GET  /api/reconciliation/conflicts  -- List active conflicts
@@ -345,17 +395,17 @@ GET  /api/transactions/:id/documents -- View linked source documents
 
 ### Shared R2 Bucket Strategy
 
-```
+```text
 chittyos-financial-documents (R2)
 ├── {tenant_id}/
 │   ├── receipts/
-│   │   └── {document_id}.pdf
+│   │   └── {document_id}.{file_type}
 │   ├── invoices/
-│   │   └── {document_id}.pdf
+│   │   └── {document_id}.{file_type}
 │   ├── statements/
-│   │   └── {document_id}.pdf
+│   │   └── {document_id}.{file_type}
 │   └── exports/
-│       └── {document_id}.csv
+│       └── {document_id}.{file_type}
 ```
 
 Both ChittyLedger-Finance and ChittyFinance bind to this bucket.
