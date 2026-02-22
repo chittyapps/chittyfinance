@@ -1,6 +1,7 @@
 # ChittyFinance Charter
 
 ## Classification
+- **Canonical URI**: `chittycanon://core/services/chittyfinance`
 - **Tier**: 3 (Service Layer)
 - **Organization**: CHITTYOS
 - **Domain**: finance.chitty.cc
@@ -113,9 +114,11 @@ IT CAN BE LLC (holding)
 - [ ] Service registered in ChittyRegistry
 - [ ] Health endpoint operational at /health
 - [ ] CLAUDE.md development guide present
+- [ ] CHARTER.md present
+- [ ] CHITTY.md present
 - [ ] OAuth security (CSRF-protected state tokens)
 - [ ] Webhook signature verification (Stripe)
 - [ ] Multi-tenant data isolation
 
 ---
-*Charter Version: 1.0.0 | Last Updated: 2026-01-13*
+*Charter Version: 1.1.0 | Last Updated: 2026-02-21*
