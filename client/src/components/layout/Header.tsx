@@ -1,56 +1,54 @@
-import { Bell, MoreVertical } from "lucide-react";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import TenantSwitcher from "@/components/TenantSwitcher";
+import { Bell, Search, Command } from "lucide-react";
+import { useRole } from "@/contexts/RoleContext";
 
 export default function Header() {
+  const { currentRole, roleConfig } = useRole();
   return (
-    <header className="relative z-10 flex flex-shrink-0 h-16 bg-zinc-900 border-b border-zinc-800 shadow-lg">
-      <div className="flex justify-between flex-1 px-4">
-        <div className="flex flex-1 items-center">
-          {/* Chitty Services Logo */}
-          <div className="flex items-center mr-6">
-            <img 
-              src="/assets/SERVICES.png" 
-              alt="Chitty Services Logo" 
-              className="h-10 w-auto"
-            />
-            <div className="ml-2">
-              <span className="text-lg font-bold gradient-text">Chitty Services</span>
-            </div>
-          </div>
+    <header className="flex items-center h-14 px-4 border-b border-[hsl(var(--cf-border-subtle))] bg-[hsl(var(--cf-void))]">
+      {/* Breadcrumb / Context */}
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-sm font-display font-medium text-[hsl(var(--cf-text))]">
+          IT CAN BE LLC
+        </span>
+        <span className="text-[hsl(var(--cf-text-muted))]">/</span>
+        <span className="text-sm text-[hsl(var(--cf-text-secondary))] truncate">
+          Overview
+        </span>
+      </div>
 
-          <div className="flex w-full md:ml-0">
-            <div className="relative w-full text-zinc-400 focus-within:text-lime-400">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <svg className="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <Input 
-                className="block w-full h-full pl-10 pr-3 py-2 text-zinc-200 bg-zinc-800 border-zinc-700 rounded-md focus:border-lime-500 focus:ring-lime-500 focus:ring-opacity-20 sm:text-sm" 
-                placeholder="Search financial data..." 
-              />
-            </div>
-          </div>
-        </div>
-        
-        <div className="ml-4 flex items-center md:ml-6 gap-3">
-          <TenantSwitcher />
-          <ThemeToggle />
+      {/* Spacer */}
+      <div className="flex-1" />
 
-          <button className="ml-3 p-1 rounded-full text-muted-foreground hover:text-orange-500 dark:hover:text-orange-400 focus:outline-none transition-colors">
-            <Bell className="h-6 w-6" />
-          </button>
-
-          <div className="ml-3 relative">
-            <button className="flex max-w-xs bg-zinc-800 border border-zinc-700 rounded-full p-1 text-sm hover:border-lime-500 transition-colors">
-              <MoreVertical className="h-6 w-6 text-zinc-300" />
-            </button>
-          </div>
+      {/* Search */}
+      <div className="relative hidden md:block mr-3">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[hsl(var(--cf-surface))] border border-[hsl(var(--cf-border-subtle))] hover:border-[hsl(var(--cf-border-active))] transition-colors w-[240px]">
+          <Search className="w-3.5 h-3.5 text-[hsl(var(--cf-text-muted))]" />
+          <input
+            type="text"
+            placeholder="Search..."
+            className="bg-transparent text-sm text-[hsl(var(--cf-text))] placeholder:text-[hsl(var(--cf-text-muted))] outline-none w-full"
+          />
+          <kbd className="hidden lg:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono text-[hsl(var(--cf-text-muted))] bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border-subtle))]">
+            <Command className="w-2.5 h-2.5" />K
+          </kbd>
         </div>
       </div>
+
+      {/* Role Indicator */}
+      <span className="cf-role-badge mr-3" data-role={currentRole}>
+        {roleConfig.label}
+      </span>
+
+      {/* Notifications */}
+      <button className="relative p-2 rounded-md text-[hsl(var(--cf-text-secondary))] hover:text-[hsl(var(--cf-text))] hover:bg-[hsl(var(--cf-raised))] transition-colors">
+        <Bell className="w-4 h-4" />
+        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[hsl(var(--cf-rose))]" />
+      </button>
+
+      {/* User Avatar */}
+      <button className="ml-2 w-8 h-8 rounded-md bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border-subtle))] flex items-center justify-center text-sm font-display font-semibold text-[hsl(var(--cf-lime))] hover:border-[hsl(var(--cf-lime)/0.3)] transition-colors">
+        NB
+      </button>
     </header>
   );
 }

@@ -2,95 +2,421 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer components {
-  .card {
-    @apply bg-card border border-border/40 shadow-lg hover:shadow-xl transition-shadow duration-200;
-  }
-  
-  .dashboard-grid {
-    @apply grid gap-6 md:grid-cols-2 lg:grid-cols-3;
-  }
-
-  .hover-lift {
-    @apply transition-transform duration-200 hover:-translate-y-1;
-  }
-}
+/* ═══════════════════════════════════════════════════════════
+   ChittyFinance — "Precision Finance" Design System
+   Typography: Sora (display) · DM Sans (body) · IBM Plex Mono (data)
+   Palette: True black + lime-400 primary + amber/cyan/rose semantics
+   ═══════════════════════════════════════════════════════════ */
 
 @layer base {
+  :root {
+    /* Surface system — true blacks, not greys */
+    --cf-void: 0 0% 3%;
+    --cf-base: 0 0% 5%;
+    --cf-surface: 240 6% 7%;
+    --cf-raised: 240 5% 10%;
+    --cf-overlay: 240 4% 14%;
+
+    /* Border system */
+    --cf-border: 240 4% 16%;
+    --cf-border-subtle: 240 4% 12%;
+    --cf-border-active: 240 4% 22%;
+
+    /* Text system */
+    --cf-text: 0 0% 98%;
+    --cf-text-secondary: 240 5% 65%;
+    --cf-text-muted: 240 4% 46%;
+
+    /* Accent — lime stays, it's the brand */
+    --cf-lime: 84 81% 44%;
+    --cf-lime-dim: 84 74% 36%;
+    --cf-lime-bright: 82 85% 55%;
+
+    /* Semantic colors */
+    --cf-amber: 38 92% 50%;
+    --cf-cyan: 189 94% 43%;
+    --cf-rose: 347 77% 50%;
+    --cf-emerald: 160 84% 39%;
+    --cf-violet: 263 70% 50%;
+
+    /* Map to shadcn variables */
+    --background: var(--cf-base);
+    --foreground: var(--cf-text);
+    --card: var(--cf-surface);
+    --card-foreground: var(--cf-text);
+    --popover: var(--cf-raised);
+    --popover-foreground: var(--cf-text);
+    --primary: var(--cf-lime);
+    --primary-foreground: 0 0% 3%;
+    --secondary: var(--cf-raised);
+    --secondary-foreground: var(--cf-text);
+    --muted: var(--cf-overlay);
+    --muted-foreground: var(--cf-text-muted);
+    --accent: var(--cf-raised);
+    --accent-foreground: var(--cf-text);
+    --destructive: var(--cf-rose);
+    --destructive-foreground: 0 0% 98%;
+    --border: var(--cf-border);
+    --input: var(--cf-border);
+    --ring: var(--cf-lime);
+    --radius: 6px;
+
+    /* Chart palette */
+    --chart-1: var(--cf-lime);
+    --chart-2: var(--cf-cyan);
+    --chart-3: var(--cf-amber);
+    --chart-4: var(--cf-violet);
+    --chart-5: var(--cf-rose);
+
+    /* Sidebar */
+    --sidebar-background: var(--cf-void);
+    --sidebar-foreground: var(--cf-text-secondary);
+    --sidebar-primary: var(--cf-lime);
+    --sidebar-primary-foreground: 0 0% 3%;
+    --sidebar-accent: var(--cf-raised);
+    --sidebar-accent-foreground: var(--cf-text);
+    --sidebar-border: var(--cf-border-subtle);
+    --sidebar-ring: var(--cf-lime);
+  }
+
   * {
     @apply border-border;
   }
 
+  html {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply font-sans antialiased bg-gradient-to-b from-zinc-950 to-zinc-900 text-zinc-50 min-h-screen;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    @apply antialiased bg-[hsl(var(--cf-base))] text-[hsl(var(--cf-text))] min-h-screen;
   }
 
-  .gradient-text {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-lime-400 via-emerald-400 to-lime-500 animate-gradient;
-  }
-  
-  .card {
-    @apply bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/50 rounded-xl overflow-hidden shadow-xl transition-all duration-300 hover:border-lime-500/20 hover:shadow-lime-500/5;
-  }
-  
-  .card-header {
-    @apply border-b border-zinc-800/50 p-4 font-medium bg-gradient-to-r from-lime-400/10 to-transparent text-lime-400;
-  }
-  
-  .card-content {
-    @apply p-4 space-y-3;
+  /* Typography hierarchy */
+  h1, h2, h3, h4, h5, h6,
+  .font-display {
+    font-family: 'Sora', system-ui, sans-serif;
+    letter-spacing: -0.02em;
   }
 
-  @keyframes gradient {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+  .font-mono,
+  code, pre,
+  [data-mono],
+  .tabular-nums {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-feature-settings: "tnum";
+    letter-spacing: -0.01em;
   }
 
-  .animate-gradient {
-    animation: gradient 4s ease infinite;
-    background-size: 200% 200%;
-  }
-  
-  .pulse-connection {
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-  
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
+  /* Financial figures — always monospace, tabular */
+  .font-financial {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
   }
 
-  /* Custom scrollbar */
-  ::-webkit-scrollbar {
-    width: 6px;
-  }
-  
-  ::-webkit-scrollbar-track {
-    background: theme('colors.zinc.950');
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    background: theme('colors.zinc.800');
-    border-radius: 999px;
-    transition: all 0.3s;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    background: theme('colors.lime.500');
-  }
-
-  /* Improved focus styles */
   :focus-visible {
-    @apply outline-none ring-2 ring-lime-500/50 ring-offset-2 ring-offset-zinc-950;
+    @apply outline-none ring-2 ring-[hsl(var(--cf-lime))]/40 ring-offset-1 ring-offset-[hsl(var(--cf-base))];
+  }
+}
+
+@layer components {
+  /* ─── Card System ─── */
+  .cf-card {
+    @apply relative overflow-hidden;
+    background: hsl(var(--cf-surface));
+    border: 1px solid hsl(var(--cf-border-subtle));
+    border-radius: 6px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
-  /* Button hover effects */
-  button:not(:disabled):hover {
-    @apply transform scale-[1.02] transition-transform;
+  .cf-card:hover {
+    border-color: hsl(var(--cf-border-active));
+    box-shadow: 0 0 0 1px hsl(var(--cf-border-active));
   }
+
+  .cf-card-glow:hover {
+    border-color: hsl(var(--cf-lime) / 0.3);
+    box-shadow:
+      0 0 0 1px hsl(var(--cf-lime) / 0.15),
+      0 4px 20px hsl(var(--cf-lime) / 0.05);
+  }
+
+  /* ─── Metric Card (financial KPI) ─── */
+  .cf-metric {
+    @apply cf-card p-4;
+  }
+
+  .cf-metric-label {
+    @apply text-xs font-medium uppercase tracking-wider;
+    color: hsl(var(--cf-text-muted));
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+
+  .cf-metric-value {
+    @apply text-2xl font-semibold font-financial mt-1;
+    color: hsl(var(--cf-text));
+  }
+
+  .cf-metric-delta {
+    @apply text-xs font-medium font-financial mt-1 inline-flex items-center gap-1;
+  }
+
+  .cf-metric-delta[data-positive] {
+    color: hsl(var(--cf-emerald));
+  }
+
+  .cf-metric-delta[data-negative] {
+    color: hsl(var(--cf-rose));
+  }
+
+  /* ─── Section Headers ─── */
+  .cf-section-title {
+    @apply text-xs font-semibold uppercase tracking-[0.08em];
+    color: hsl(var(--cf-text-muted));
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+
+  /* ─── Status Indicators ─── */
+  .cf-pulse {
+    @apply relative;
+  }
+
+  .cf-pulse::before {
+    content: '';
+    @apply absolute inset-0 rounded-full;
+    animation: cf-pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes cf-pulse-ring {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.5); }
+  }
+
+  /* ─── Gradient Text ─── */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--cf-lime-bright)),
+      hsl(var(--cf-lime)),
+      hsl(var(--cf-emerald))
+    );
+  }
+
+  /* ─── Entity Tree Lines ─── */
+  .entity-tree-line {
+    @apply absolute left-[18px] top-0 bottom-0 w-px;
+    background: hsl(var(--cf-border-subtle));
+  }
+
+  .entity-tree-branch {
+    @apply absolute left-[18px] w-3 h-px;
+    background: hsl(var(--cf-border-subtle));
+    top: 50%;
+  }
+
+  /* ─── Role Badge ─── */
+  .cf-role-badge {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-sm;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+
+  .cf-role-badge[data-role="cfo"] {
+    background: hsl(var(--cf-lime) / 0.12);
+    color: hsl(var(--cf-lime-bright));
+    border: 1px solid hsl(var(--cf-lime) / 0.2);
+  }
+
+  .cf-role-badge[data-role="accountant"] {
+    background: hsl(var(--cf-cyan) / 0.12);
+    color: hsl(var(--cf-cyan));
+    border: 1px solid hsl(var(--cf-cyan) / 0.2);
+  }
+
+  .cf-role-badge[data-role="bookkeeper"] {
+    background: hsl(var(--cf-amber) / 0.12);
+    color: hsl(var(--cf-amber));
+    border: 1px solid hsl(var(--cf-amber) / 0.2);
+  }
+
+  .cf-role-badge[data-role="user"] {
+    background: hsl(var(--cf-violet) / 0.12);
+    color: hsl(var(--cf-violet));
+    border: 1px solid hsl(var(--cf-violet) / 0.2);
+  }
+
+  /* ─── Service Status Dot ─── */
+  .cf-status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .cf-status-dot[data-status="healthy"] {
+    @apply bg-emerald-400;
+    box-shadow: 0 0 6px hsl(var(--cf-emerald) / 0.5);
+  }
+
+  .cf-status-dot[data-status="degraded"] {
+    @apply bg-amber-400;
+    box-shadow: 0 0 6px hsl(var(--cf-amber) / 0.5);
+  }
+
+  .cf-status-dot[data-status="down"] {
+    @apply bg-rose-400;
+    box-shadow: 0 0 6px hsl(var(--cf-rose) / 0.5);
+  }
+
+  /* ─── Sidebar Nav Item ─── */
+  .cf-nav-item {
+    @apply flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-all duration-150 cursor-pointer;
+    color: hsl(var(--cf-text-secondary));
+  }
+
+  .cf-nav-item:hover {
+    color: hsl(var(--cf-text));
+    background: hsl(var(--cf-raised));
+  }
+
+  .cf-nav-item[data-active="true"] {
+    color: hsl(var(--cf-lime));
+    background: hsl(var(--cf-lime) / 0.08);
+    font-weight: 500;
+  }
+
+  .cf-nav-item[data-active="true"] .cf-nav-icon {
+    color: hsl(var(--cf-lime));
+  }
+
+  .cf-nav-icon {
+    @apply w-4 h-4 flex-shrink-0;
+    color: hsl(var(--cf-text-muted));
+  }
+
+  /* ─── Data Table ─── */
+  .cf-table-row {
+    @apply flex items-center py-3 px-4 border-b;
+    border-color: hsl(var(--cf-border-subtle));
+    transition: background-color 0.1s ease;
+  }
+
+  .cf-table-row:hover {
+    background: hsl(var(--cf-raised));
+  }
+
+  .cf-table-row:last-child {
+    @apply border-b-0;
+  }
+
+  /* ─── Admin Health Card ─── */
+  .cf-health-card {
+    @apply cf-card p-4 flex items-center gap-4;
+  }
+
+  .cf-health-card[data-status="healthy"] {
+    border-left: 2px solid hsl(var(--cf-emerald));
+  }
+
+  .cf-health-card[data-status="degraded"] {
+    border-left: 2px solid hsl(var(--cf-amber));
+  }
+
+  .cf-health-card[data-status="down"] {
+    border-left: 2px solid hsl(var(--cf-rose));
+  }
+
+  /* ─── Amount Colors ─── */
+  .amount-positive {
+    color: hsl(var(--cf-emerald));
+  }
+
+  .amount-negative {
+    color: hsl(var(--cf-rose));
+  }
+
+  .amount-neutral {
+    color: hsl(var(--cf-text));
+  }
+}
+
+@layer utilities {
+  /* Noise texture overlay for depth */
+  .noise-texture::after {
+    content: '';
+    @apply fixed inset-0 pointer-events-none;
+    opacity: 0.015;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    z-index: 9999;
+  }
+
+  /* Scrollbar */
+  .cf-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .cf-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .cf-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--cf-border));
+    border-radius: 999px;
+  }
+
+  .cf-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--cf-lime) / 0.5);
+  }
+
+  /* Staggered animation delays */
+  .stagger-1 { animation-delay: 50ms; }
+  .stagger-2 { animation-delay: 100ms; }
+  .stagger-3 { animation-delay: 150ms; }
+  .stagger-4 { animation-delay: 200ms; }
+  .stagger-5 { animation-delay: 250ms; }
+  .stagger-6 { animation-delay: 300ms; }
+}
+
+/* ─── Global Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--cf-void));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--cf-border));
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--cf-text-muted));
+}
+
+/* ─── Animations ─── */
+@keyframes cf-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cf-slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cf-count-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: cf-fade-in 0.3s ease-out both;
+}
+
+.animate-slide-up {
+  animation: cf-slide-up 0.4s ease-out both;
 }

@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { createContext, useEffect, useMemo, useState } from "react";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
+import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
 import ConnectAccounts from "@/pages/ConnectAccounts";
 import NotFound from "@/pages/not-found";
@@ -16,22 +17,25 @@ import Connections from "@/pages/Connections";
 import { User } from "@shared/schema";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TenantProvider } from "@/contexts/TenantContext";
+import { RoleProvider } from "@/contexts/RoleContext";
 
 function Router() {
   const [location] = useLocation();
-  const showSidebar = location !== "/login" && location !== "/register" && location !== "/connect-accounts";
+  const hideChromeRoutes = ["/login", "/register", "/connect-accounts"];
+  const showChrome = !hideChromeRoutes.includes(location);
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {showSidebar && <Sidebar />}
+      {showChrome && <Sidebar />}
       <div className="flex flex-col flex-1 w-0 overflow-hidden">
-        {showSidebar && <Header />}
-        <main className="flex-1 relative overflow-y-auto focus:outline-none">
+        {showChrome && <Header />}
+        <main className="flex-1 relative overflow-y-auto cf-scrollbar focus:outline-none bg-[hsl(var(--cf-base))]">
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/properties" component={Properties} />
             <Route path="/valuation/550-w-surf-504" component={ValuationConsole} />
             <Route path="/connections" component={Connections} />
+            <Route path="/admin" component={Admin} />
             <Route path="/settings" component={Settings} />
             <Route path="/login" component={Login} />
             <Route path="/connect-accounts" component={ConnectAccounts} />
@@ -61,20 +65,16 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Attempt to get the user session
     fetch("/api/session")
       .then(res => {
-        if (!res.ok) {
-          throw new Error('Not authenticated');
-        }
+        if (!res.ok) throw new Error('Not authenticated');
         return res.json();
       })
       .then(data => {
-        setUser(data);
+        setUser(data as User);
         setLoading(false);
       })
-      .catch(err => {
-        console.error("Failed to get session:", err);
+      .catch(() => {
         setUser(null);
         setLoading(false);
       });
@@ -82,8 +82,13 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-zinc-950">
-        <div className="animate-spin w-8 h-8 border-4 border-lime-500 border-t-transparent rounded-full"></div>
+      <div className="flex items-center justify-center h-screen bg-[hsl(var(--cf-void))]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded bg-lime-400 flex items-center justify-center animate-pulse">
+            <span className="text-black font-display font-bold text-sm">CF</span>
+          </div>
+          <span className="text-xs text-[hsl(var(--cf-text-muted))] font-mono">Loading...</span>
+        </div>
       </div>
     );
   }
@@ -98,9 +103,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TenantProvider>
-          <AuthContext.Provider value={authContextValue}>
-            <Router />
-          </AuthContext.Provider>
+          <RoleProvider>
+            <AuthContext.Provider value={authContextValue}>
+              <Router />
+            </AuthContext.Provider>
+          </RoleProvider>
         </TenantProvider>
       </ThemeProvider>
     </QueryClientProvider>
