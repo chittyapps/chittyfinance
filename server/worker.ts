@@ -7,5 +7,5 @@ export default {
   fetch: app.fetch,
 } satisfies ExportedHandler<Env>;
 
-// ChittyAgent DO export disabled — placeholder class doesn't extend DurableObject
-// export { ChittyAgent } from './agents/agent';
+// Re-export the Agent DO class so Wrangler can bind it
+export { ChittyAgent } from './agents/agent';

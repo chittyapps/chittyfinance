@@ -41,7 +41,7 @@ service = "chittytrack"
 
 # Build configuration
 [build]
-command = "npm run build:system"
+command = "npx vite build --outDir dist/public"
 
 [assets]
 directory = "../dist/public"

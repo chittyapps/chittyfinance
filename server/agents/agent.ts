@@ -1,16 +1,11 @@
-// Minimal Agent base to avoid external dependency in types.
-class Agent {
-  async onRequest(_request: Request): Promise<Response> {
-    return new Response('Not Implemented', { status: 501 });
-  }
-}
+import { DurableObject } from 'cloudflare:workers';
 
-export class ChittyAgent extends Agent {
-  async onRequest(request: Request): Promise<Response> {
+export class ChittyAgent extends DurableObject {
+  async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (request.method === 'GET' && path === '/agent') {
+    if (request.method === 'GET' && (path === '/agent' || path === '/')) {
       return Response.json({
         name: 'ChittyFinance Agent',
         status: 'ok',
@@ -19,12 +14,11 @@ export class ChittyAgent extends Agent {
       });
     }
 
-    if (request.method === 'POST' && path === '/agent') {
+    if (request.method === 'POST' && (path === '/agent' || path === '/')) {
       try {
         const body = await request.json().catch(() => ({}));
-        const query: string = body?.query ?? '';
-        const context = body?.context ?? {};
-        // Placeholder behavior – later wire model/tools here
+        const query: string = (body as any)?.query ?? '';
+        const context = (body as any)?.context ?? {};
         const reply = query
           ? `Agent received: ${String(query).slice(0, 200)}`
           : 'Agent ready. Provide a "query" to interact.';
