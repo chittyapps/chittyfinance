@@ -1,71 +1,190 @@
-// System mode storage - multi-tenant PostgreSQL
-// Methods return empty/undefined stubs - implement as needed
+import { eq, and, desc, sql } from 'drizzle-orm';
+import type { Database } from '../db/connection';
+import * as schema from '../db/schema';
 
 export class SystemStorage {
-  private db: unknown;
+  constructor(private db: Database) {}
 
-  constructor(db: unknown) {
-    this.db = db;
+  // ── ACCOUNTS ──
+
+  async getAccounts(tenantId: string) {
+    return this.db
+      .select()
+      .from(schema.accounts)
+      .where(eq(schema.accounts.tenantId, tenantId))
+      .orderBy(desc(schema.accounts.updatedAt));
   }
 
-  // ---------------- SESSION ----------------
-  async getSessionContext(): Promise<{ userId: string } | undefined> { return undefined; }
-  async setSessionContext(): Promise<void> {}
-  async getSessionUser(): Promise<unknown> { return undefined; }
+  async getAccount(id: string, tenantId: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.accounts)
+      .where(and(eq(schema.accounts.id, id), eq(schema.accounts.tenantId, tenantId)));
+    return row;
+  }
 
-  // ---------------- TENANTS ----------------
-  async getTenant(_id?: string): Promise<unknown> { return undefined; }
-  async getTenantBySlug(_slug?: string): Promise<unknown> { return undefined; }
-  async getUserTenants(_userId?: string): Promise<unknown[]> { return []; }
-  async checkTenantAccess(_userId?: string, _tenantId?: string): Promise<{ hasAccess: boolean }> { return { hasAccess: true }; }
-  async createTenant(_tenant: unknown): Promise<unknown> { throw new Error("Not implemented"); }
+  // ── TRANSACTIONS ──
 
-  // ---------------- USERS ----------------
-  async getUser(_id?: string): Promise<unknown> { return undefined; }
-  async getUserByEmail(_email?: string): Promise<unknown> { return undefined; }
-  async getUserByUsername(_username?: string): Promise<unknown> { return undefined; }
-  async createUser(_user: unknown): Promise<unknown> { throw new Error("Not implemented"); }
+  async getTransactions(tenantId: string, limit?: number) {
+    const q = this.db
+      .select()
+      .from(schema.transactions)
+      .where(eq(schema.transactions.tenantId, tenantId))
+      .orderBy(desc(schema.transactions.date));
+    if (limit) return q.limit(limit);
+    return q;
+  }
 
-  // ---------------- INTEGRATIONS ----------------
-  async getIntegrations(_userId?: string): Promise<unknown[]> { return []; }
-  async getIntegration(_id?: string): Promise<unknown> { return undefined; }
-  async listIntegrationsByService(_service?: string): Promise<unknown[]> { return []; }
-  async createIntegration(_integration: unknown): Promise<unknown> { throw new Error("Not implemented"); }
-  async updateIntegration(_id?: string, _data?: unknown): Promise<unknown> { return undefined; }
+  async getTransactionsByAccount(accountId: string, tenantId: string, since?: string) {
+    const conditions = [
+      eq(schema.transactions.accountId, accountId),
+      eq(schema.transactions.tenantId, tenantId),
+    ];
+    if (since) {
+      conditions.push(sql`${schema.transactions.date} >= ${since}`);
+    }
+    return this.db
+      .select()
+      .from(schema.transactions)
+      .where(and(...conditions))
+      .orderBy(desc(schema.transactions.date));
+  }
 
-  // ---------------- ACCOUNTS ----------------
-  async getAccounts(_userId?: string): Promise<unknown[]> { return []; }
-  async getAccount(_id?: string): Promise<unknown> { return undefined; }
+  // ── SUMMARY ──
 
-  // ---------------- FINANCIAL SUMMARY ----------------
-  async getFinancialSummary(_userId?: string): Promise<unknown> { return undefined; }
-  async createFinancialSummary(_summary: unknown): Promise<unknown> { throw new Error("Not implemented"); }
+  async getSummary(tenantId: string) {
+    const accts = await this.getAccounts(tenantId);
+    let totalCash = 0;
+    let totalOwed = 0;
+    for (const a of accts) {
+      const bal = parseFloat(a.balance);
+      if (a.type === 'credit') {
+        totalOwed += Math.abs(bal);
+      } else {
+        totalCash += bal;
+      }
+    }
+    return { total_cash: totalCash, total_owed: totalOwed, net: totalCash - totalOwed };
+  }
 
-  // ---------------- TRANSACTIONS ----------------
-  async listTransactions(_userId?: string): Promise<unknown[]> { return []; }
-  async getTransactions(_userId?: string): Promise<unknown[]> { return []; }
-  async createTransaction(_tx: unknown): Promise<unknown> { throw new Error("Not implemented"); }
-  async updateTransaction(_id?: string, _data?: unknown): Promise<unknown> { return undefined; }
+  // ── TENANTS ──
 
-  // ---------------- TASKS ----------------
-  async listTasks(_userId?: string): Promise<unknown[]> { return []; }
-  async getTasks(_userId?: string): Promise<unknown[]> { return []; }
-  async getTask(_id?: string): Promise<unknown> { return undefined; }
-  async createTask(_task: unknown): Promise<unknown> { throw new Error("Not implemented"); }
-  async updateTask(_id?: string, _data?: unknown): Promise<unknown> { return undefined; }
-  async deleteTask(_id?: string): Promise<void> {}
+  async getTenants() {
+    return this.db.select().from(schema.tenants).where(eq(schema.tenants.isActive, true));
+  }
 
-  // ---------------- AI MESSAGES ----------------
-  async listAiMessages(_userId?: string): Promise<unknown[]> { return []; }
-  async getAiMessages(_userId?: string): Promise<unknown[]> { return []; }
-  async addAiMessage(_msg: unknown): Promise<unknown> { throw new Error("Not implemented"); }
-  async createAiMessage(_msg: unknown): Promise<unknown> { throw new Error("Not implemented"); }
+  async getTenant(id: string) {
+    const [row] = await this.db.select().from(schema.tenants).where(eq(schema.tenants.id, id));
+    return row;
+  }
 
-  // ---------------- PROPERTIES ----------------
-  async getProperties(_tenantId?: string): Promise<unknown[]> { return []; }
+  async getTenantBySlug(slug: string) {
+    const [row] = await this.db.select().from(schema.tenants).where(eq(schema.tenants.slug, slug));
+    return row;
+  }
 
-  // ---------------- WEBHOOK EVENTS ----------------
-  async recordWebhookEvent(_evt: unknown): Promise<void> {}
-  async isWebhookDuplicate(_eventId?: string): Promise<boolean> { return false; }
-  async listWebhookEvents(_options?: { source?: string; limit?: number }): Promise<unknown[]> { return []; }
+  async getUserTenants(userId: string) {
+    return this.db
+      .select({ tenant: schema.tenants, role: schema.tenantUsers.role })
+      .from(schema.tenantUsers)
+      .innerJoin(schema.tenants, eq(schema.tenantUsers.tenantId, schema.tenants.id))
+      .where(eq(schema.tenantUsers.userId, userId));
+  }
+
+  // ── USERS ──
+
+  async getUser(id: string) {
+    const [row] = await this.db.select().from(schema.users).where(eq(schema.users.id, id));
+    return row;
+  }
+
+  async getUserByEmail(email: string) {
+    const [row] = await this.db.select().from(schema.users).where(eq(schema.users.email, email));
+    return row;
+  }
+
+  // ── INTEGRATIONS ──
+
+  async getIntegrations(tenantId: string) {
+    return this.db
+      .select()
+      .from(schema.integrations)
+      .where(eq(schema.integrations.tenantId, tenantId));
+  }
+
+  async getIntegration(id: string) {
+    const [row] = await this.db.select().from(schema.integrations).where(eq(schema.integrations.id, id));
+    return row;
+  }
+
+  async createIntegration(data: typeof schema.integrations.$inferInsert) {
+    const [row] = await this.db.insert(schema.integrations).values(data).returning();
+    return row;
+  }
+
+  async updateIntegration(id: string, data: Partial<typeof schema.integrations.$inferInsert>) {
+    const [row] = await this.db
+      .update(schema.integrations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.integrations.id, id))
+      .returning();
+    return row;
+  }
+
+  // ── TASKS ──
+
+  async getTasks(tenantId: string) {
+    return this.db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.tenantId, tenantId))
+      .orderBy(desc(schema.tasks.createdAt));
+  }
+
+  async getTask(id: string) {
+    const [row] = await this.db.select().from(schema.tasks).where(eq(schema.tasks.id, id));
+    return row;
+  }
+
+  async createTask(data: typeof schema.tasks.$inferInsert) {
+    const [row] = await this.db.insert(schema.tasks).values(data).returning();
+    return row;
+  }
+
+  async updateTask(id: string, data: Partial<typeof schema.tasks.$inferInsert>) {
+    const [row] = await this.db
+      .update(schema.tasks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.tasks.id, id))
+      .returning();
+    return row;
+  }
+
+  async deleteTask(id: string) {
+    await this.db.delete(schema.tasks).where(eq(schema.tasks.id, id));
+  }
+
+  // ── AI MESSAGES ──
+
+  async getAiMessages(tenantId: string) {
+    return this.db
+      .select()
+      .from(schema.aiMessages)
+      .where(eq(schema.aiMessages.tenantId, tenantId))
+      .orderBy(schema.aiMessages.createdAt);
+  }
+
+  async createAiMessage(data: typeof schema.aiMessages.$inferInsert) {
+    const [row] = await this.db.insert(schema.aiMessages).values(data).returning();
+    return row;
+  }
+
+  // ── PROPERTIES ──
+
+  async getProperties(tenantId: string) {
+    return this.db
+      .select()
+      .from(schema.properties)
+      .where(eq(schema.properties.tenantId, tenantId));
+  }
 }
