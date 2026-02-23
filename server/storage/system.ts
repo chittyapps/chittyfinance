@@ -23,6 +23,50 @@ export class SystemStorage {
     return row;
   }
 
+  async getAccountsByType(tenantId: string, type: string) {
+    return this.db
+      .select()
+      .from(schema.accounts)
+      .where(and(eq(schema.accounts.tenantId, tenantId), eq(schema.accounts.type, type)))
+      .orderBy(desc(schema.accounts.updatedAt));
+  }
+
+  async getAccountByExternalId(externalId: string, tenantId: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.accounts)
+      .where(and(eq(schema.accounts.externalId, externalId), eq(schema.accounts.tenantId, tenantId)));
+    return row;
+  }
+
+  async createAccount(data: typeof schema.accounts.$inferInsert) {
+    const [row] = await this.db.insert(schema.accounts).values(data).returning();
+    return row;
+  }
+
+  async updateAccount(id: string, data: Partial<typeof schema.accounts.$inferInsert>) {
+    const [row] = await this.db
+      .update(schema.accounts)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.accounts.id, id))
+      .returning();
+    return row;
+  }
+
+  async syncAccount(id: string, updates: { balance?: string; liabilityDetails?: unknown; metadata?: unknown }) {
+    const setData: Record<string, unknown> = { updatedAt: new Date() };
+    if (updates.balance !== undefined) setData.balance = updates.balance;
+    if (updates.liabilityDetails !== undefined) setData.liabilityDetails = updates.liabilityDetails;
+    if (updates.metadata !== undefined) setData.metadata = updates.metadata;
+
+    const [row] = await this.db
+      .update(schema.accounts)
+      .set(setData)
+      .where(eq(schema.accounts.id, id))
+      .returning();
+    return row;
+  }
+
   // ── TRANSACTIONS ──
 
   async getTransactions(tenantId: string, limit?: number) {
@@ -53,12 +97,13 @@ export class SystemStorage {
   // ── SUMMARY ──
 
   async getSummary(tenantId: string) {
+    const LIABILITY_TYPES = ['mortgage', 'loan', 'tax_liability'];
     const accts = await this.getAccounts(tenantId);
     let totalCash = 0;
     let totalOwed = 0;
     for (const a of accts) {
       const bal = parseFloat(a.balance);
-      if (a.type === 'credit') {
+      if (a.type === 'credit' || LIABILITY_TYPES.includes(a.type)) {
         totalOwed += Math.abs(bal);
       } else {
         totalCash += bal;
