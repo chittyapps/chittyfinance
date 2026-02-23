@@ -2,13 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **🎯 Project Orchestration:** This project follows [ChittyCan™ Project Standards](../CHITTYCAN_PROJECT_ORCHESTRATOR.md)
+**Canonical URI**: `chittycanon://core/services/chittyfinance` | Tier 3 (Service Layer) | finance.chitty.cc
 
 ## Project Overview
 
 **ChittyFinance** is a full-stack financial management platform for the ChittyOS ecosystem. It provides intelligent financial tracking, AI-powered advice, recurring charge optimization, and integrations with Mercury Bank, Wave Accounting, and Stripe payments.
 
-**Architecture**: Single PostgreSQL database (Neon) with Express backend and React frontend.
+**Architecture**: Hono on Cloudflare Workers (production) + legacy Express (local dev). PostgreSQL (Neon) with Drizzle ORM. React frontend.
 
 ## Essential Commands
 
@@ -56,7 +56,7 @@ npm run db:push:standalone   # Create SQLite tables
 ```
 
 **Critical**:
-- Port 5000 is hardcoded in `server/index.ts:62` and cannot be changed (Replit firewall requirement)
+- Port 5001 is used in `server/index.ts` for local Express development
 - Server uses `reusePort: true` for multiple process support on the same port
 
 ## Architecture
@@ -121,7 +121,7 @@ IT CAN BE LLC (holding)
 
 ### Tech Stack
 - **Frontend**: React 18 with TypeScript, Wouter (routing), shadcn/ui (Radix UI components)
-- **Backend**: Express.js with TypeScript
+- **Backend**: Hono (Cloudflare Workers, production) / Express.js (legacy, local dev)
 - **Database**: Neon PostgreSQL with Drizzle ORM
 - **Build**: Vite (frontend), esbuild (backend)
 - **Styling**: Tailwind CSS with tailwindcss-animate

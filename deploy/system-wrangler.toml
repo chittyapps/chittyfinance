@@ -3,7 +3,7 @@
 
 name = "chittyfinance"
 main = "../server/worker.ts"
-compatibility_date = "2024-11-01"
+compatibility_date = "2025-09-01"
 
 # Account ID (from ChittyOS ecosystem)
 account_id = "0bc21e3a5a9de1a4cc843be9c3e98121"
@@ -32,6 +32,12 @@ NODE_ENV = "production"
 # wrangler secret put CHITTY_AUTH_SERVICE_TOKEN
 # wrangler secret put JWT_SECRET
 
+[observability]
+enabled = true
+
+[[tail_consumers]]
+service = "chittytrack"
+
 # Build configuration
 [build]
 command = "npm run build:system"
@@ -56,15 +62,15 @@ cpu_ms = 50  # 50ms CPU time per request
 
 # KV Namespace for caching
 [[kv_namespaces]]
-binding = "CACHE"
+binding = "FINANCE_KV"
 id = "your-kv-namespace-id"
 preview_id = "your-preview-kv-namespace-id"
 
 # R2 Bucket for document storage
 [[r2_buckets]]
-binding = "DOCUMENTS"
-bucket_name = "chittyfinance-documents"
-preview_bucket_name = "chittyfinance-documents-preview"
+binding = "FINANCE_R2"
+bucket_name = "chittyfinance-storage"
+preview_bucket_name = "chittyfinance-storage-preview"
 
 # Durable Objects (Agent)
 [[durable_objects.bindings]]

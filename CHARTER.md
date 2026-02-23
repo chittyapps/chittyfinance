@@ -1,3 +1,15 @@
+---
+uri: chittycanon://docs/ops/policy/chittyfinance-charter
+namespace: chittycanon://docs/ops
+type: policy
+version: 1.1.0
+status: CERTIFIED
+registered_with: chittycanon://core/services/canon
+title: ChittyFinance Charter
+certifier: chittycanon://core/services/chittycert
+visibility: PUBLIC
+---
+
 # ChittyFinance Charter
 
 ## Classification
@@ -112,13 +124,13 @@ IT CAN BE LLC (holding)
 ## Compliance
 
 - [ ] Service registered in ChittyRegistry
-- [ ] Health endpoint operational at /health
-- [ ] CLAUDE.md development guide present
-- [ ] CHARTER.md present
-- [ ] CHITTY.md present
-- [ ] OAuth security (CSRF-protected state tokens)
-- [ ] Webhook signature verification (Stripe)
-- [ ] Multi-tenant data isolation
+- [x] Health endpoint operational at /health
+- [x] CLAUDE.md development guide present
+- [x] CHARTER.md present
+- [x] CHITTY.md present
+- [x] OAuth security (CSRF-protected state tokens)
+- [x] Webhook signature verification (Stripe)
+- [x] Multi-tenant data isolation
 
 ---
 *Charter Version: 1.1.0 | Last Updated: 2026-02-21*

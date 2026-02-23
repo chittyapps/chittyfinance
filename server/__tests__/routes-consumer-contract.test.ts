@@ -27,7 +27,7 @@ describe('consumer contract routes', () => {
   function withStorage(app: Hono<HonoEnv>) {
     app.use('*', async (c, next) => {
       c.set('tenantId', 't1');
-      (c as any).storage = mockStorage;
+      c.set('storage', mockStorage as any);
       await next();
     });
     return app;

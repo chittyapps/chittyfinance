@@ -1,9 +1,9 @@
 # ChittyConnect Configuration for chittyfinance
 service:
   name: chittyfinance
-  display_name: Chittyfinance
+  display_name: ChittyFinance
   type: service
-  tier: 4
+  tier: 3
   organization: CHITTYOS
   chitty_id: ${CHITTYFINANCE_SERVICE_ID}
   domains:
@@ -18,7 +18,7 @@ auth:
   endpoint: https://auth.chitty.cc
   service_token:
     source: chittyconnect
-    key: CHITTYFINANCE_SERVICE_TOKEN
+    key: CHITTY_AUTH_SERVICE_TOKEN
 
 secrets:
   provider: chittyconnect
@@ -27,7 +27,7 @@ secrets:
     production: op://ChittyOS/chittyfinance-prod
 
 github:
-  repository: CHITTYOS/chittyfinance
+  repository: chittyapps/chittyfinance
 
 monitoring:
   health:
