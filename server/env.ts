@@ -18,12 +18,15 @@ export interface Env {
   FINANCE_KV: KVNamespace;
   FINANCE_R2: R2Bucket;
   ASSETS: Fetcher;
-  CF_AGENT: DurableObjectNamespace;
+  // CF_AGENT: DurableObjectNamespace; // Disabled — DO being rebuilt
 }
+
+import type { SystemStorage } from './storage/system';
 
 export interface Variables {
   tenantId: string;
   userId: string;
+  storage: SystemStorage;
 }
 
 export type HonoEnv = {

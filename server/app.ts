@@ -37,37 +37,24 @@ export function createApp() {
   });
   app.get('/register', (c) => c.redirect('https://get.chitty.cc', 302));
 
-  // Durable Object agent passthrough (public)
-  app.all('/agent', async (c) => {
-    const name = new URL(c.req.url).searchParams.get('id') || 'default';
-    const id = c.env.CF_AGENT.idFromName(name);
-    const stub = c.env.CF_AGENT.get(id);
-    return stub.fetch(c.req.raw);
-  });
-  app.all('/agent/*', async (c) => {
-    const name = new URL(c.req.url).searchParams.get('id') || 'default';
-    const id = c.env.CF_AGENT.idFromName(name);
-    const stub = c.env.CF_AGENT.get(id);
-    return stub.fetch(c.req.raw);
-  });
+  // Agent routes disabled — ChittyAgent DO is being rebuilt
+  app.all('/agent', (c) => c.json({ status: 'agent_disabled', message: 'ChittyAgent is being rebuilt' }, 503));
+  app.all('/agent/*', (c) => c.json({ status: 'agent_disabled', message: 'ChittyAgent is being rebuilt' }, 503));
 
   // Authenticated middleware for protected API routes
   app.use('/api/accounts/*', serviceAuth, tenantMiddleware, async (c, next) => {
     const db = createDb(c.env.DATABASE_URL);
-    const storage = new SystemStorage(db);
-    (c as any).storage = storage;
+    c.set('storage', new SystemStorage(db));
     await next();
   });
   app.use('/api/accounts', serviceAuth, tenantMiddleware, async (c, next) => {
     const db = createDb(c.env.DATABASE_URL);
-    const storage = new SystemStorage(db);
-    (c as any).storage = storage;
+    c.set('storage', new SystemStorage(db));
     await next();
   });
   app.use('/api/summary', serviceAuth, tenantMiddleware, async (c, next) => {
     const db = createDb(c.env.DATABASE_URL);
-    const storage = new SystemStorage(db);
-    (c as any).storage = storage;
+    c.set('storage', new SystemStorage(db));
     await next();
   });
 
