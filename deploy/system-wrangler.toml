@@ -20,6 +20,7 @@ routes = [
 [vars]
 MODE = "system"
 NODE_ENV = "production"
+APP_VERSION = "2.0.0"
 
 # Secrets (set with: wrangler secret put SECRET_NAME)
 # Run these commands to set secrets:
@@ -63,8 +64,8 @@ cpu_ms = 50  # 50ms CPU time per request
 # KV Namespace for caching
 [[kv_namespaces]]
 binding = "FINANCE_KV"
-id = "your-kv-namespace-id"
-preview_id = "your-preview-kv-namespace-id"
+id = "517b63be4d7144c197b5bdf851f12041"
+preview_id = "89d0b3bc875e49c4a3a9091de6a080aa"
 
 # R2 Bucket for document storage
 [[r2_buckets]]
