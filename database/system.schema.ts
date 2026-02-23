@@ -68,7 +68,7 @@ export const accounts = pgTable('accounts', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   name: text('name').notNull(),
-  type: text('type').notNull(), // 'checking', 'savings', 'credit', 'investment'
+  type: text('type').notNull(), // 'checking', 'savings', 'credit', 'investment', 'mortgage', 'loan', 'tax_liability'
   institution: text('institution'), // 'Mercury Bank', 'Wave', etc.
   accountNumber: text('account_number'), // Last 4 digits only
   balance: decimal('balance', { precision: 12, scale: 2 }).notNull().default('0'),
@@ -76,6 +76,11 @@ export const accounts = pgTable('accounts', {
   externalId: text('external_id'), // For Mercury/Wave API integration
   isActive: boolean('is_active').notNull().default(true),
   metadata: jsonb('metadata'),
+  // Liability-specific details (nullable — only populated for liability account types)
+  // mortgage: {interestRate, escrowBalance, payoffAmount, maturityDate, lender, monthlyPayment}
+  // tax_liability: {taxYear, pin, installments: [{number, amount, dueDate, status}], exemptions}
+  // loan: {interestRate, principal, payoffAmount, maturityDate, lender, monthlyPayment}
+  liabilityDetails: jsonb('liability_details'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => ({
