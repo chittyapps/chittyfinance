@@ -2,6 +2,7 @@ name = "chittyfinance"
 main = "../server/worker.ts"
 compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
+account_id = "0bc21e3a5a9de1a4cc843be9c3e98121"
 
 routes = [
   { pattern = "finance.chitty.cc/*", zone_name = "chitty.cc" }
@@ -28,4 +29,9 @@ binding = "ASSETS"
 # [[durable_objects.bindings]]
 # name = "CF_AGENT"
 # class_name = "ChittyAgent"
+
+# Migration to delete the broken ChittyAgent DO class
+[[migrations]]
+tag = "v2"
+deleted_classes = ["ChittyAgent"]
 
