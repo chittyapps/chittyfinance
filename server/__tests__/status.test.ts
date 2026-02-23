@@ -1,26 +1,38 @@
-import { describe, it, expect } from 'vitest'
-import defaultWorker from '../worker'
+import { describe, it, expect } from 'vitest';
 
-// Basic smoke test for status endpoint handler
-describe('worker status', () => {
-  it('returns status JSON on /api/v1/status', async () => {
-    const env: any = {
-      MODE: 'system',
-      NODE_ENV: 'test',
-      APP_VERSION: '0.0.0-test',
-      ASSETS: { fetch: async () => new Response('Not Found', { status: 404 }) },
-      CF_AGENT: {
-        idFromName: () => ({}),
-        get: () => ({ fetch: async () => new Response('ok') }),
-      },
-    };
-    const req = new Request('http://localhost/api/v1/status');
-    const res = await (defaultWorker as any).fetch(req, env);
+describe('worker', () => {
+  const env: any = {
+    MODE: 'system',
+    NODE_ENV: 'test',
+    APP_VERSION: '2.0.0-test',
+    CHITTY_AUTH_SERVICE_TOKEN: 'test-token',
+    DATABASE_URL: 'postgresql://fake:fake@localhost/fake',
+    FINANCE_KV: {},
+    FINANCE_R2: {},
+    ASSETS: { fetch: async () => new Response('Not Found', { status: 404 }) },
+    CF_AGENT: {
+      idFromName: () => ({}),
+      get: () => ({ fetch: async () => new Response('ok') }),
+    },
+  };
+
+  it('responds to /health', async () => {
+    const mod = await import('../worker');
+    const worker = mod.default;
+    const req = new Request('http://localhost/health');
+    const res = await worker.fetch(req, env, {} as any);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty('name');
-    expect(body).toHaveProperty('version');
-    expect(body).toHaveProperty('mode');
+    expect(body.status).toBe('ok');
+  });
+
+  it('responds to /api/v1/status', async () => {
+    const mod = await import('../worker');
+    const worker = mod.default;
+    const req = new Request('http://localhost/api/v1/status');
+    const res = await worker.fetch(req, env, {} as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.name).toBe('ChittyFinance');
   });
 });
-
