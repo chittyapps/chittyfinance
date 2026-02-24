@@ -146,7 +146,7 @@ chittyfinance/
 │   ├── db.ts             # Neon database connection
 │   └── lib/              # Server utilities
 │       ├── openai.ts             # AI financial advice (GPT-4o)
-│       ├── financialServices.ts  # Mercury/Wave integration (mock data)
+│       ├── financialServices.ts  # Mercury/Wave integration + stub handlers
 │       ├── chargeAutomation.ts   # Recurring charge analysis
 │       └── github.ts             # GitHub API integration
 └── shared/                # Shared types and schemas
@@ -417,9 +417,10 @@ A utility script for analyzing and detecting duplicate operations in system mode
 
 ### Working with AI Features
 
-**OpenAI Configuration** (`server/lib/openai.ts:4`):
+**OpenAI Configuration** (`server/lib/openai.ts`):
 ```typescript
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "demo-key" });
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 ```
 
 **Best practices**:
@@ -427,7 +428,8 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "demo-key" });
 - Max tokens: 500 for financial advice
 - Include financial context in system prompt
 - Handle API errors gracefully (rate limits, invalid keys)
-- Demo key "demo-key" will not work in production
+- When `OPENAI_API_KEY` is not set, AI functions return rule-based fallback advice
+- OpenAI client is `null` when unconfigured — functions guard with `if (!openai)` early returns
 
 ### Path Aliases
 
@@ -597,9 +599,11 @@ GITHUB_TOKEN="ghp_..."                             # Required for GitHub integra
 - Monitor OpenAI usage at https://platform.openai.com/usage
 
 ### Testing Integrations
-- All integrations currently return mock data
-- To test real APIs, modify functions in `server/lib/financialServices.ts`
-- Add real API keys and replace mock implementations
+- **Mercury Bank**: Real integration via ChittyConnect (requires `CHITTYCONNECT_API_BASE` + token)
+- **Wave Accounting**: Real integration via OAuth 2.0 (requires `WAVE_CLIENT_ID` + `WAVE_CLIENT_SECRET`)
+- **Stripe**: Real integration (requires `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`)
+- **DoorLoop, QuickBooks, Xero, Brex, Gusto**: Not yet implemented — return empty data with `console.warn`
+- Unimplemented integration functions return `{}` or `[]`, not fabricated data
 
 ## Common Issues & Solutions
 
