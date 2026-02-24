@@ -6,9 +6,8 @@
 import OpenAI from 'openai';
 import { withRetry } from './error-handling';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'demo-key',
-});
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 // Standard transaction categories
 export const TRANSACTION_CATEGORIES = {
@@ -78,8 +77,8 @@ export async function categorizeTransaction(
   payee?: string,
   history?: CategorizationHistory[]
 ): Promise<CategorizationResult> {
-  // Skip if no API key
-  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'demo-key') {
+  // Skip if no API key — fall back to rule-based categorization
+  if (!openai) {
     return fallbackCategorization(description, type);
   }
 
@@ -91,7 +90,7 @@ export async function categorizeTransaction(
           ).join('\n')}`
         : '';
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openai!.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
           {

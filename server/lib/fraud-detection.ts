@@ -6,9 +6,8 @@
 import { logSuspiciousActivity } from './chittychronicle-logging';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'demo-key',
-});
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 export interface FraudAlert {
   severity: 'low' | 'medium' | 'high' | 'critical';
@@ -119,7 +118,7 @@ export async function analyzeTransaction(
   // Implementation pending
 
   // 7. ML-based anomaly detection using OpenAI
-  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'demo-key') {
+  if (openai) {
     try {
       const mlAlert = await detectWithML(transaction, tenantPattern);
       if (mlAlert) {
@@ -176,7 +175,7 @@ async function detectWithML(
   pattern: TransactionPattern
 ): Promise<FraudAlert | null> {
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await openai!.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         {

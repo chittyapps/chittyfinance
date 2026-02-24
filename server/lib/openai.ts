@@ -2,7 +2,8 @@ import OpenAI from "openai";
 import { shouldBlockPredicted, recordUsage, getBudgetStatus, approximateTokens } from "./openaiBudget";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "demo-key" });
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 // Configurable knobs (env overrides)
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o"; // keep default per project note
@@ -113,6 +114,10 @@ export async function getFinancialAdvice({
   userQuery,
 userId
 }: FinancialAdviceParams): Promise<string> {
+  if (!openai) {
+    return fallbackAdvice({ cashOnHand, monthlyRevenue, monthlyExpenses, outstandingInvoices }, userQuery) +
+      '\n\n(OpenAI not configured — using rule-based advice)';
+  }
   try {
     const system = buildAdviceSystemPrompt({ cashOnHand, monthlyRevenue, monthlyExpenses, outstandingInvoices });
     const messages: Array<{ role: "system"|"user"|"assistant"; content: string }> = [
@@ -136,7 +141,7 @@ userId
         `\n\n(Budget safe mode active: ${status.used}/${status.budget} tokens used this week)`;
     }
 
-    const response = await openai.chat.completions.create({
+    const response = await openai!.chat.completions.create({
       model: MODEL,
       messages: messages as any,
       max_tokens: MAX_TOKENS_ADVICE,
@@ -166,6 +171,10 @@ export async function generateCostReductionPlan({
   monthlyExpenses: number;
   userId?: number;
 }): Promise<string> {
+  if (!openai) {
+    return fallbackPlan({ cashOnHand, monthlyRevenue, monthlyExpenses }) +
+      '\n\n(OpenAI not configured — using rule-based plan)';
+  }
   try {
     const system = buildPlanSystemPrompt({ cashOnHand, monthlyRevenue, monthlyExpenses });
     const messages: Array<{ role: "system"|"user"; content: string }> = [
@@ -181,7 +190,7 @@ export async function generateCostReductionPlan({
     }
 
     const modelToUse = ALLOW_FALLBACK_MODEL ? FALLBACK_MODEL : MODEL;
-    const response = await openai.chat.completions.create({
+    const response = await openai!.chat.completions.create({
       model: modelToUse,
       messages: messages as any,
       max_tokens: MAX_TOKENS_PLAN,
@@ -206,6 +215,22 @@ export async function analyzeFinancialTrend(
   }[]
   , userId?: number
 ): Promise<string> {
+  if (!openai) {
+    if (historicalData.length >= 2) {
+      const last = historicalData[historicalData.length - 1];
+      const prev = historicalData[historicalData.length - 2];
+      const revDelta = last.revenue - prev.revenue;
+      const expDelta = last.expenses - prev.expenses;
+      return [
+        `• Revenue ${revDelta >= 0 ? 'up' : 'down'} $${Math.abs(revDelta).toFixed(0)} MoM`,
+        `• Expenses ${expDelta >= 0 ? 'up' : 'down'} $${Math.abs(expDelta).toFixed(0)} MoM`,
+        '• Action: prioritize profitable segments; cap cost growth < revenue growth.',
+        '',
+        '(OpenAI not configured — using rule-based trends)'
+      ].join("\n");
+    }
+    return "Insufficient data to analyze trends. (OpenAI not configured)";
+  }
   try {
     // Format the historical data for the prompt
     const formattedData = historicalData
@@ -235,7 +260,7 @@ export async function analyzeFinancialTrend(
         `\n\n(Budget safe mode active: ${status.used}/${status.budget} tokens used this week)`;
     }
 
-    const response = await openai.chat.completions.create({
+    const response = await openai!.chat.completions.create({
       model: MODEL,
       messages: messages as any,
       max_tokens: MAX_TOKENS_TREND,
