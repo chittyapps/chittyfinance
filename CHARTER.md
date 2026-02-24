@@ -6,7 +6,7 @@ version: 1.1.0
 status: CERTIFIED
 registered_with: chittycanon://core/services/canon
 title: ChittyFinance Charter
-certifier: chittycanon://core/services/chittycert
+certifier: chittycanon://core/services/chittycertify
 visibility: PUBLIC
 ---
 
@@ -121,6 +121,31 @@ IT CAN BE LLC (holding)
 | Technical Lead | @chittyos-infrastructure |
 | Contact | finance@chitty.cc |
 
+## Three Aspects (TY VY RY)
+
+Source: `chittycanon://gov/governance#three-aspects`
+
+| Aspect | Abbrev | Question | ChittyFinance Answer |
+|--------|--------|----------|--------------------|
+| **Identity** | TY | What IS it? | Full-stack financial management platform — intelligent tracking, AI-powered advice, recurring charge optimization for the IT CAN BE LLC entity structure |
+| **Connectivity** | VY | How does it ACT? | Mercury Bank via ChittyConnect proxy; Wave Accounting OAuth 2.0 + GraphQL; Stripe payment processing + webhooks; OpenAI GPT-4o financial advice; dual-mode (standalone SQLite / system PostgreSQL multi-tenant) |
+| **Authority** | RY | Where does it SIT? | Tier 3 Service — authoritative for financial data aggregation and AI advice; delegates identity to ChittyID, banking connectivity to ChittyConnect, audit logging to ChittyChronicle |
+
+## Document Triad
+
+This charter is part of a synchronized documentation triad. Changes to shared fields must propagate.
+
+| Field | Canonical Source | Also In |
+|-------|-----------------|---------|
+| Canonical URI | CHARTER.md (Classification) | CHITTY.md (blockquote) |
+| Tier | CHARTER.md (Classification) | CHITTY.md (blockquote) |
+| Domain | CHARTER.md (Classification) | CHITTY.md (blockquote), CLAUDE.md (header) |
+| Endpoints | CHARTER.md (API Contract) | CHITTY.md (Endpoints table), CLAUDE.md (API section) |
+| Dependencies | CHARTER.md (Dependencies) | CHITTY.md (Dependencies table), CLAUDE.md (Architecture) |
+| Certification badge | CHITTY.md (Certification) | CHARTER.md frontmatter `status` |
+
+**Related docs**: [CHITTY.md](CHITTY.md) (badge/one-pager) | [CLAUDE.md](CLAUDE.md) (developer guide)
+
 ## Compliance
 
 - [ ] Service registered in ChittyRegistry
@@ -133,4 +158,4 @@ IT CAN BE LLC (holding)
 - [x] Multi-tenant data isolation
 
 ---
-*Charter Version: 1.1.0 | Last Updated: 2026-02-21*
+*Charter Version: 1.1.0 | Last Updated: 2026-02-23*
