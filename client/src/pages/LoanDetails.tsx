@@ -196,12 +196,12 @@ export default function LoanDetails() {
   if (isLoading) {
     return (
       <div className="min-h-screen">
-        <nav className="glass-morphism fixed top-0 left-0 right-0 z-50 px-4 py-3">
+        <nav className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 px-4 py-3">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <Button 
               variant="ghost" 
               onClick={() => setLocation("/")}
-              className="text-neutral-600 hover:text-primary"
+              className="text-gray-700 hover:text-gray-900"
             >
               <i className="fas fa-arrow-left mr-2"></i>Back to Dashboard
             </Button>
@@ -228,7 +228,7 @@ export default function LoanDetails() {
           <i className="fas fa-exclamation-triangle text-4xl text-red-400 mb-4"></i>
           <h1 className="text-2xl font-bold text-neutral-800 mb-2">Loan Not Found</h1>
           <p className="text-neutral-600 mb-4">The loan you're looking for doesn't exist or you don't have access to it.</p>
-          <Button onClick={() => setLocation("/")} className="hero-gradient text-white">
+          <Button onClick={() => setLocation("/")} className="bg-blue-600 text-white hover:bg-blue-700">
             Back to Dashboard
           </Button>
         </div>
@@ -242,12 +242,12 @@ export default function LoanDetails() {
   return (
     <div className="min-h-screen">
       {/* Navigation */}
-      <nav className="glass-morphism fixed top-0 left-0 right-0 z-50 px-4 py-3">
+      <nav className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 px-4 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Button 
             variant="ghost" 
             onClick={() => setLocation("/")}
-            className="text-neutral-600 hover:text-primary"
+            className="text-gray-700 hover:text-gray-900"
           >
             <i className="fas fa-arrow-left mr-2"></i>Back to Dashboard
           </Button>
@@ -263,7 +263,7 @@ export default function LoanDetails() {
             {isLender && (
               <Button 
                 onClick={() => setShowPaymentForm(!showPaymentForm)}
-                className="hero-gradient text-white"
+                className="bg-blue-600 text-white hover:bg-blue-700"
               >
                 <i className="fas fa-dollar-sign mr-2"></i>Record Payment
               </Button>
@@ -357,7 +357,7 @@ export default function LoanDetails() {
                       <Button 
                         onClick={handlePayment}
                         disabled={paymentMutation.isPending}
-                        className="hero-gradient text-white"
+                        className="bg-blue-600 text-white hover:bg-blue-700"
                       >
                         {paymentMutation.isPending ? 'Recording...' : 'Record Payment'}
                       </Button>
@@ -389,7 +389,7 @@ export default function LoanDetails() {
                       <Button 
                         onClick={handleSendMessage}
                         disabled={messageMutation.isPending}
-                        className="hero-gradient text-white"
+                        className="bg-blue-600 text-white hover:bg-blue-700"
                       >
                         {messageMutation.isPending ? 'Sending...' : 'Send Message'}
                       </Button>

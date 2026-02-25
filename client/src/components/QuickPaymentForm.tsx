@@ -77,7 +77,7 @@ export default function QuickPaymentForm({ loanId, onSuccess, onCancel }: QuickP
   };
 
   return (
-    <Card className="glass-morphism border-0 shadow-xl">
+    <Card className="bg-white border border-gray-200 shadow-sm">
       <CardHeader>
         <CardTitle className="text-xl font-bold text-neutral-800 flex items-center gap-2">
           <i className="fas fa-money-bill text-green-500"></i>

@@ -29,7 +29,7 @@ export default function LoanTermsCard({ loan }: LoanTermsCardProps) {
   };
 
   return (
-    <Card className="glass-morphism border-0 shadow-xl">
+    <Card className="bg-white border border-gray-200 shadow-sm">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl font-bold text-neutral-800 flex items-center gap-2">

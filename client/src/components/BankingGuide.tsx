@@ -34,7 +34,7 @@ export default function BankingGuide() {
   ];
 
   return (
-    <Card className="glass-morphism border-0 shadow-xl">
+    <Card className="bg-white border border-gray-200 shadow-sm">
       <CardHeader>
         <CardTitle className="text-2xl font-bold text-neutral-800 flex items-center gap-2">
           <i className="fas fa-university text-primary"></i>
@@ -62,7 +62,7 @@ export default function BankingGuide() {
                   <Button 
                     onClick={step.action} 
                     size="sm" 
-                    className="hero-gradient text-white text-xs"
+                    className="bg-blue-600 text-white text-xs hover:bg-blue-700"
                   >
                     {step.actionText}
                   </Button>

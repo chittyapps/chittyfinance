@@ -43,12 +43,12 @@ export default function CreateLoan() {
   return (
     <div className="min-h-screen">
       {/* Navigation */}
-      <nav className="glass-morphism fixed top-0 left-0 right-0 z-50 px-4 py-3">
+      <nav className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50 px-4 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Button 
             variant="ghost" 
             onClick={() => setLocation("/")}
-            className="text-neutral-600 hover:text-primary"
+            className="text-gray-700 hover:text-gray-900"
           >
             <i className="fas fa-arrow-left mr-2"></i>Back to Dashboard
           </Button>
