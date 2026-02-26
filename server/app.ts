@@ -17,6 +17,9 @@ import { integrationRoutes } from './routes/integrations';
 import { taskRoutes } from './routes/tasks';
 import { aiRoutes } from './routes/ai';
 import { webhookRoutes } from './routes/webhooks';
+import { mercuryRoutes } from './routes/mercury';
+import { githubRoutes } from './routes/github';
+import { stripeRoutes } from './routes/stripe';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -69,6 +72,7 @@ export function createApp() {
   const protectedPrefixes = [
     '/api/accounts', '/api/transactions', '/api/tenants', '/api/properties',
     '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/summary',
+    '/api/mercury', '/api/github',
   ];
   for (const prefix of protectedPrefixes) {
     app.use(prefix, ...protectedRoute);
@@ -84,6 +88,9 @@ export function createApp() {
   app.route('/', integrationRoutes);
   app.route('/', taskRoutes);
   app.route('/', aiRoutes);
+  app.route('/', mercuryRoutes);
+  app.route('/', githubRoutes);
+  app.route('/', stripeRoutes);
 
   // ── Fallback: try static assets, then 404 ──
   app.all('*', async (c) => {
