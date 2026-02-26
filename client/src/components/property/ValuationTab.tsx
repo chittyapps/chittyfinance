@@ -14,13 +14,11 @@ type Quarter = 'Q1' | 'Q2' | 'Q3' | 'Q4';
 
 interface Props {
   propertyId: string;
-  propertyName: string;
-  propertyAddress: string;
 }
 
-export default function ValuationTab({ propertyId, propertyName, propertyAddress }: Props) {
+export default function ValuationTab({ propertyId }: Props) {
   const { data: valuation, isLoading } = usePropertyValuation(propertyId);
-  const { data: history = [] } = usePropertyValuationHistory(propertyId);
+  usePropertyValuationHistory(propertyId);
 
   const storageKey = `valuation-console:${propertyId}`;
 
