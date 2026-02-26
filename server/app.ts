@@ -23,6 +23,8 @@ import { stripeRoutes } from './routes/stripe';
 import { waveRoutes, waveCallbackRoute } from './routes/wave';
 import { chargeRoutes } from './routes/charges';
 import { forensicRoutes } from './routes/forensics';
+import { valuationRoutes } from './routes/valuation';
+import { importRoutes } from './routes/import';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -46,7 +48,7 @@ export function createApp() {
   app.use('*', cors({
     origin: ['https://app.command.chitty.cc', 'https://command.chitty.cc', 'https://finance.chitty.cc', 'http://localhost:5000', 'http://localhost:3000'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Source-Service', 'Stripe-Signature'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Source-Service', 'X-Account-ID', 'Stripe-Signature'],
   }));
 
   // Request logging
@@ -79,7 +81,7 @@ export function createApp() {
   const protectedPrefixes = [
     '/api/accounts', '/api/transactions', '/api/tenants', '/api/properties',
     '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/summary',
-    '/api/mercury', '/api/github', '/api/charges', '/api/forensics',
+    '/api/mercury', '/api/github', '/api/charges', '/api/forensics', '/api/import',
   ];
   for (const prefix of protectedPrefixes) {
     app.use(prefix, ...protectedRoute);
@@ -101,6 +103,8 @@ export function createApp() {
   app.route('/', waveRoutes);
   app.route('/', chargeRoutes);
   app.route('/', forensicRoutes);
+  app.route('/', valuationRoutes);
+  app.route('/', importRoutes);
 
   // ── Fallback: try static assets, then 404 ──
   app.all('*', async (c) => {
