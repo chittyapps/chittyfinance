@@ -79,6 +79,19 @@ export class SystemStorage {
     return q;
   }
 
+  async getTransactionByExternalId(externalId: string, tenantId: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.transactions)
+      .where(and(eq(schema.transactions.externalId, externalId), eq(schema.transactions.tenantId, tenantId)));
+    return row;
+  }
+
+  async createTransaction(data: typeof schema.transactions.$inferInsert) {
+    const [row] = await this.db.insert(schema.transactions).values(data).returning();
+    return row;
+  }
+
   async getTransactionsByAccount(accountId: string, tenantId: string, since?: string) {
     const conditions = [
       eq(schema.transactions.accountId, accountId),
@@ -241,6 +254,20 @@ export class SystemStorage {
     return row;
   }
 
+  async createProperty(data: typeof schema.properties.$inferInsert) {
+    const [row] = await this.db.insert(schema.properties).values(data).returning();
+    return row;
+  }
+
+  async updateProperty(id: string, tenantId: string, data: Partial<typeof schema.properties.$inferInsert>) {
+    const [row] = await this.db
+      .update(schema.properties)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(schema.properties.id, id), eq(schema.properties.tenantId, tenantId)))
+      .returning();
+    return row;
+  }
+
   // ── UNITS ──
 
   async getUnits(propertyId: string) {
@@ -248,6 +275,21 @@ export class SystemStorage {
       .select()
       .from(schema.units)
       .where(eq(schema.units.propertyId, propertyId));
+  }
+
+  async createUnit(data: typeof schema.units.$inferInsert) {
+    const [row] = await this.db.insert(schema.units).values(data).returning();
+    return row;
+  }
+
+  async updateUnit(id: string, propertyId: string, data: Partial<typeof schema.units.$inferInsert>) {
+    const { propertyId: _drop, ...safeData } = data;
+    const [row] = await this.db
+      .update(schema.units)
+      .set({ ...safeData, updatedAt: new Date() })
+      .where(and(eq(schema.units.id, id), eq(schema.units.propertyId, propertyId)))
+      .returning();
+    return row;
   }
 
   // ── LEASES ──
@@ -258,5 +300,182 @@ export class SystemStorage {
       .select()
       .from(schema.leases)
       .where(inArray(schema.leases.unitId, unitIds));
+  }
+
+  async createLease(data: typeof schema.leases.$inferInsert) {
+    const [row] = await this.db.insert(schema.leases).values(data).returning();
+    return row;
+  }
+
+  async updateLease(id: string, unitIds: string[], data: Partial<typeof schema.leases.$inferInsert>) {
+    if (unitIds.length === 0) return undefined;
+    const [row] = await this.db
+      .update(schema.leases)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(schema.leases.id, id), inArray(schema.leases.unitId, unitIds)))
+      .returning();
+    return row;
+  }
+
+  async getActiveLeasesForProperty(propertyId: string) {
+    const propertyUnits = await this.getUnits(propertyId);
+    const unitIds = propertyUnits.map((u) => u.id);
+    if (unitIds.length === 0) return [];
+    return this.db
+      .select()
+      .from(schema.leases)
+      .where(and(inArray(schema.leases.unitId, unitIds), eq(schema.leases.status, 'active')));
+  }
+
+  // ── PROPERTY FINANCIALS ──
+
+  async getPropertyTransactions(propertyId: string, tenantId: string, since?: string, until?: string) {
+    const conditions = [
+      eq(schema.transactions.propertyId, propertyId),
+      eq(schema.transactions.tenantId, tenantId),
+    ];
+    if (since) conditions.push(sql`${schema.transactions.date} >= ${since}`);
+    if (until) conditions.push(sql`${schema.transactions.date} <= ${until}`);
+    return this.db
+      .select()
+      .from(schema.transactions)
+      .where(and(...conditions))
+      .orderBy(desc(schema.transactions.date));
+  }
+
+  async getPropertyFinancials(propertyId: string, tenantId: string) {
+    const property = await this.getProperty(propertyId, tenantId);
+    if (!property) return null;
+
+    const units = await this.getUnits(propertyId);
+    const unitIds = units.map((u) => u.id);
+    const activeLeases = unitIds.length > 0
+      ? await this.db.select().from(schema.leases)
+          .where(and(inArray(schema.leases.unitId, unitIds), eq(schema.leases.status, 'active')))
+      : [];
+
+    // Last 12 months of transactions
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const txns = await this.getPropertyTransactions(propertyId, tenantId, oneYearAgo.toISOString());
+
+    let totalIncome = 0;
+    let totalExpenses = 0;
+    for (const t of txns) {
+      const amt = parseFloat(t.amount);
+      if (t.type === 'income') totalIncome += amt;
+      else if (t.type === 'expense') totalExpenses += Math.abs(amt);
+    }
+
+    const noi = totalIncome - totalExpenses;
+    const currentValue = property.currentValue ? parseFloat(property.currentValue) : 0;
+    const purchasePrice = property.purchasePrice ? parseFloat(property.purchasePrice) : 0;
+
+    return {
+      propertyId,
+      noi,
+      capRate: currentValue > 0 ? (noi / currentValue) * 100 : 0,
+      cashOnCash: purchasePrice > 0 ? (noi / purchasePrice) * 100 : 0,
+      occupancyRate: units.length > 0 ? (activeLeases.length / units.length) * 100 : 0,
+      totalUnits: units.length,
+      occupiedUnits: activeLeases.length,
+      totalIncome,
+      totalExpenses,
+    };
+  }
+
+  async getPropertyRentRoll(propertyId: string, tenantId: string) {
+    const property = await this.getProperty(propertyId, tenantId);
+    if (!property) return null;
+
+    const units = await this.getUnits(propertyId);
+    const unitIds = units.map((u) => u.id);
+    const leases = unitIds.length > 0 ? await this.getLeasesByUnits(unitIds) : [];
+
+    // Current month transactions
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+    const txns = await this.getPropertyTransactions(propertyId, tenantId, monthStart, monthEnd);
+
+    return units.map((unit) => {
+      const lease = leases.find((l) => l.unitId === unit.id && l.status === 'active');
+      const unitTxns = txns.filter((t) => t.unitId === unit.id && t.category === 'rent');
+      const actualPaid = unitTxns.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+      const expectedRent = lease ? parseFloat(lease.monthlyRent) : (unit.monthlyRent ? parseFloat(unit.monthlyRent) : 0);
+
+      return {
+        unitId: unit.id,
+        unitNumber: unit.unitNumber,
+        bedrooms: unit.bedrooms,
+        bathrooms: unit.bathrooms,
+        squareFeet: unit.squareFeet,
+        expectedRent,
+        actualPaid,
+        status: !lease ? 'vacant' : actualPaid >= expectedRent ? 'paid' : actualPaid > 0 ? 'partial' : 'overdue',
+        tenantName: lease?.tenantName || null,
+        leaseEnd: lease?.endDate || null,
+      };
+    });
+  }
+
+  async getPropertyPnL(propertyId: string, tenantId: string, startDate: string, endDate: string) {
+    const property = await this.getProperty(propertyId, tenantId);
+    if (!property) return null;
+
+    const txns = await this.getPropertyTransactions(propertyId, tenantId, startDate, endDate);
+
+    const income: Record<string, number> = {};
+    const expenses: Record<string, number> = {};
+    let totalIncome = 0;
+    let totalExpenses = 0;
+
+    for (const t of txns) {
+      const amt = parseFloat(t.amount);
+      const category = t.category || 'uncategorized';
+      if (t.type === 'income') {
+        income[category] = (income[category] || 0) + amt;
+        totalIncome += amt;
+      } else if (t.type === 'expense') {
+        expenses[category] = (expenses[category] || 0) + Math.abs(amt);
+        totalExpenses += Math.abs(amt);
+      }
+    }
+
+    return { income, expenses, totalIncome, totalExpenses, net: totalIncome - totalExpenses };
+  }
+
+  // ── VALUATIONS ──
+
+  async getPropertyValuations(propertyId: string, tenantId: string) {
+    return this.db
+      .select()
+      .from(schema.propertyValuations)
+      .where(and(
+        eq(schema.propertyValuations.propertyId, propertyId),
+        eq(schema.propertyValuations.tenantId, tenantId),
+      ))
+      .orderBy(desc(schema.propertyValuations.fetchedAt));
+  }
+
+  async upsertPropertyValuation(data: typeof schema.propertyValuations.$inferInsert) {
+    const [row] = await this.db
+      .insert(schema.propertyValuations)
+      .values(data)
+      .onConflictDoUpdate({
+        target: [schema.propertyValuations.propertyId, schema.propertyValuations.source],
+        set: {
+          estimate: data.estimate,
+          low: data.low,
+          high: data.high,
+          rentalEstimate: data.rentalEstimate,
+          confidence: data.confidence,
+          details: data.details,
+          fetchedAt: data.fetchedAt,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
   }
 }

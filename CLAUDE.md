@@ -145,13 +145,13 @@ chittyfinance/
 │   ├── worker.ts         # Cloudflare Workers entry point
 │   ├── index.ts          # Legacy Express entry (standalone dev)
 │   ├── routes.ts         # Legacy Express routes (reference only)
-│   ├── routes/            # Hono route modules (17 files)
+│   ├── routes/            # Hono route modules (19 files)
 │   │   ├── health.ts     # /health, /api/v1/status
 │   │   ├── docs.ts       # /api/v1/documentation (OpenAPI spec)
 │   │   ├── accounts.ts   # /api/accounts
 │   │   ├── summary.ts    # /api/summary
 │   │   ├── tenants.ts    # /api/tenants
-│   │   ├── properties.ts # /api/properties
+│   │   ├── properties.ts # /api/properties (CRUD + financials + rent roll + P&L)
 │   │   ├── transactions.ts # /api/transactions
 │   │   ├── integrations.ts # /api/integrations
 │   │   ├── tasks.ts      # /api/tasks
@@ -162,6 +162,8 @@ chittyfinance/
 │   │   ├── wave.ts       # /api/integrations/wave (OAuth)
 │   │   ├── charges.ts    # /api/charges (recurring)
 │   │   ├── forensics.ts  # /api/forensics (21 endpoints)
+│   │   ├── valuation.ts  # /api/properties/:id/valuation (multi-source AVM)
+│   │   ├── import.ts     # /api/import (TurboTenant CSV + Wave sync)
 │   │   └── webhooks.ts   # Stripe/Mercury webhooks
 │   ├── middleware/        # auth, tenant, error middleware
 │   ├── storage/           # SystemStorage (Drizzle queries)
@@ -170,7 +172,15 @@ chittyfinance/
 │       ├── wave-api.ts           # Wave Accounting GraphQL client
 │       ├── oauth-state-edge.ts   # Edge-compatible HMAC OAuth state
 │       ├── chargeAutomation.ts   # Recurring charge analysis (stubs)
-│       └── forensicService.ts    # Forensic algorithms (legacy)
+│       ├── forensicService.ts    # Forensic algorithms (legacy)
+│       └── valuation/            # Property valuation providers
+│           ├── types.ts          # ValuationProvider interface, AggregatedValuation
+│           ├── zillow.ts         # Zillow via RapidAPI
+│           ├── redfin.ts         # Redfin via RapidAPI
+│           ├── housecanary.ts    # HouseCanary REST API
+│           ├── attom.ts          # ATTOM Data Gateway
+│           ├── county.ts         # Cook County Assessor (Socrata)
+│           └── index.ts          # Provider registry + confidence-weighted aggregation
 ├── database/              # Schema definitions
 │   ├── system.schema.ts   # Multi-tenant PostgreSQL (UUID-based)
 │   └── standalone.schema.ts # Single-tenant SQLite
@@ -198,6 +208,7 @@ chittyfinance/
 - `properties` - Real estate assets
 - `units` - Rental units (if property has multiple units)
 - `leases` - Tenant leases with rent and dates
+- `property_valuations` - Cached AVM estimates from external providers (Zillow, Redfin, HouseCanary, ATTOM, County)
 
 **Supporting Tables**:
 - `integrations` - Mercury/Wave/Stripe API connections
@@ -557,6 +568,28 @@ import logo from "@assets/logo.png";
 - `PATCH /api/tasks/:id` - Update task
 - `DELETE /api/tasks/:id` - Delete task
 
+### Property CRUD (Phase 4)
+- `POST /api/properties` - Create property
+- `PATCH /api/properties/:id` - Update property
+- `POST /api/properties/:id/units` - Create unit
+- `PATCH /api/properties/:id/units/:unitId` - Update unit
+- `POST /api/properties/:id/leases` - Create lease
+- `PATCH /api/properties/:id/leases/:leaseId` - Update lease
+
+### Property Financial Data (Phase 4)
+- `GET /api/properties/:id/financials` - NOI, cap rate, cash-on-cash, occupancy
+- `GET /api/properties/:id/rent-roll` - Unit-level rent roll with payment status
+- `GET /api/properties/:id/pnl?start=YYYY-MM-DD&end=YYYY-MM-DD` - Property P&L by REI category
+
+### Property Valuation (Phase 4)
+- `GET /api/properties/:id/valuation` - Aggregated multi-source valuation estimates
+- `POST /api/properties/:id/valuation/refresh` - Fetch fresh estimates from all configured providers
+- `GET /api/properties/:id/valuation/history` - Historical valuation timeline
+
+### Data Import (Phase 4)
+- `POST /api/import/turbotenant` - Import TurboTenant CSV ledger (requires `X-Account-ID` header)
+- `POST /api/import/wave-sync` - Sync Wave transactions via OAuth
+
 ## Environment Configuration
 
 ### Required Variables
@@ -608,6 +641,15 @@ CHITTY_CONNECT_URL="https://connect.chitty.cc"      # Frontend redirect URL (opt
 ```bash
 GITHUB_TOKEN="ghp_..."                             # Required for GitHub integration
 ```
+
+**Property Valuation** (Phase 4 - optional, each enables its provider):
+```bash
+ZILLOW_API_KEY="..."                               # RapidAPI key for Zillow estimates
+REDFIN_API_KEY="..."                               # RapidAPI key for Redfin estimates
+HOUSECANARY_API_KEY="..."                          # HouseCanary API key
+ATTOM_API_KEY="..."                                # ATTOM Data Gateway key
+```
+Cook County Assessor (Socrata) is always available — no API key required.
 
 ### Local Development Setup
 
@@ -816,14 +858,22 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ✅ **Webhook Infrastructure** - Idempotent event processing (`webhook_events` table)
 - ⏳ **DoorLoop** - Real property management API (currently mock)
 
-### Phase 4: Property Management & Valuation Features (In Progress)
+### Phase 4: Property Financial API (Partially Completed)
+- ✅ `property_valuations` table in system schema
+- ✅ Property/unit/lease CRUD in SystemStorage
+- ✅ Financial aggregation methods (NOI, cap rate, cash-on-cash, occupancy, rent roll, P&L)
+- ✅ Property mutation + financial endpoints (10 new routes in `properties.ts`)
+- ✅ Multi-source valuation providers (Zillow, Redfin, HouseCanary, ATTOM, County)
+- ✅ Confidence-weighted valuation aggregation
+- ✅ Valuation routes (current, refresh, history)
+- ✅ TurboTenant CSV import with deduplication
+- ✅ Wave sync import endpoint
 - ✅ Valuation Console (`client/src/pages/ValuationConsole.tsx`)
+- ✅ Deployed to Cloudflare Workers (35 tests passing)
+- ⏳ Generalize ValuationConsole to any property (currently hardcoded)
 - ⏳ Integrate ValuationConsole with dashboard
-- ⏳ Rent roll tracking per property
 - ⏳ Lease expiration notifications
-- ⏳ Maintenance request system
-- ⏳ Vendor payment tracking
-- ⏳ Occupancy rate reporting
+- ⏳ Frontend property management UI
 
 ### Phase 5: ChittyOS Ecosystem Integration
 - ⏳ Replace demo auth with ChittyID

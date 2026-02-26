@@ -11,6 +11,11 @@ export interface Env {
   OAUTH_STATE_SECRET?: string;
   GITHUB_TOKEN?: string;
   MERCURY_WEBHOOK_SECRET?: string;
+  // Valuation API keys (optional — each provider only fetched if key is set)
+  ZILLOW_API_KEY?: string;
+  REDFIN_API_KEY?: string;
+  HOUSECANARY_API_KEY?: string;
+  ATTOM_API_KEY?: string;
   MODE?: string;
   NODE_ENV?: string;
   APP_VERSION?: string;
