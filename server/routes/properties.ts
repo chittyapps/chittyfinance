@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { z } from 'zod';
 import { insertPropertySchema, insertUnitSchema, insertLeaseSchema } from '../db/schema';
 
 export const propertyRoutes = new Hono<HonoEnv>();
@@ -148,7 +149,12 @@ propertyRoutes.post('/api/properties/:id/leases', async (c) => {
   if (!property) return c.json({ error: 'Property not found' }, 404);
 
   const body = await c.req.json();
-  const parsed = insertLeaseSchema.safeParse(body);
+  // Coerce ISO date strings to Date objects (JSON has no Date type)
+  const leaseCreateSchema = insertLeaseSchema.extend({
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+  });
+  const parsed = leaseCreateSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors }, 400);
   }
@@ -179,7 +185,11 @@ propertyRoutes.patch('/api/properties/:id/leases/:leaseId', async (c) => {
   const unitIds = units.map((u) => u.id);
 
   const body = await c.req.json();
-  const parsed = insertLeaseSchema.partial().safeParse(body);
+  const leaseUpdateSchema = insertLeaseSchema.partial().extend({
+    startDate: z.coerce.date().optional(),
+    endDate: z.coerce.date().optional(),
+  });
+  const parsed = leaseUpdateSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors }, 400);
   }
