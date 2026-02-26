@@ -5,8 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Home } from 'lucide-react';
 import { useTenantId } from '@/contexts/TenantContext';
-import { useProperties, usePropertyFinancials } from '@/hooks/use-property';
-import type { Property, PropertyFinancials } from '@/hooks/use-property';
+import { useProperties } from '@/hooks/use-property';
+import type { PropertyFinancials } from '@/hooks/use-property';
 import PortfolioSummary from '@/components/property/PortfolioSummary';
 import PropertyCard from '@/components/property/PropertyCard';
 import OpsView from '@/components/property/OpsView';

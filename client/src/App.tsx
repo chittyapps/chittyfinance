@@ -9,7 +9,7 @@ import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
 import ConnectAccounts from "@/pages/ConnectAccounts";
 import NotFound from "@/pages/not-found";
-import ValuationConsole from "@/pages/ValuationConsole";
+import PropertyDetail from "@/pages/PropertyDetail";
 import Properties from "@/pages/Properties";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
@@ -33,7 +33,7 @@ function Router() {
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/properties" component={Properties} />
-            <Route path="/valuation/550-w-surf-504" component={ValuationConsole} />
+            <Route path="/properties/:id" component={PropertyDetail} />
             <Route path="/connections" component={Connections} />
             <Route path="/admin" component={Admin} />
             <Route path="/settings" component={Settings} />
