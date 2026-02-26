@@ -20,6 +20,9 @@ import { webhookRoutes } from './routes/webhooks';
 import { mercuryRoutes } from './routes/mercury';
 import { githubRoutes } from './routes/github';
 import { stripeRoutes } from './routes/stripe';
+import { waveRoutes, waveCallbackRoute } from './routes/wave';
+import { chargeRoutes } from './routes/charges';
+import { forensicRoutes } from './routes/forensics';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -67,12 +70,16 @@ export function createApp() {
   // ── Webhook routes (custom auth per-route, no tenant required) ──
   app.route('/', webhookRoutes);
 
+  // Wave OAuth callback is public (OAuth redirect from Wave — no auth/tenant needed)
+  // Must be mounted before protected middleware covers /api/integrations/*
+  app.route('/', waveCallbackRoute);
+
   // ── Protected API routes (auth + tenant + storage) ──
   // Register middleware for each protected path prefix
   const protectedPrefixes = [
     '/api/accounts', '/api/transactions', '/api/tenants', '/api/properties',
     '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/summary',
-    '/api/mercury', '/api/github',
+    '/api/mercury', '/api/github', '/api/charges', '/api/forensics',
   ];
   for (const prefix of protectedPrefixes) {
     app.use(prefix, ...protectedRoute);
@@ -91,6 +98,9 @@ export function createApp() {
   app.route('/', mercuryRoutes);
   app.route('/', githubRoutes);
   app.route('/', stripeRoutes);
+  app.route('/', waveRoutes);
+  app.route('/', chargeRoutes);
+  app.route('/', forensicRoutes);
 
   // ── Fallback: try static assets, then 404 ──
   app.all('*', async (c) => {

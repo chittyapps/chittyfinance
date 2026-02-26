@@ -139,18 +139,45 @@ chittyfinance/
 │       ├── components/    # Reusable UI components (shadcn/ui)
 │       ├── hooks/         # Custom React hooks
 │       └── lib/           # Client utilities
-├── server/                # Express backend
-│   ├── index.ts          # Server entry point (port 5000)
-│   ├── routes.ts         # API route definitions
-│   ├── storage.ts        # Database abstraction layer (IStorage interface)
-│   ├── db.ts             # Neon database connection
-│   └── lib/              # Server utilities
-│       ├── openai.ts             # AI financial advice (GPT-4o)
-│       ├── financialServices.ts  # Mercury/Wave integration + stub handlers
-│       ├── chargeAutomation.ts   # Recurring charge analysis
-│       └── github.ts             # GitHub API integration
-└── shared/                # Shared types and schemas
-    └── schema.ts         # Single PostgreSQL schema (Drizzle)
+├── server/                # Hono backend (Cloudflare Workers)
+│   ├── app.ts            # Hono app factory with middleware wiring
+│   ├── env.ts            # HonoEnv type (Bindings + Variables)
+│   ├── worker.ts         # Cloudflare Workers entry point
+│   ├── index.ts          # Legacy Express entry (standalone dev)
+│   ├── routes.ts         # Legacy Express routes (reference only)
+│   ├── routes/            # Hono route modules (17 files)
+│   │   ├── health.ts     # /health, /api/v1/status
+│   │   ├── docs.ts       # /api/v1/documentation (OpenAPI spec)
+│   │   ├── accounts.ts   # /api/accounts
+│   │   ├── summary.ts    # /api/summary
+│   │   ├── tenants.ts    # /api/tenants
+│   │   ├── properties.ts # /api/properties
+│   │   ├── transactions.ts # /api/transactions
+│   │   ├── integrations.ts # /api/integrations
+│   │   ├── tasks.ts      # /api/tasks
+│   │   ├── ai.ts         # /api/ai-messages
+│   │   ├── mercury.ts    # /api/mercury (via ChittyConnect)
+│   │   ├── github.ts     # /api/github
+│   │   ├── stripe.ts     # /api/integrations/stripe
+│   │   ├── wave.ts       # /api/integrations/wave (OAuth)
+│   │   ├── charges.ts    # /api/charges (recurring)
+│   │   ├── forensics.ts  # /api/forensics (21 endpoints)
+│   │   └── webhooks.ts   # Stripe/Mercury webhooks
+│   ├── middleware/        # auth, tenant, error middleware
+│   ├── storage/           # SystemStorage (Drizzle queries)
+│   ├── db/                # connection.ts (Neon HTTP), schema.ts
+│   └── lib/               # Server utilities
+│       ├── wave-api.ts           # Wave Accounting GraphQL client
+│       ├── oauth-state-edge.ts   # Edge-compatible HMAC OAuth state
+│       ├── chargeAutomation.ts   # Recurring charge analysis (stubs)
+│       └── forensicService.ts    # Forensic algorithms (legacy)
+├── database/              # Schema definitions
+│   ├── system.schema.ts   # Multi-tenant PostgreSQL (UUID-based)
+│   └── standalone.schema.ts # Single-tenant SQLite
+├── shared/                # Shared types and schemas
+│   └── schema.ts         # Legacy schema with forensic tables (integer-ID)
+└── deploy/
+    └── system-wrangler.toml # Cloudflare Workers config
 ```
 
 ## Database Architecture
@@ -486,9 +513,9 @@ import logo from "@assets/logo.png";
 - `POST /api/integrations/mercury/webhook` - Mercury webhook endpoint (authenticated)
 
 ### Recurring Charges
-- `GET /api/recurring-charges` - List recurring charges from integrations
-- `GET /api/recurring-charges/:id/optimizations` - Get AI optimization suggestions
-- `POST /api/recurring-charges/:id/manage` - Pause/cancel/optimize subscription
+- `GET /api/charges/recurring` - List recurring charges from integrations
+- `GET /api/charges/optimizations` - Get optimization recommendations
+- `POST /api/charges/manage` - Cancel/modify a recurring charge
 
 ### AI Services
 - `POST /api/ai/advice` - Get initial AI financial advice
@@ -497,9 +524,32 @@ import logo from "@assets/logo.png";
 
 ### GitHub Integration
 - `GET /api/github/repositories` - List user repositories
-- `GET /api/github/commits/:repo` - Get repository commits
-- `GET /api/github/pulls/:repo` - Get pull requests
-- `GET /api/github/issues/:repo` - Get issues
+- `GET /api/github/repositories/:owner/:repo/commits` - Get repository commits
+- `GET /api/github/repositories/:owner/:repo/pulls` - Get pull requests
+- `GET /api/github/repositories/:owner/:repo/issues` - Get issues
+
+### Forensic Accounting
+- `GET /api/forensics/investigations` - List investigations
+- `GET /api/forensics/investigations/:id` - Get investigation
+- `POST /api/forensics/investigations` - Create investigation
+- `PATCH /api/forensics/investigations/:id/status` - Update status
+- `POST /api/forensics/investigations/:id/evidence` - Add evidence
+- `GET /api/forensics/investigations/:id/evidence` - List evidence
+- `POST /api/forensics/evidence/:id/custody` - Update chain of custody
+- `POST /api/forensics/investigations/:id/analyze` - Comprehensive analysis
+- `POST /api/forensics/investigations/:id/analyze/duplicates` - Duplicate payment detection
+- `POST /api/forensics/investigations/:id/analyze/timing` - Unusual timing detection
+- `POST /api/forensics/investigations/:id/analyze/round-dollars` - Round dollar anomalies
+- `POST /api/forensics/investigations/:id/analyze/benfords-law` - Benford's Law analysis
+- `POST /api/forensics/investigations/:id/trace-funds` - Trace flow of funds
+- `POST /api/forensics/investigations/:id/flow-of-funds` - Create flow of funds record
+- `GET /api/forensics/investigations/:id/flow-of-funds` - Get flow of funds
+- `POST /api/forensics/investigations/:id/calculate-damages/direct-loss` - Direct loss calculation
+- `POST /api/forensics/investigations/:id/calculate-damages/net-worth` - Net worth method
+- `POST /api/forensics/calculate-interest` - Pre-judgment interest calculation
+- `POST /api/forensics/investigations/:id/generate-summary` - Executive summary
+- `POST /api/forensics/investigations/:id/reports` - Create forensic report
+- `GET /api/forensics/investigations/:id/reports` - Get forensic reports
 
 ### Tasks
 - `GET /api/tasks` - List financial tasks
@@ -699,7 +749,7 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 ### Security Considerations
 
 **OAuth Security** (Phase 3 implemented):
-- **CSRF Protection**: OAuth state tokens use HMAC-SHA256 signatures (`server/lib/oauth-state.ts`)
+- **CSRF Protection**: OAuth state tokens use HMAC-SHA256 signatures (`server/lib/oauth-state-edge.ts`)
 - **Replay Prevention**: State tokens expire after 10 minutes (timestamp validation)
 - **Tampering Detection**: State includes cryptographic signature verified server-side
 - **Production Requirement**: Set `OAUTH_STATE_SECRET` to random 32+ character string
@@ -707,7 +757,7 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 **Webhook Security**:
 - **Stripe**: Webhook signatures verified using `STRIPE_WEBHOOK_SECRET`
 - **Mercury**: Service authentication via `serviceAuth` middleware
-- **Idempotency**: All webhook events deduplicated using `webhook_events` table
+- **Idempotency**: All webhook events deduplicated using KV with 7-day TTL
 
 **Integration Validation** (`server/lib/integration-validation.ts`):
 - Validates required environment variables before allowing integration connections
@@ -724,27 +774,31 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 
 ## Known Limitations
 
-1. **No Real Authentication**: Demo user auto-login is insecure for production (ChittyID integration pending)
+1. **No Real Authentication**: Service token auth only — no end-user auth (ChittyID integration pending)
 2. **DoorLoop Still Mock**: DoorLoop integration returns hardcoded data (real API integration pending)
-3. **Hardcoded Port**: Port 5000 required for Replit (cannot be changed)
-4. **No Migrations**: Uses `drizzle-kit push` (destructive) instead of proper migrations
-5. **Storage Layer Not Updated**: `server/storage.ts` still uses old schema (needs tenant-aware queries)
-6. **Routes Not Updated**: API routes in `server/routes.ts` still use demo auth and old storage methods
-7. **Frontend Not Updated**: React components need to support tenant switching
-8. **Wrangler Config Incomplete**: KV/R2 IDs in `deploy/system-wrangler.toml` are placeholders
+3. **No Migrations**: Uses `drizzle-kit push` (destructive) instead of proper migrations
+4. **Forensic Tables Not in System Schema**: Forensic tables use integer IDs from `shared/schema.ts` and may not exist in the production database yet
+5. **Frontend Not Updated**: React components need to support tenant switching
+6. **Legacy Express Code**: `server/routes.ts`, `server/storage.ts`, `server/db.ts` are legacy Express code kept for standalone dev reference
 
 ## Future Enhancements
 
-### Phase 1: Complete Multi-Tenant Implementation (In Progress)
+### Phase 1: Complete Multi-Tenant Implementation (COMPLETED)
 - ✅ Database schemas created (system.schema.ts, standalone.schema.ts)
 - ✅ Seeding script for IT CAN BE LLC entities
 - ✅ Mode-aware database connection
-- ✅ Wrangler configuration template
-- ⏳ Update `server/storage.ts` for tenant-aware queries
-- ⏳ Update `server/routes.ts` to use new storage methods and support tenants
-- ⏳ Add authentication with tenant selection
+- ✅ Wrangler configuration template with KV/R2 provisioned
+- ✅ SystemStorage with tenant-aware Drizzle queries (`server/storage/system.ts`)
+- ✅ Service token auth middleware (`server/middleware/auth.ts`)
+- ✅ Tenant-scoped middleware (`server/middleware/tenant.ts`)
 - ⏳ Update frontend with tenant switcher
-- ⏳ Add tenant-scoped API middleware
+
+### Phase 1.5: Hono Route Migration (COMPLETED)
+- ✅ All 17 route modules migrated from Express to Hono
+- ✅ Edge-compatible: Web Crypto API, Neon HTTP driver, no Node.js dependencies
+- ✅ Per-prefix middleware registration (avoids blocking public routes)
+- ✅ Deployed to Cloudflare Workers at `finance.chitty.cc`
+- ✅ 30/30 tests passing
 
 ### Phase 2: ChittyConnect Integration (Partially Completed)
 - ✅ Mercury Bank via ChittyConnect backend (multi-account support)
