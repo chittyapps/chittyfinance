@@ -17,7 +17,10 @@ export const redfinProvider: ValuationProvider = {
         `https://redfin-com.p.rapidapi.com/properties/auto-complete?location=${encoded}`,
         { headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'redfin-com.p.rapidapi.com' } },
       );
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.warn(`[valuation:redfin] HTTP ${res.status} for "${address}"`);
+        return null;
+      }
       const data = await res.json() as any;
       const prop = data?.payload?.sections?.[0]?.rows?.[0];
       if (!prop) return null;
@@ -31,7 +34,8 @@ export const redfinProvider: ValuationProvider = {
         details: { url: prop.url, type: prop.type },
         fetchedAt: new Date(),
       };
-    } catch {
+    } catch (err) {
+      console.warn(`[valuation:redfin] Failed for "${address}":`, (err as Error).message);
       return null;
     }
   },

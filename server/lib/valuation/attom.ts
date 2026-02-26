@@ -17,7 +17,10 @@ export const attomProvider: ValuationProvider = {
         `https://api.gateway.attomdata.com/propertyapi/v1.0.0/attomavm/detail?address=${encoded}`,
         { headers: { apikey: apiKey, Accept: 'application/json' } },
       );
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.warn(`[valuation:attom] HTTP ${res.status} for "${address}"`);
+        return null;
+      }
       const data = await res.json() as any;
       const avm = data?.property?.[0]?.avm;
       if (!avm) return null;
@@ -31,7 +34,8 @@ export const attomProvider: ValuationProvider = {
         details: { fips: data?.property?.[0]?.identifier?.fips, apn: data?.property?.[0]?.identifier?.apn },
         fetchedAt: new Date(),
       };
-    } catch {
+    } catch (err) {
+      console.warn(`[valuation:attom] Failed for "${address}":`, (err as Error).message);
       return null;
     }
   },

@@ -17,7 +17,10 @@ export const houseCanaryProvider: ValuationProvider = {
         `https://api.housecanary.com/v2/property/value?address=${encoded}`,
         { headers: { Authorization: `Bearer ${apiKey}` } },
       );
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.warn(`[valuation:housecanary] HTTP ${res.status} for "${address}"`);
+        return null;
+      }
       const data = await res.json() as any;
       const val = data?.property?.value;
       if (!val) return null;
@@ -32,7 +35,8 @@ export const houseCanaryProvider: ValuationProvider = {
         details: { forecast: data?.property?.value_forecast },
         fetchedAt: new Date(),
       };
-    } catch {
+    } catch (err) {
+      console.warn(`[valuation:housecanary] Failed for "${address}":`, (err as Error).message);
       return null;
     }
   },

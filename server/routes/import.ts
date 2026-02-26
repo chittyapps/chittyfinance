@@ -1,8 +1,5 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
-import { createDb } from '../db/connection';
-import * as schema from '../db/schema';
-import { eq } from 'drizzle-orm';
 
 export const importRoutes = new Hono<HonoEnv>();
 
@@ -16,15 +13,47 @@ interface ParsedTransaction {
   reference?: string;
 }
 
+/** Parse a CSV line respecting quoted fields (RFC 4180) */
+function parseCSVLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < line.length && line[i + 1] === '"') {
+          current += '"';
+          i++; // skip escaped quote
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      fields.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
+
 export function parseTurboTenantCSV(csv: string): ParsedTransaction[] {
   const lines = csv.trim().split('\n');
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase());
   const rows: ParsedTransaction[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map((v) => v.trim());
+    const values = parseCSVLine(lines[i]);
     const row: Record<string, string> = {};
     headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
 
@@ -42,15 +71,14 @@ export function parseTurboTenantCSV(csv: string): ParsedTransaction[] {
   return rows.filter((r) => r.date && !isNaN(r.amount));
 }
 
-export function deduplicationHash(date: string, amount: number, description: string): string {
+/** SHA-256 based deduplication hash (async, Web Crypto API) */
+export async function deduplicationHash(date: string, amount: number, description: string): Promise<string> {
   const key = `${date}|${amount}|${description}`;
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    const char = key.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return `tt-${Math.abs(hash).toString(36)}`;
+  const data = new TextEncoder().encode(key);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = new Uint8Array(hashBuffer);
+  const hex = Array.from(hashArray).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `tt-${hex.slice(0, 16)}`;
 }
 
 // POST /api/import/turbotenant — import TurboTenant CSV ledger
@@ -83,17 +111,11 @@ importRoutes.post('/api/import/turbotenant', async (c) => {
   let skipped = 0;
   const errors: string[] = [];
 
-  const db = createDb(c.env.DATABASE_URL);
-
   for (const row of parsed) {
-    const externalId = deduplicationHash(row.date, row.amount, row.description);
+    const externalId = await deduplicationHash(row.date, row.amount, row.description);
 
-    // Check for duplicate
-    const [existing] = await db
-      .select()
-      .from(schema.transactions)
-      .where(eq(schema.transactions.externalId, externalId));
-
+    // Check for duplicate via storage abstraction
+    const existing = await storage.getTransactionByExternalId(externalId, tenantId);
     if (existing) {
       skipped++;
       continue;
@@ -106,7 +128,7 @@ importRoutes.post('/api/import/turbotenant', async (c) => {
     );
 
     try {
-      await db.insert(schema.transactions).values({
+      await storage.createTransaction({
         tenantId,
         accountId,
         amount: String(row.amount),
@@ -125,13 +147,18 @@ importRoutes.post('/api/import/turbotenant', async (c) => {
     }
   }
 
-  return c.json({ parsed: parsed.length, imported, skipped, errors });
+  const status = imported > 0 ? 200 : 422;
+  return c.json({ parsed: parsed.length, imported, skipped, errors }, status);
 });
 
 // POST /api/import/wave-sync — sync Wave transactions
 importRoutes.post('/api/import/wave-sync', async (c) => {
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
+
+  if (!c.env.WAVE_CLIENT_ID || !c.env.WAVE_CLIENT_SECRET) {
+    return c.json({ error: 'Wave integration is not configured on this server' }, 503);
+  }
 
   const integrations = await storage.getIntegrations(tenantId);
   const waveIntegration = integrations.find((i: any) => i.serviceType === 'wavapps' && i.connected);
@@ -143,9 +170,13 @@ importRoutes.post('/api/import/wave-sync', async (c) => {
   const { WaveAPIClient } = await import('../lib/wave-api');
   const creds = waveIntegration.credentials as any;
 
+  if (!creds?.access_token) {
+    return c.json({ error: 'Wave credentials missing access token — re-authorize the integration' }, 400);
+  }
+
   const client = new WaveAPIClient({
-    clientId: c.env.WAVE_CLIENT_ID || '',
-    clientSecret: c.env.WAVE_CLIENT_SECRET || '',
+    clientId: c.env.WAVE_CLIENT_ID,
+    clientSecret: c.env.WAVE_CLIENT_SECRET,
     redirectUri: '',
   });
   client.setAccessToken(creds.access_token);
@@ -165,6 +196,6 @@ importRoutes.post('/api/import/wave-sync', async (c) => {
       message: 'Wave sync completed. Transaction import from invoices is pending full implementation.',
     });
   } catch (err) {
-    return c.json({ error: `Wave sync failed: ${(err as Error).message}` }, 500);
+    return c.json({ error: `Wave sync failed: ${(err as Error).message}` }, 502);
   }
 });

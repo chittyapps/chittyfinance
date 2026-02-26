@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { insertPropertySchema, insertUnitSchema, insertLeaseSchema } from '../db/schema';
 
 export const propertyRoutes = new Hono<HonoEnv>();
 
@@ -71,7 +72,12 @@ propertyRoutes.post('/api/properties', async (c) => {
   const tenantId = c.get('tenantId');
   const body = await c.req.json();
 
-  const property = await storage.createProperty({ ...body, tenantId });
+  const parsed = insertPropertySchema.safeParse({ ...body, tenantId });
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors }, 400);
+  }
+
+  const property = await storage.createProperty(parsed.data);
   return c.json(property, 201);
 });
 
@@ -82,7 +88,12 @@ propertyRoutes.patch('/api/properties/:id', async (c) => {
   const propertyId = c.req.param('id');
   const body = await c.req.json();
 
-  const property = await storage.updateProperty(propertyId, tenantId, body);
+  const parsed = insertPropertySchema.partial().safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors }, 400);
+  }
+
+  const property = await storage.updateProperty(propertyId, tenantId, parsed.data);
   if (!property) return c.json({ error: 'Property not found' }, 404);
   return c.json(property);
 });
@@ -97,7 +108,12 @@ propertyRoutes.post('/api/properties/:id/units', async (c) => {
   if (!property) return c.json({ error: 'Property not found' }, 404);
 
   const body = await c.req.json();
-  const unit = await storage.createUnit({ ...body, propertyId });
+  const parsed = insertUnitSchema.safeParse({ ...body, propertyId });
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors }, 400);
+  }
+
+  const unit = await storage.createUnit(parsed.data);
   return c.json(unit, 201);
 });
 
@@ -112,7 +128,12 @@ propertyRoutes.patch('/api/properties/:id/units/:unitId', async (c) => {
   if (!property) return c.json({ error: 'Property not found' }, 404);
 
   const body = await c.req.json();
-  const unit = await storage.updateUnit(unitId, body);
+  const parsed = insertUnitSchema.partial().safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors }, 400);
+  }
+
+  const unit = await storage.updateUnit(unitId, propertyId, parsed.data);
   if (!unit) return c.json({ error: 'Unit not found' }, 404);
   return c.json(unit);
 });
@@ -127,7 +148,19 @@ propertyRoutes.post('/api/properties/:id/leases', async (c) => {
   if (!property) return c.json({ error: 'Property not found' }, 404);
 
   const body = await c.req.json();
-  const lease = await storage.createLease(body);
+  const parsed = insertLeaseSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors }, 400);
+  }
+
+  // Verify the unit belongs to this property
+  const units = await storage.getUnits(propertyId);
+  const unitIds = units.map((u) => u.id);
+  if (!unitIds.includes(parsed.data.unitId)) {
+    return c.json({ error: 'Unit does not belong to this property' }, 400);
+  }
+
+  const lease = await storage.createLease(parsed.data);
   return c.json(lease, 201);
 });
 
@@ -141,8 +174,17 @@ propertyRoutes.patch('/api/properties/:id/leases/:leaseId', async (c) => {
   const property = await storage.getProperty(propertyId, tenantId);
   if (!property) return c.json({ error: 'Property not found' }, 404);
 
+  // Scope update to leases belonging to this property's units
+  const units = await storage.getUnits(propertyId);
+  const unitIds = units.map((u) => u.id);
+
   const body = await c.req.json();
-  const lease = await storage.updateLease(leaseId, body);
+  const parsed = insertLeaseSchema.partial().safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors }, 400);
+  }
+
+  const lease = await storage.updateLease(leaseId, unitIds, parsed.data);
   if (!lease) return c.json({ error: 'Lease not found' }, 404);
   return c.json(lease);
 });
@@ -182,5 +224,6 @@ propertyRoutes.get('/api/properties/:id/pnl', async (c) => {
   }
 
   const pnl = await storage.getPropertyPnL(propertyId, tenantId, start, end);
+  if (!pnl) return c.json({ error: 'Property not found' }, 404);
   return c.json(pnl);
 });

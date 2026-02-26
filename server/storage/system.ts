@@ -79,6 +79,19 @@ export class SystemStorage {
     return q;
   }
 
+  async getTransactionByExternalId(externalId: string, tenantId: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.transactions)
+      .where(and(eq(schema.transactions.externalId, externalId), eq(schema.transactions.tenantId, tenantId)));
+    return row;
+  }
+
+  async createTransaction(data: typeof schema.transactions.$inferInsert) {
+    const [row] = await this.db.insert(schema.transactions).values(data).returning();
+    return row;
+  }
+
   async getTransactionsByAccount(accountId: string, tenantId: string, since?: string) {
     const conditions = [
       eq(schema.transactions.accountId, accountId),
@@ -269,11 +282,12 @@ export class SystemStorage {
     return row;
   }
 
-  async updateUnit(id: string, data: Partial<typeof schema.units.$inferInsert>) {
+  async updateUnit(id: string, propertyId: string, data: Partial<typeof schema.units.$inferInsert>) {
+    const { propertyId: _drop, ...safeData } = data;
     const [row] = await this.db
       .update(schema.units)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(schema.units.id, id))
+      .set({ ...safeData, updatedAt: new Date() })
+      .where(and(eq(schema.units.id, id), eq(schema.units.propertyId, propertyId)))
       .returning();
     return row;
   }
@@ -293,11 +307,12 @@ export class SystemStorage {
     return row;
   }
 
-  async updateLease(id: string, data: Partial<typeof schema.leases.$inferInsert>) {
+  async updateLease(id: string, unitIds: string[], data: Partial<typeof schema.leases.$inferInsert>) {
+    if (unitIds.length === 0) return undefined;
     const [row] = await this.db
       .update(schema.leases)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(schema.leases.id, id))
+      .where(and(eq(schema.leases.id, id), inArray(schema.leases.unitId, unitIds)))
       .returning();
     return row;
   }
@@ -405,6 +420,9 @@ export class SystemStorage {
   }
 
   async getPropertyPnL(propertyId: string, tenantId: string, startDate: string, endDate: string) {
+    const property = await this.getProperty(propertyId, tenantId);
+    if (!property) return null;
+
     const txns = await this.getPropertyTransactions(propertyId, tenantId, startDate, endDate);
 
     const income: Record<string, number> = {};
@@ -441,25 +459,23 @@ export class SystemStorage {
   }
 
   async upsertPropertyValuation(data: typeof schema.propertyValuations.$inferInsert) {
-    // Check if a valuation from this source already exists for this property
-    const [existing] = await this.db
-      .select()
-      .from(schema.propertyValuations)
-      .where(and(
-        eq(schema.propertyValuations.propertyId, data.propertyId),
-        eq(schema.propertyValuations.source, data.source),
-      ));
-
-    if (existing) {
-      const [row] = await this.db
-        .update(schema.propertyValuations)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(schema.propertyValuations.id, existing.id))
-        .returning();
-      return row;
-    }
-
-    const [row] = await this.db.insert(schema.propertyValuations).values(data).returning();
+    const [row] = await this.db
+      .insert(schema.propertyValuations)
+      .values(data)
+      .onConflictDoUpdate({
+        target: [schema.propertyValuations.propertyId, schema.propertyValuations.source],
+        set: {
+          estimate: data.estimate,
+          low: data.low,
+          high: data.high,
+          rentalEstimate: data.rentalEstimate,
+          confidence: data.confidence,
+          details: data.details,
+          fetchedAt: data.fetchedAt,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
     return row;
   }
 }

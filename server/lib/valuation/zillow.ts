@@ -17,7 +17,10 @@ export const zillowProvider: ValuationProvider = {
         `https://zillow-com1.p.rapidapi.com/propertyExtendedSearch?location=${encoded}`,
         { headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'zillow-com1.p.rapidapi.com' } },
       );
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.warn(`[valuation:zillow] HTTP ${res.status} for "${address}"`);
+        return null;
+      }
       const data = await res.json() as any;
       const prop = data?.props?.[0];
       if (!prop?.zestimate) return null;
@@ -32,7 +35,8 @@ export const zillowProvider: ValuationProvider = {
         details: { zpid: prop.zpid, lastSoldPrice: prop.lastSoldPrice },
         fetchedAt: new Date(),
       };
-    } catch {
+    } catch (err) {
+      console.warn(`[valuation:zillow] Failed for "${address}":`, (err as Error).message);
       return null;
     }
   },

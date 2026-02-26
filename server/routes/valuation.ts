@@ -14,13 +14,13 @@ valuationRoutes.get('/api/properties/:id/valuation', async (c) => {
   if (!property) return c.json({ error: 'Property not found' }, 404);
 
   const valuations = await storage.getPropertyValuations(propertyId, tenantId);
-  const estimates = valuations.map((v: any) => ({
+  const estimates = valuations.map((v) => ({
     source: v.source,
-    estimate: parseFloat(v.estimate),
+    estimate: parseFloat(v.estimate || '0'),
     low: parseFloat(v.low || '0'),
     high: parseFloat(v.high || '0'),
     rentalEstimate: v.rentalEstimate ? parseFloat(v.rentalEstimate) : undefined,
-    confidence: v.source === 'zillow' ? 0.9 : v.source === 'redfin' ? 0.85 : v.source === 'housecanary' ? 0.88 : 0.7,
+    confidence: v.confidence ? parseFloat(v.confidence) : 0.7,
     fetchedAt: v.fetchedAt,
   }));
 
@@ -38,9 +38,13 @@ valuationRoutes.post('/api/properties/:id/valuation/refresh', async (c) => {
   if (!property) return c.json({ error: 'Property not found' }, 404);
 
   const fullAddress = `${property.address}, ${property.city}, ${property.state} ${property.zip}`;
-  const estimates = await fetchAllEstimates(fullAddress, c.env as any);
+  const { estimates, errors } = await fetchAllEstimates(fullAddress, c.env);
 
-  // Cache each estimate
+  if (estimates.length === 0) {
+    return c.json({ error: 'No valuation providers returned estimates', providerErrors: errors }, 502);
+  }
+
+  // Cache each estimate with confidence from provider
   for (const est of estimates) {
     await storage.upsertPropertyValuation({
       propertyId,
@@ -50,13 +54,14 @@ valuationRoutes.post('/api/properties/:id/valuation/refresh', async (c) => {
       low: String(est.low),
       high: String(est.high),
       rentalEstimate: est.rentalEstimate ? String(est.rentalEstimate) : null,
+      confidence: String(est.confidence),
       details: est.details || {},
       fetchedAt: est.fetchedAt,
     });
   }
 
   const aggregated = aggregateValuations(estimates);
-  return c.json({ refreshed: estimates.length, ...aggregated });
+  return c.json({ refreshed: estimates.length, errors, ...aggregated });
 });
 
 // GET /api/properties/:id/valuation/history — valuation timeline
