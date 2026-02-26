@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import type { Database } from '../db/connection';
 import * as schema from '../db/schema';
 
@@ -231,5 +231,32 @@ export class SystemStorage {
       .select()
       .from(schema.properties)
       .where(eq(schema.properties.tenantId, tenantId));
+  }
+
+  async getProperty(id: string, tenantId: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.properties)
+      .where(and(eq(schema.properties.id, id), eq(schema.properties.tenantId, tenantId)));
+    return row;
+  }
+
+  // ── UNITS ──
+
+  async getUnits(propertyId: string) {
+    return this.db
+      .select()
+      .from(schema.units)
+      .where(eq(schema.units.propertyId, propertyId));
+  }
+
+  // ── LEASES ──
+
+  async getLeasesByUnits(unitIds: string[]) {
+    if (unitIds.length === 0) return [];
+    return this.db
+      .select()
+      .from(schema.leases)
+      .where(inArray(schema.leases.unitId, unitIds));
   }
 }

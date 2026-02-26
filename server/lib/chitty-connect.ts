@@ -4,7 +4,9 @@ let jwksClient: any
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   jwksClient = require("jwks-rsa")
-} catch {}
+} catch (e) {
+  console.warn("jwks-rsa module not available — ChittyConnect JWT verification disabled:", e instanceof Error ? e.message : e)
+}
 
 const issuer = process.env.CHITTY_CONNECT_ISSUER || "https://connect.chitty.cc"
 const audience = process.env.CHITTY_CONNECT_AUDIENCE || "finance"
