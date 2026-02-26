@@ -213,6 +213,30 @@ export const insertLeaseSchema = createInsertSchema(leases);
 export type Lease = typeof leases.$inferSelect;
 export type InsertLease = z.infer<typeof insertLeaseSchema>;
 
+// Property Valuations (cached external AVM estimates)
+export const propertyValuations = pgTable('property_valuations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  propertyId: uuid('property_id').notNull().references(() => properties.id),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  source: text('source').notNull(), // 'zillow', 'redfin', 'housecanary', 'attom', 'county', 'manual'
+  estimate: decimal('estimate', { precision: 12, scale: 2 }),
+  low: decimal('low', { precision: 12, scale: 2 }),
+  high: decimal('high', { precision: 12, scale: 2 }),
+  rentalEstimate: decimal('rental_estimate', { precision: 12, scale: 2 }),
+  details: jsonb('details'), // Provider-specific data (zestimate details, comps, etc.)
+  fetchedAt: timestamp('fetched_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  propertyIdx: index('property_valuations_property_idx').on(table.propertyId),
+  tenantIdx: index('property_valuations_tenant_idx').on(table.tenantId),
+  sourceIdx: index('property_valuations_source_idx').on(table.source),
+}));
+
+export const insertPropertyValuationSchema = createInsertSchema(propertyValuations);
+export type PropertyValuation = typeof propertyValuations.$inferSelect;
+export type InsertPropertyValuation = z.infer<typeof insertPropertyValuationSchema>;
+
 // Service Integrations (Mercury, Wave, Stripe, etc.)
 export const integrations = pgTable('integrations', {
   id: uuid('id').primaryKey().defaultRandom(),
