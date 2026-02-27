@@ -11,6 +11,8 @@ export interface Env {
   OAUTH_STATE_SECRET?: string;
   GITHUB_TOKEN?: string;
   MERCURY_WEBHOOK_SECRET?: string;
+  CHITTYAGENT_API_BASE?: string;
+  CHITTYAGENT_API_TOKEN?: string;
   // Valuation API keys (optional — each provider only fetched if key is set)
   ZILLOW_API_KEY?: string;
   REDFIN_API_KEY?: string;

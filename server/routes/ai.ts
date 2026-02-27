@@ -33,3 +33,75 @@ aiRoutes.post('/api/ai-messages', async (c) => {
 
   return c.json(message, 201);
 });
+
+// POST /api/ai/property-advice — AI advisor for a specific property
+aiRoutes.post('/api/ai/property-advice', async (c) => {
+  const storage = c.get('storage');
+  const tenantId = c.get('tenantId');
+  const body = await c.req.json();
+  const { propertyId, message } = body;
+
+  if (!propertyId || !message) {
+    return c.json({ error: 'propertyId and message are required' }, 400);
+  }
+
+  let property: any, financials: any;
+  try {
+    property = await storage.getProperty(propertyId, tenantId);
+    financials = await storage.getPropertyFinancials(propertyId, tenantId);
+  } catch {}
+
+  if (!property) {
+    return c.json({ error: 'Property not found' }, 404);
+  }
+
+  const context = {
+    property: {
+      name: property.name,
+      address: property.address,
+      type: property.propertyType,
+      currentValue: property.currentValue,
+    },
+    financials: financials || null,
+  };
+
+  // Try ChittyAgent first
+  const agentBase = c.env.CHITTYAGENT_API_BASE;
+  const agentToken = c.env.CHITTYAGENT_API_TOKEN;
+
+  if (agentBase && agentToken) {
+    try {
+      const agentRes = await fetch(`${agentBase}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${agentToken}`,
+        },
+        body: JSON.stringify({ context, message, service: 'chittyfinance' }),
+      });
+      if (agentRes.ok) {
+        const data = (await agentRes.json()) as any;
+        return c.json({
+          role: 'assistant',
+          content: data.content || data.message,
+          model: data.model,
+          provider: 'chittyagent',
+        });
+      }
+    } catch {}
+  }
+
+  // Fallback: rule-based response
+  const capRateInfo = financials?.capRate
+    ? `Your property has a cap rate of ${financials.capRate.toFixed(1)}%.`
+    : '';
+  const noiInfo = financials?.noi
+    ? `Current NOI is $${financials.noi.toLocaleString()}.`
+    : '';
+  return c.json({
+    role: 'assistant',
+    content: `Based on the data for ${property.name}: ${capRateInfo} ${noiInfo} For detailed analysis, please configure ChittyAgent or OpenAI.`,
+    model: null,
+    provider: 'rule-based',
+  });
+});

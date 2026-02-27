@@ -9,9 +9,10 @@ import { formatCurrency } from '@/lib/utils';
 
 interface Props {
   property: Property;
+  onSelect?: (id: string) => void;
 }
 
-export default function PropertyCard({ property }: Props) {
+export default function PropertyCard({ property, onSelect }: Props) {
   const [, navigate] = useLocation();
   const { data: units = [] } = usePropertyUnits(property.id);
   const { data: leases = [] } = usePropertyLeases(property.id);
@@ -30,7 +31,7 @@ export default function PropertyCard({ property }: Props) {
   const occColor = occupancyRate >= 90 ? 'bg-green-500' : occupancyRate >= 60 ? 'bg-amber-500' : 'bg-red-500';
 
   return (
-    <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/properties/${property.id}`)}>
+    <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => onSelect ? onSelect(property.id) : navigate(`/properties/${property.id}`)}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div>

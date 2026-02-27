@@ -73,6 +73,37 @@ export interface PnLReport {
   net: number;
 }
 
+export interface PortfolioSummary {
+  totalProperties: number;
+  totalValue: number;
+  totalNOI: number;
+  avgCapRate: number;
+  totalUnits: number;
+  occupiedUnits: number;
+  occupancyRate: number;
+  properties: Array<{
+    id: string;
+    name: string;
+    address: string;
+    city: string;
+    state: string;
+    propertyType: string;
+    currentValue: number;
+    noi: number;
+    capRate: number;
+    occupancyRate: number;
+    totalUnits: number;
+    occupiedUnits: number;
+  }>;
+}
+
+export interface AIAdviceResponse {
+  role: 'assistant';
+  content: string;
+  model: string | null;
+  provider: string;
+}
+
 export interface ValuationData {
   property: { id: string; name: string; address: string };
   aggregated: {
@@ -93,6 +124,15 @@ export interface ValuationData {
 }
 
 // ─── Query Hooks ───
+export function usePortfolioSummary() {
+  const tenantId = useTenantId();
+  return useQuery<PortfolioSummary>({
+    queryKey: ['/api/portfolio/summary', tenantId],
+    enabled: !!tenantId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useProperties() {
   const tenantId = useTenantId();
   return useQuery<Property[]>({
@@ -200,5 +240,12 @@ export function useCreateLease(propertyId: string) {
       qc.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rent-roll`] });
       qc.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/financials`] });
     },
+  });
+}
+
+export function useSendPropertyAdvice(propertyId: string) {
+  return useMutation<AIAdviceResponse, Error, string>({
+    mutationFn: (message: string) =>
+      apiRequest('POST', '/api/ai/property-advice', { propertyId, message }).then(r => r.json()),
   });
 }

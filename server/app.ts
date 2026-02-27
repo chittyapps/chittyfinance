@@ -24,6 +24,7 @@ import { waveRoutes, waveCallbackRoute } from './routes/wave';
 import { chargeRoutes } from './routes/charges';
 import { forensicRoutes } from './routes/forensics';
 import { valuationRoutes } from './routes/valuation';
+import { portfolioRoutes } from './routes/portfolio';
 import { importRoutes } from './routes/import';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
@@ -80,8 +81,8 @@ export function createApp() {
   // Register middleware for each protected path prefix
   const protectedPrefixes = [
     '/api/accounts', '/api/transactions', '/api/tenants', '/api/properties',
-    '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/summary',
-    '/api/mercury', '/api/github', '/api/charges', '/api/forensics', '/api/import',
+    '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/ai', '/api/summary',
+    '/api/mercury', '/api/github', '/api/charges', '/api/forensics', '/api/portfolio', '/api/import',
   ];
   for (const prefix of protectedPrefixes) {
     app.use(prefix, ...protectedRoute);
@@ -104,6 +105,7 @@ export function createApp() {
   app.route('/', chargeRoutes);
   app.route('/', forensicRoutes);
   app.route('/', valuationRoutes);
+  app.route('/', portfolioRoutes);
   app.route('/', importRoutes);
 
   // ── Fallback: try static assets, then 404 ──
