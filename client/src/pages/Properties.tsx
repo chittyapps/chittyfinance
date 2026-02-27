@@ -1,25 +1,25 @@
 import { useMemo, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Home, Plus } from 'lucide-react';
+import { Home, Plus, DollarSign, TrendingUp, BarChart3, Users } from 'lucide-react';
 import { useTenantId } from '@/contexts/TenantContext';
-import { useProperties } from '@/hooks/use-property';
-import type { PropertyFinancials } from '@/hooks/use-property';
-import PortfolioSummary from '@/components/property/PortfolioSummary';
+import { useProperties, usePortfolioSummary } from '@/hooks/use-property';
 import PropertyCard from '@/components/property/PropertyCard';
 import OpsView from '@/components/property/OpsView';
 import AddPropertyDialog from '@/components/property/AddPropertyDialog';
 import PropertyDetailPanel from '@/components/property/PropertyDetailPanel';
+import { formatCurrency } from '@/lib/utils';
 
-type SortKey = 'name' | 'value' | 'capRate' | 'occupancy';
+type SortKey = 'name' | 'value';
 
 export default function Properties() {
   const tenantId = useTenantId();
   const { data: properties = [], isLoading } = useProperties();
+  const { data: portfolio } = usePortfolioSummary();
   const [sortBy, setSortBy] = useState<SortKey>('value');
-  const [financialsMap] = useState<Map<string, PropertyFinancials>>(new Map());
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
 
@@ -79,8 +79,26 @@ export default function Properties() {
         </TabsList>
 
         <TabsContent value="portfolio" className="space-y-6 mt-4">
-          {/* KPI Strip */}
-          <PortfolioSummary properties={properties} financials={financialsMap} />
+          {/* KPI Strip — server-side portfolio aggregation */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: 'Portfolio Value', value: portfolio ? formatCurrency(portfolio.totalValue) : '—', icon: DollarSign, sub: `${portfolio?.totalProperties ?? 0} properties` },
+              { label: 'Avg Cap Rate', value: portfolio ? `${portfolio.avgCapRate.toFixed(1)}%` : '—', icon: TrendingUp, sub: 'Weighted by value' },
+              { label: 'Portfolio NOI', value: portfolio ? formatCurrency(portfolio.totalNOI) : '—', icon: BarChart3, sub: 'Last 12 months' },
+              { label: 'Occupancy', value: portfolio ? `${portfolio.occupancyRate.toFixed(0)}%` : '—', icon: Users, sub: `${portfolio?.occupiedUnits ?? 0}/${portfolio?.totalUnits ?? 0} units` },
+            ].map((m) => (
+              <Card key={m.label}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">{m.label}</CardTitle>
+                  <m.icon className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{m.value}</div>
+                  <p className="text-xs text-muted-foreground">{m.sub}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
 
           {/* Sort control */}
           <div className="flex justify-end">

@@ -3,7 +3,6 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { createContext, useEffect, useMemo, useState } from "react";
-import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
@@ -31,8 +30,7 @@ function Router() {
         {showChrome && <Header />}
         <main className="flex-1 relative overflow-y-auto cf-scrollbar focus:outline-none bg-[hsl(var(--cf-base))]">
           <Switch>
-            <Route path="/" component={Dashboard} />
-            <Route path="/properties" component={Properties} />
+            <Route path="/" component={Properties} />
             <Route path="/properties/:id" component={PropertyDetail} />
             <Route path="/connections" component={Connections} />
             <Route path="/admin" component={Admin} />

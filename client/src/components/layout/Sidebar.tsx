@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, BarChart3, ArrowLeftRight, FileText, Receipt,
+  BarChart3, ArrowLeftRight, FileText, Receipt,
   Settings, Plug, Building2, Users, BookOpen, Calculator, Shield,
   ChevronDown, ChevronRight, ChevronsUpDown, Wallet,
   Menu, X, Activity
@@ -19,7 +19,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Overview", icon: LayoutDashboard, roles: ["cfo", "accountant", "bookkeeper", "user"] },
+  { href: "/", label: "Portfolio", icon: Building2, roles: ["cfo", "accountant", "bookkeeper", "user"] },
   { href: "/accounts", label: "Accounts", icon: Wallet, roles: ["cfo", "accountant", "bookkeeper"] },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight, roles: ["cfo", "accountant", "bookkeeper", "user"] },
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["cfo", "accountant"] },
@@ -27,7 +27,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/invoices", label: "Invoices", icon: FileText, roles: ["cfo", "accountant", "bookkeeper"] },
   { href: "/expenses", label: "Expenses", icon: Receipt, roles: ["user"] },
   { href: "/journal", label: "Journal", icon: BookOpen, roles: ["accountant"] },
-  { href: "/properties", label: "Properties", icon: Building2, roles: ["cfo", "accountant"] },
   { href: "/team", label: "Team", icon: Users, roles: ["cfo"] },
   { href: "/connections", label: "Connections", icon: Plug, roles: ["cfo", "accountant"] },
   { href: "/admin", label: "Admin", icon: Shield, roles: ["cfo"] },
