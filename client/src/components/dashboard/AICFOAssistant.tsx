@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageCircle, DollarSign, Send, Loader2 } from "lucide-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 
 interface Message {
   role: "assistant" | "user";
@@ -24,7 +24,7 @@ export default function AICFOAssistant() {
   }]);
 
   const askAI = useMutation({
-    mutationFn: async (question: string) => {
+    mutationFn: async (question: string): Promise<{ content: string }> => {
       const response = await fetch("/api/ai-assistant/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

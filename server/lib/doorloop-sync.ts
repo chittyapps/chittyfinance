@@ -3,13 +3,13 @@ import { storage } from "../storage.js";
 
 export async function syncDoorLoopFull(userId: string, tenantId?: string) {
   const [props, leases, payments] = await Promise.all([
-    DoorLoop.properties(),
-    DoorLoop.leases(),
-    DoorLoop.payments(),
+    DoorLoop.properties() as Promise<{ data?: any[] }>,
+    DoorLoop.leases() as Promise<{ data?: any[] }>,
+    DoorLoop.payments() as Promise<{ data?: any[] }>,
   ]);
 
   for (const lease of leases?.data ?? []) {
-    const ledger = await DoorLoop.ledger(lease.id);
+    const ledger = await DoorLoop.ledger(lease.id) as { data?: any[] };
 
     for (const e of ledger?.data ?? []) {
       const amount = e.amount ?? e.debit ?? e.credit ?? 0;

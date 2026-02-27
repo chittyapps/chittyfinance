@@ -232,13 +232,13 @@ export class WaveAPIClient {
       throw new Error(`Wave GraphQL request failed: ${error}`);
     }
 
-    const result = await response.json();
+    const result = await response.json() as { data?: T; errors?: any[] };
 
     if (result.errors) {
       throw new Error(`Wave GraphQL errors: ${JSON.stringify(result.errors)}`);
     }
 
-    return result.data;
+    return result.data as T;
   }
 
   /**

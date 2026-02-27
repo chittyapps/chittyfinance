@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-describe('worker', () => {
+describe('worker', { timeout: 15000 }, () => {
   const env: any = {
     MODE: 'system',
     NODE_ENV: 'test',

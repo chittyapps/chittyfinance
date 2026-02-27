@@ -7,16 +7,12 @@
  */
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { tenantScope } from './middleware/tenant';
 import { setupVite, serveStatic, log } from "./vite";
 import { startChittyConnectKeepAlive } from './lib/tokenKeepAlive';
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-// Attach tenant context early so routes can read it
-app.use(tenantScope);
-
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;

@@ -15,7 +15,7 @@ export async function getServiceBase(name: 'evidence' | 'ledger' | 'chronicle' |
   const hit = cache.get(key);
   if (hit && hit.expires > Date.now()) return hit.url;
   const base = process.env.CHITTY_REGISTRY_BASE || 'https://registry.chitty.cc';
-  const data = await fetchJson(`${base.replace(/\/$/, '')}/services/${name}`);
+  const data = await fetchJson(`${base.replace(/\/$/, '')}/services/${name}`) as Record<string, any>;
   const url: string = data?.url || data?.base || data?.endpoint;
   if (!url) throw new Error(`Service base not found for ${name}`);
   cache.set(key, { url, expires: ttl() });

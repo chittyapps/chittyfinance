@@ -59,7 +59,7 @@ function githubHeaders(): Record<string, string> {
 /**
  * Fetch user repositories from GitHub
  */
-export async function fetchUserRepositories(integration: Integration): Promise<GitHubRepository[]> {
+export async function fetchUserRepositories(_integration: Integration): Promise<GitHubRepository[]> {
   try {
     if (!getGithubToken()) {
       throw new Error("GitHub token not available");
@@ -73,7 +73,7 @@ export async function fetchUserRepositories(integration: Integration): Promise<G
       throw new Error(`GitHub API error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any[];
     return data.map((repo: any) => ({
       id: repo.id,
       name: repo.name,
@@ -94,7 +94,7 @@ export async function fetchUserRepositories(integration: Integration): Promise<G
 /**
  * Fetch commits for a specific repository
  */
-export async function fetchRepositoryCommits(integration: Integration, repoFullName: string): Promise<GitHubCommit[]> {
+export async function fetchRepositoryCommits(_integration: Integration, repoFullName: string): Promise<GitHubCommit[]> {
   try {
     if (!getGithubToken()) {
       throw new Error("GitHub token not available");
@@ -108,7 +108,7 @@ export async function fetchRepositoryCommits(integration: Integration, repoFullN
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const commits = await response.json();
+    const commits = await response.json() as GitHubCommit[];
     return commits;
   } catch (error) {
     console.error(`Error fetching commits for repository ${repoFullName}:`, error);
@@ -119,7 +119,7 @@ export async function fetchRepositoryCommits(integration: Integration, repoFullN
 /**
  * Fetch pull requests for a specific repository
  */
-export async function fetchRepositoryPullRequests(integration: Integration, repoFullName: string): Promise<GitHubPullRequest[]> {
+export async function fetchRepositoryPullRequests(_integration: Integration, repoFullName: string): Promise<GitHubPullRequest[]> {
   try {
     if (!getGithubToken()) {
       throw new Error("GitHub token not available");
@@ -133,7 +133,7 @@ export async function fetchRepositoryPullRequests(integration: Integration, repo
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const pulls = await response.json();
+    const pulls = await response.json() as GitHubPullRequest[];
     return pulls;
   } catch (error) {
     console.error(`Error fetching pull requests for repository ${repoFullName}:`, error);
@@ -144,7 +144,7 @@ export async function fetchRepositoryPullRequests(integration: Integration, repo
 /**
  * Fetch issues for a specific repository
  */
-export async function fetchRepositoryIssues(integration: Integration, repoFullName: string): Promise<GitHubIssue[]> {
+export async function fetchRepositoryIssues(_integration: Integration, repoFullName: string): Promise<GitHubIssue[]> {
   try {
     if (!getGithubToken()) {
       throw new Error("GitHub token not available");
@@ -158,7 +158,7 @@ export async function fetchRepositoryIssues(integration: Integration, repoFullNa
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const issues = await response.json();
+    const issues = await response.json() as GitHubIssue[];
     return issues;
   } catch (error) {
     console.error(`Error fetching issues for repository ${repoFullName}:`, error);

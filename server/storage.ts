@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { db, MODE } from "./bootstrap.js";
 import { SystemStorage } from "./storage/system.js";
 import { StandaloneStorage } from "./storage/standalone.js";

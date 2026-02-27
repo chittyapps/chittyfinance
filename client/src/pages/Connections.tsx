@@ -54,7 +54,7 @@ const integrationConfigs = [
 ];
 
 export default function Connections() {
-  const [_, setLocation] = useLocation();
+  const [_] = useLocation();
   const queryClient = useQueryClient();
   const [connectingType, setConnectingType] = useState<string | null>(null);
 
@@ -78,7 +78,7 @@ export default function Connections() {
     setConnectingType('wavapps');
     try {
       const response = await fetch('/api/integrations/wave/authorize');
-      const data = await response.json();
+      const data: { authUrl?: string } = await response.json();
       if (data.authUrl) {
         window.location.href = data.authUrl;
       }
@@ -340,7 +340,7 @@ function StripeActions() {
       if (!Number.isFinite(cents) || cents < 50) return alert('Enter amount in cents (>=50)')
       const r = await fetch('/api/integrations/stripe/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ amountCents: cents, label: 'ChittyFinance Payment', purpose: 'test' }) })
       if (!r.ok) throw new Error('Failed to create checkout')
-      const data = await r.json(); if (data.url) window.location.href = data.url
+      const data: { url?: string } = await r.json(); if (data.url) window.location.href = data.url
     } finally { setPending(false) }
   }
 

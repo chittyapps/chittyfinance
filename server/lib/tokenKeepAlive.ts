@@ -14,7 +14,8 @@ export function startChittyConnectKeepAlive() {
 
   const tick = async () => {
     try {
-      const mercs = await storage.listIntegrationsByService('mercury_bank');
+      if (!('listIntegrationsByService' in storage)) return;
+      const mercs = await (storage as any).listIntegrationsByService('mercury_bank');
       const seen = new Set<string>();
       for (const integ of mercs) {
         const creds: any = integ.credentials || {};

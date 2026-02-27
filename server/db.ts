@@ -8,8 +8,8 @@ import * as standaloneSchema from "../database/standalone.schema";
 
 const MODE = process.env.MODE || "standalone";
 
-let db;
-let schema;
+let db: any;
+let schema: any;
 
 if (MODE === "system") {
   const pool = new Pool({

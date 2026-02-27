@@ -36,7 +36,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetch('/api/v1/status')
       .then(res => res.json())
-      .then(data => {
+      .then((data: any) => {
         setIsSystemMode(data.mode === 'system');
       })
       .catch(console.error);
