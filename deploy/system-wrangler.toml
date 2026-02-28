@@ -32,6 +32,7 @@ APP_VERSION = "2.0.0"
 # wrangler secret put CHITTY_ID_SERVICE_TOKEN
 # wrangler secret put CHITTY_AUTH_SERVICE_TOKEN
 # wrangler secret put JWT_SECRET
+# wrangler secret put AI_GATEWAY_ENDPOINT  # CF AI Gateway URL (optional)
 
 [observability]
 enabled = true

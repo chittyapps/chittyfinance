@@ -4,10 +4,7 @@
  */
 
 import { logSuspiciousActivity } from './chittychronicle-logging';
-import OpenAI from 'openai';
-
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+import { openaiClient as openai } from './openai-client';
 
 export interface FraudAlert {
   severity: 'low' | 'medium' | 'high' | 'critical';

@@ -3,11 +3,8 @@
  * Uses OpenAI to intelligently categorize transactions
  */
 
-import OpenAI from 'openai';
 import { withRetry } from './error-handling';
-
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+import { openaiClient as openai } from './openai-client';
 
 // Standard transaction categories
 export const TRANSACTION_CATEGORIES = {

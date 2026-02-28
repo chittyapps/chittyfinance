@@ -14,6 +14,7 @@ export interface Env {
   CHITTYAGENT_API_BASE?: string;
   CHITTYAGENT_API_TOKEN?: string;
   CHITTY_LEDGER_BASE?: string;
+  AI_GATEWAY_ENDPOINT?: string; // CF AI Gateway proxy URL, e.g. https://gateway.ai.cloudflare.com/v1/{acct}/{gw}/openai
   CHITTYCONNECT_API_TOKEN?: string;
   // Valuation API keys (optional — each provider only fetched if key is set)
   ZILLOW_API_KEY?: string;

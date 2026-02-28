@@ -1,9 +1,5 @@
-import OpenAI from "openai";
 import { shouldBlockPredicted, recordUsage, getBudgetStatus, approximateTokens } from "./openaiBudget";
-
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+import { openaiClient as openai } from "./openai-client";
 
 // Configurable knobs (env overrides)
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o"; // keep default per project note
