@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useRole, type UserRole } from "@/contexts/RoleContext";
+import { useTenant, type Tenant } from "@/contexts/TenantContext";
 
 /* ─── Role-based Navigation Config ─── */
 interface NavItem {
@@ -42,36 +43,34 @@ interface EntityNode {
   children?: EntityNode[];
 }
 
-const ENTITY_TREE: EntityNode = {
-  id: "itcanbe",
-  name: "IT CAN BE LLC",
-  shortName: "IT CAN BE",
-  type: "holding",
-  children: [
-    { id: "jav", name: "JEAN ARLENE VENTURING LLC", shortName: "JAV LLC", type: "personal" },
-    {
-      id: "aribia",
-      name: "ARIBIA LLC",
-      shortName: "ARIBIA",
-      type: "series",
-      children: [
-        {
-          id: "aribia-mgmt",
-          name: "ARIBIA LLC - MGMT",
-          shortName: "MGMT",
-          type: "management",
-          children: [
-            { id: "cfc", name: "Chicago Furnished Condos", shortName: "CFC", type: "brand" },
-            { id: "chitty-svc", name: "Chitty Services", shortName: "Chitty Svc", type: "vendor" },
-          ],
-        },
-        { id: "city-studio", name: "ARIBIA LLC - CITY STUDIO", shortName: "City Studio", type: "property" },
-        { id: "apt-arlene", name: "ARIBIA LLC - APT ARLENE", shortName: "Apt Arlene", type: "property" },
-      ],
-    },
-    { id: "chittycorp", name: "ChittyCorp LLC", shortName: "ChittyCorp", type: "holding" },
-  ],
-};
+/** Build a tree from the flat tenants list using parentId relationships. */
+function buildEntityTree(tenants: Tenant[]): EntityNode[] {
+  const nodeMap = new Map<string, EntityNode>();
+  const roots: EntityNode[] = [];
+
+  // Create nodes
+  for (const t of tenants) {
+    const shortName = t.name.replace(/\s*LLC\s*/gi, '').replace(/^ARIBIA\s*-\s*/i, '').trim() || t.name;
+    nodeMap.set(t.id, { id: t.id, name: t.name, shortName, type: t.type, children: [] });
+  }
+
+  // Build tree
+  for (const t of tenants) {
+    const node = nodeMap.get(t.id)!;
+    if (t.parentId && nodeMap.has(t.parentId)) {
+      nodeMap.get(t.parentId)!.children!.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  // Clean up empty children arrays
+  for (const node of nodeMap.values()) {
+    if (node.children?.length === 0) delete node.children;
+  }
+
+  return roots;
+}
 
 function entityTypeColor(type: string): string {
   const map: Record<string, string> = {
@@ -197,8 +196,16 @@ export default function Sidebar() {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { currentRole } = useRole();
-  const [selectedEntity, setSelectedEntity] = useState("itcanbe");
+  const { currentTenant, tenants, switchTenant, isSystemMode } = useTenant();
   const [entityExpanded, setEntityExpanded] = useState(true);
+
+  const entityTree = useMemo(() => buildEntityTree(tenants), [tenants]);
+  const selectedEntity = currentTenant?.id || '';
+
+  const handleEntitySelect = (id: string) => {
+    const tenant = tenants.find(t => t.id === id);
+    if (tenant) switchTenant(tenant);
+  };
 
   const visibleNav = useMemo(
     () => NAV_ITEMS.filter((item) => item.roles.includes(currentRole)),
@@ -259,11 +266,17 @@ export default function Sidebar() {
           </button>
           {entityExpanded && (
             <div className="cf-scrollbar max-h-[200px] overflow-y-auto">
-              <EntityTreeNode
-                node={ENTITY_TREE}
-                selectedId={selectedEntity}
-                onSelect={setSelectedEntity}
-              />
+              {entityTree.map((root) => (
+                <EntityTreeNode
+                  key={root.id}
+                  node={root}
+                  selectedId={selectedEntity}
+                  onSelect={handleEntitySelect}
+                />
+              ))}
+              {entityTree.length === 0 && (
+                <span className="text-[10px] text-[hsl(var(--cf-text-muted))] px-2">No entities loaded</span>
+              )}
             </div>
           )}
         </div>

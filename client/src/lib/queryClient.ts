@@ -7,12 +7,28 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+/** Active tenant ID injected by TenantContext on switch. */
+let _activeTenantId: string | null = null;
+export function setActiveTenantId(id: string | null) {
+  _activeTenantId = id;
+}
+export function getActiveTenantId() {
+  return _activeTenantId;
+}
+
+/** Append tenantId query param to a URL if an active tenant is set. */
+function withTenant(url: string): string {
+  if (!_activeTenantId) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}tenantId=${_activeTenantId}`;
+}
+
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(url, {
+  const res = await fetch(withTenant(url), {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -29,7 +45,8 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey[0] as string, {
+    const url = queryKey[0] as string;
+    const res = await fetch(withTenant(url), {
       credentials: "include",
     });
 

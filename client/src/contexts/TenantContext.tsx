@@ -1,12 +1,13 @@
 /**
  * Tenant Context - Multi-tenant state management
  *
- * Provides current tenant selection and switching capabilities
- * Only active in system mode (MODE=system)
+ * Provides current tenant selection and switching capabilities.
+ * Only active in system mode (MODE=system).
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { setActiveTenantId } from '@/lib/queryClient';
 
 export interface Tenant {
   id: string;
@@ -22,7 +23,7 @@ interface TenantContextValue {
   currentTenant: Tenant | null;
   tenants: Tenant[];
   isLoading: boolean;
-  setCurrentTenant: (tenant: Tenant | null) => void;
+  switchTenant: (tenant: Tenant) => void;
   isSystemMode: boolean;
 }
 
@@ -31,6 +32,7 @@ const TenantContext = createContext<TenantContextValue | undefined>(undefined);
 export function TenantProvider({ children }: { children: ReactNode }) {
   const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
   const [isSystemMode, setIsSystemMode] = useState(false);
+  const qc = useQueryClient();
 
   // Check mode from API status
   useEffect(() => {
@@ -56,17 +58,26 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       const selected = saved
         ? tenants.find(t => t.id === saved)
         : tenants[0];
-
-      setCurrentTenant(selected || tenants[0]);
+      const tenant = selected || tenants[0];
+      setCurrentTenant(tenant);
+      setActiveTenantId(tenant.id);
     }
   }, [tenants, currentTenant, isSystemMode]);
 
-  // Save current tenant to localStorage
+  // Persist and sync tenant ID
   useEffect(() => {
     if (currentTenant) {
       localStorage.setItem('currentTenantId', currentTenant.id);
+      setActiveTenantId(currentTenant.id);
     }
   }, [currentTenant]);
+
+  const switchTenant = useCallback((tenant: Tenant) => {
+    setCurrentTenant(tenant);
+    setActiveTenantId(tenant.id);
+    // Invalidate all tenant-scoped queries so they refetch with new tenantId
+    qc.invalidateQueries();
+  }, [qc]);
 
   return (
     <TenantContext.Provider
@@ -74,7 +85,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         currentTenant,
         tenants,
         isLoading,
-        setCurrentTenant,
+        switchTenant,
         isSystemMode,
       }}
     >
@@ -92,8 +103,8 @@ export function useTenant() {
 }
 
 /**
- * Hook to get current tenant ID for API requests
- * Returns null in standalone mode
+ * Hook to get current tenant ID for API requests.
+ * Returns null in standalone mode.
  */
 export function useTenantId(): string | null {
   const { currentTenant, isSystemMode } = useTenant();

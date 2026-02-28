@@ -1,15 +1,14 @@
 import { Bell, Search, Command } from "lucide-react";
 import { useRole } from "@/contexts/RoleContext";
+import { TenantSwitcher } from "./TenantSwitcher";
 
 export default function Header() {
   const { currentRole, roleConfig } = useRole();
   return (
     <header className="flex items-center h-14 px-4 border-b border-[hsl(var(--cf-border-subtle))] bg-[hsl(var(--cf-void))]">
-      {/* Breadcrumb / Context */}
+      {/* Tenant Switcher / Breadcrumb */}
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-sm font-display font-medium text-[hsl(var(--cf-text))]">
-          IT CAN BE LLC
-        </span>
+        <TenantSwitcher />
         <span className="text-[hsl(var(--cf-text-muted))]">/</span>
         <span className="text-sm text-[hsl(var(--cf-text-secondary))] truncate">
           Overview

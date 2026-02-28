@@ -15,7 +15,7 @@ import {
 import { Building2 } from 'lucide-react';
 
 export default function TenantSwitcher() {
-  const { currentTenant, tenants, isLoading, setCurrentTenant, isSystemMode } = useTenant();
+  const { currentTenant, tenants, isLoading, switchTenant, isSystemMode } = useTenant();
 
   // Don't render in standalone mode or if no tenants
   if (!isSystemMode || tenants.length === 0) {
@@ -49,9 +49,7 @@ export default function TenantSwitcher() {
       onValueChange={(value) => {
         const selected = tenants.find(t => t.id === value);
         if (selected) {
-          setCurrentTenant(selected);
-          // Invalidate queries to refetch with new tenant
-          window.location.reload();
+          switchTenant(selected);
         }
       }}
     >
