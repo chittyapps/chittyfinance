@@ -1,34 +1,58 @@
 {
   "name": "chittyfinance",
-  "description": "AI-powered financial operations for the ChittyOS ecosystem. Provides intelligent financial tracking, multi-account Mercury integration via ChittyConnect, and an AI CFO assistant.",
-  "version": "1.0.0",
+  "canonicalUri": "chittycanon://core/services/chittyfinance",
+  "tier": 3,
+  "domain": "finance.chitty.cc",
+  "description": "AI-powered financial operations for the ChittyOS ecosystem. Multi-tenant property management, Mercury/Wave/Stripe integrations, forensic accounting, valuation, and AI CFO assistant.",
+  "version": "2.0.0",
   "endpoints": [
-    { "path": "/health", "method": "GET", "auth": false },
-    { "path": "/api/v1/status", "method": "GET", "auth": false },
-    { "path": "/api/v1/metrics", "method": "GET", "auth": false },
-    { "path": "/api/accounts", "method": "GET", "auth": true },
-    { "path": "/api/accounts/:id/transactions", "method": "GET", "auth": true },
-    { "path": "/api/summary", "method": "GET", "auth": true }
+    { "path": "/health", "method": "GET", "auth": false, "description": "Health check" },
+    { "path": "/api/v1/status", "method": "GET", "auth": false, "description": "Service status and mode" },
+    { "path": "/api/v1/metrics", "method": "GET", "auth": false, "description": "Service metrics" },
+    { "path": "/api/v1/documentation", "method": "GET", "auth": false, "description": "OpenAPI spec" },
+    { "path": "/api/tenants", "method": "GET", "auth": true, "description": "List tenants" },
+    { "path": "/api/accounts", "method": "GET", "auth": true, "description": "List accounts" },
+    { "path": "/api/transactions", "method": "GET", "auth": true, "description": "List transactions" },
+    { "path": "/api/summary", "method": "GET", "auth": true, "description": "Financial summary" },
+    { "path": "/api/properties", "method": "GET", "auth": true, "description": "List properties" },
+    { "path": "/api/properties/:id/financials", "method": "GET", "auth": true, "description": "Property financials" },
+    { "path": "/api/properties/:id/rent-roll", "method": "GET", "auth": true, "description": "Rent roll" },
+    { "path": "/api/properties/:id/pnl", "method": "GET", "auth": true, "description": "Property P&L" },
+    { "path": "/api/properties/:id/valuation", "method": "GET", "auth": true, "description": "Property valuation" },
+    { "path": "/api/portfolio/summary", "method": "GET", "auth": true, "description": "Portfolio summary" },
+    { "path": "/api/ai/property-advice", "method": "POST", "auth": true, "description": "AI property advisor" },
+    { "path": "/api/integrations/status", "method": "GET", "auth": true, "description": "Integration config status" },
+    { "path": "/api/mercury/accounts", "method": "GET", "auth": true, "description": "Mercury accounts via ChittyConnect" },
+    { "path": "/api/charges/recurring", "method": "GET", "auth": true, "description": "Recurring charges" },
+    { "path": "/api/forensics/investigations", "method": "GET", "auth": true, "description": "List investigations" },
+    { "path": "/api/import/turbotenant", "method": "POST", "auth": true, "description": "TurboTenant CSV import" },
+    { "path": "/api/import/wave-sync", "method": "POST", "auth": true, "description": "Wave sync import" }
   ],
   "schema": {
-    "version": "1.0.0",
+    "version": "2.0.0",
     "entities": [
-      "users",
-      "tenants",
-      "tenantUsers",
-      "accounts",
-      "transactions",
-      "intercompanyTransactions",
-      "properties",
-      "units",
-      "leases",
-      "integrations",
-      "tasks",
-      "aiMessages"
+      "users", "tenants", "tenantUsers",
+      "accounts", "transactions", "intercompanyTransactions",
+      "properties", "units", "leases", "propertyValuations",
+      "integrations", "tasks", "aiMessages"
     ]
   },
+  "dependencies": [
+    { "service": "chittyconnect", "purpose": "Mercury Bank integration (static egress IP)" },
+    { "service": "chittyledger", "purpose": "Immutable audit trail for all mutations" },
+    { "service": "chittyagent", "purpose": "AI property advice (optional)" }
+  ],
   "security": {
-    "authentication": "jwt",
-    "encryption": "tls"
+    "authentication": "bearer-token",
+    "encryption": "tls",
+    "tenantIsolation": true,
+    "headers": ["Authorization", "X-Tenant-ID"]
+  },
+  "infrastructure": {
+    "platform": "cloudflare-workers",
+    "database": "neon-postgresql",
+    "kv": "FINANCE_KV",
+    "r2": "chittyfinance-storage",
+    "observability": true
   }
 }
