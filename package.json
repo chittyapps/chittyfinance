@@ -17,6 +17,7 @@
     "@chittyos/chittyconnect": "file:../chittyconnect",
     "@hookform/resolvers": "^3.9.1",
     "@jridgewell/trace-mapping": "^0.3.25",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@neondatabase/serverless": "^0.10.4",
     "@paypal/paypal-server-sdk": "^1.0.0",
     "@radix-ui/react-accordion": "^1.2.1",

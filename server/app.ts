@@ -26,6 +26,7 @@ import { forensicRoutes } from './routes/forensics';
 import { valuationRoutes } from './routes/valuation';
 import { portfolioRoutes } from './routes/portfolio';
 import { importRoutes } from './routes/import';
+import { mcpRoutes } from './routes/mcp';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -82,7 +83,7 @@ export function createApp() {
   const protectedPrefixes = [
     '/api/accounts', '/api/transactions', '/api/tenants', '/api/properties',
     '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/ai', '/api/summary',
-    '/api/mercury', '/api/github', '/api/charges', '/api/forensics', '/api/portfolio', '/api/import',
+    '/api/mercury', '/api/github', '/api/charges', '/api/forensics', '/api/portfolio', '/api/import', '/mcp',
   ];
   for (const prefix of protectedPrefixes) {
     app.use(prefix, ...protectedRoute);
@@ -107,6 +108,7 @@ export function createApp() {
   app.route('/', valuationRoutes);
   app.route('/', portfolioRoutes);
   app.route('/', importRoutes);
+  app.route('/', mcpRoutes);
 
   // ── Fallback: try static assets, then 404 ──
   app.all('*', async (c) => {
