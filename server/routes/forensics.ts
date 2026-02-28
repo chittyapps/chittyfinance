@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { createDb } from '../db/connection';
+import { ledgerLog } from '../lib/ledger-client';
 import {
   forensicInvestigations,
   forensicEvidence,
@@ -223,6 +224,12 @@ forensicRoutes.post('/api/forensics/investigations', async (c) => {
   const [investigation] = await db.insert(forensicInvestigations)
     .values(values)
     .returning();
+  ledgerLog(c, {
+    entityType: 'evidence',
+    entityId: String(investigation.id),
+    action: 'investigation.created',
+    metadata: { caseNumber: parsed.data.caseNumber, title: parsed.data.title, leadInvestigator: parsed.data.leadInvestigator },
+  }, c.env);
   return c.json(investigation, 201);
 });
 
@@ -244,6 +251,12 @@ forensicRoutes.patch('/api/forensics/investigations/:id/status', async (c) => {
     .set({ status: parsed.data.status, updatedAt: new Date() })
     .where(eq(forensicInvestigations.id, id))
     .returning();
+  ledgerLog(c, {
+    entityType: 'evidence',
+    entityId: String(id),
+    action: 'investigation.status-changed',
+    metadata: { previousStatus: existing.status, newStatus: parsed.data.status },
+  }, c.env);
   return c.json(updated);
 });
 
@@ -271,6 +284,12 @@ forensicRoutes.post('/api/forensics/investigations/:id/evidence', async (c) => {
   const [evidence] = await db.insert(forensicEvidence)
     .values(values)
     .returning();
+  ledgerLog(c, {
+    entityType: 'evidence',
+    entityId: String(evidence.id),
+    action: 'evidence.added',
+    metadata: { investigationId: id, evidenceNumber: parsed.data.evidenceNumber, type: parsed.data.type, source: parsed.data.source },
+  }, c.env);
   return c.json(evidence, 201);
 });
 
@@ -316,6 +335,12 @@ forensicRoutes.post('/api/forensics/evidence/:id/custody', async (c) => {
     .where(eq(forensicEvidence.id, evidenceId))
     .returning();
 
+  ledgerLog(c, {
+    entityType: 'custody',
+    entityId: String(evidenceId),
+    action: 'custody.transferred',
+    metadata: { transferredTo: parsed.data.transferredTo, transferredBy: parsed.data.transferredBy, location: parsed.data.location },
+  }, c.env);
   return c.json(updated);
 });
 
@@ -415,6 +440,12 @@ forensicRoutes.post('/api/forensics/investigations/:id/analyze', async (c) => {
     }
   } catch (e: any) { errors.push({ analysis: 'benfordsLaw', error: e.message }); }
 
+  ledgerLog(c, {
+    entityType: 'audit',
+    entityId: String(id),
+    action: 'forensic.analysis-completed',
+    metadata: { transactionCount: txns.length, duplicates: duplicatePayments.length, anomalies: unusualTiming.length + roundDollars.length, benfordsViolation: benfordsLaw[0]?.overallPassed === false },
+  }, c.env);
   return c.json({
     transactionAnalyses, duplicatePayments, unusualTiming, roundDollars, benfordsLaw,
     ...(errors.length > 0 ? { errors } : {}),

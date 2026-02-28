@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { ledgerLog } from '../lib/ledger-client';
 
 export const aiRoutes = new Hono<HonoEnv>();
 
@@ -65,9 +66,12 @@ aiRoutes.post('/api/ai/property-advice', async (c) => {
     financials: financials || null,
   };
 
-  // Try ChittyAgent first
+  // Try ChittyAgent first, fall back to rule-based
+  let response: { role: string; content: string; model: string | null; provider: string };
+
   const agentBase = c.env.CHITTYAGENT_API_BASE;
   const agentToken = c.env.CHITTYAGENT_API_TOKEN;
+  let agentUsed = false;
 
   if (agentBase && agentToken) {
     try {
@@ -81,27 +85,38 @@ aiRoutes.post('/api/ai/property-advice', async (c) => {
       });
       if (agentRes.ok) {
         const data = (await agentRes.json()) as any;
-        return c.json({
+        response = {
           role: 'assistant',
           content: data.content || data.message,
           model: data.model,
           provider: 'chittyagent',
-        });
+        };
+        agentUsed = true;
       }
     } catch {}
   }
 
-  // Fallback: rule-based response
-  const capRateInfo = financials?.capRate
-    ? `Your property has a cap rate of ${financials.capRate.toFixed(1)}%.`
-    : '';
-  const noiInfo = financials?.noi
-    ? `Current NOI is $${financials.noi.toLocaleString()}.`
-    : '';
-  return c.json({
-    role: 'assistant',
-    content: `Based on the data for ${property.name}: ${capRateInfo} ${noiInfo} For detailed analysis, please configure ChittyAgent or OpenAI.`,
-    model: null,
-    provider: 'rule-based',
-  });
+  if (!agentUsed) {
+    const capRateInfo = financials?.capRate
+      ? `Your property has a cap rate of ${financials.capRate.toFixed(1)}%.`
+      : '';
+    const noiInfo = financials?.noi
+      ? `Current NOI is $${financials.noi.toLocaleString()}.`
+      : '';
+    response = {
+      role: 'assistant',
+      content: `Based on the data for ${property.name}: ${capRateInfo} ${noiInfo} For detailed analysis, please configure ChittyAgent or OpenAI.`,
+      model: null,
+      provider: 'rule-based',
+    };
+  }
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    entityId: propertyId,
+    action: 'ai.property-advice',
+    metadata: { tenantId, provider: response!.provider, model: response!.model, messageLength: message.length, responseLength: response!.content.length },
+  }, c.env);
+
+  return c.json(response!);
 });

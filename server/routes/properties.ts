@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { z } from 'zod';
 import { insertPropertySchema, insertUnitSchema, insertLeaseSchema } from '../db/schema';
+import { ledgerLog } from '../lib/ledger-client';
 
 export const propertyRoutes = new Hono<HonoEnv>();
 
@@ -79,6 +80,12 @@ propertyRoutes.post('/api/properties', async (c) => {
   }
 
   const property = await storage.createProperty(parsed.data);
+  ledgerLog(c, {
+    entityType: 'transaction',
+    entityId: property.id,
+    action: 'property.created',
+    metadata: { tenantId, name: parsed.data.name, address: parsed.data.address, propertyType: parsed.data.propertyType },
+  }, c.env);
   return c.json(property, 201);
 });
 
@@ -96,6 +103,12 @@ propertyRoutes.patch('/api/properties/:id', async (c) => {
 
   const property = await storage.updateProperty(propertyId, tenantId, parsed.data);
   if (!property) return c.json({ error: 'Property not found' }, 404);
+  ledgerLog(c, {
+    entityType: 'transaction',
+    entityId: propertyId,
+    action: 'property.updated',
+    metadata: { tenantId, changedFields: Object.keys(parsed.data) },
+  }, c.env);
   return c.json(property);
 });
 
@@ -115,6 +128,12 @@ propertyRoutes.post('/api/properties/:id/units', async (c) => {
   }
 
   const unit = await storage.createUnit(parsed.data);
+  ledgerLog(c, {
+    entityType: 'transaction',
+    entityId: unit.id,
+    action: 'unit.created',
+    metadata: { tenantId, propertyId, unitNumber: parsed.data.unitNumber },
+  }, c.env);
   return c.json(unit, 201);
 });
 
@@ -136,6 +155,12 @@ propertyRoutes.patch('/api/properties/:id/units/:unitId', async (c) => {
 
   const unit = await storage.updateUnit(unitId, propertyId, parsed.data);
   if (!unit) return c.json({ error: 'Unit not found' }, 404);
+  ledgerLog(c, {
+    entityType: 'transaction',
+    entityId: unitId,
+    action: 'unit.updated',
+    metadata: { tenantId, propertyId, changedFields: Object.keys(parsed.data) },
+  }, c.env);
   return c.json(unit);
 });
 
@@ -167,6 +192,12 @@ propertyRoutes.post('/api/properties/:id/leases', async (c) => {
   }
 
   const lease = await storage.createLease(parsed.data);
+  ledgerLog(c, {
+    entityType: 'transaction',
+    entityId: lease.id,
+    action: 'lease.created',
+    metadata: { tenantId, propertyId, unitId: parsed.data.unitId, monthlyRent: parsed.data.monthlyRent },
+  }, c.env);
   return c.json(lease, 201);
 });
 
@@ -196,6 +227,12 @@ propertyRoutes.patch('/api/properties/:id/leases/:leaseId', async (c) => {
 
   const lease = await storage.updateLease(leaseId, unitIds, parsed.data);
   if (!lease) return c.json({ error: 'Lease not found' }, 404);
+  ledgerLog(c, {
+    entityType: 'transaction',
+    entityId: leaseId,
+    action: 'lease.updated',
+    metadata: { tenantId, propertyId, changedFields: Object.keys(parsed.data) },
+  }, c.env);
   return c.json(lease);
 });
 

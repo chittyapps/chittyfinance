@@ -13,6 +13,8 @@ export interface Env {
   MERCURY_WEBHOOK_SECRET?: string;
   CHITTYAGENT_API_BASE?: string;
   CHITTYAGENT_API_TOKEN?: string;
+  CHITTY_LEDGER_BASE?: string;
+  CHITTYCONNECT_API_TOKEN?: string;
   // Valuation API keys (optional — each provider only fetched if key is set)
   ZILLOW_API_KEY?: string;
   REDFIN_API_KEY?: string;

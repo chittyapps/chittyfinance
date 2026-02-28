@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { fetchAllEstimates, aggregateValuations } from '../lib/valuation/index';
+import { ledgerLog } from '../lib/ledger-client';
 
 export const valuationRoutes = new Hono<HonoEnv>();
 
@@ -61,6 +62,12 @@ valuationRoutes.post('/api/properties/:id/valuation/refresh', async (c) => {
   }
 
   const aggregated = aggregateValuations(estimates);
+  ledgerLog(c, {
+    entityType: 'audit',
+    entityId: propertyId,
+    action: 'valuation.refreshed',
+    metadata: { tenantId, propertyName: property.name, providersRefreshed: estimates.length, providerErrors: errors.length, weightedEstimate: aggregated.weightedEstimate },
+  }, c.env);
   return c.json({ refreshed: estimates.length, errors, ...aggregated });
 });
 
