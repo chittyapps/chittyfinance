@@ -74,8 +74,12 @@ The financial evidence registry. Extends `masterEvidence` patterns.
 CREATE TABLE financial_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL,                    -- ChittyOS tenant scope
+  
   source_type TEXT NOT NULL,                  -- 'email_receipt', 'invoice', 'bank_statement',
                                               -- 'payment_confirmation', 'tax_form', 'contract'
+  CHECK (source_type IN ('email_receipt', 'invoice', 'bank_statement', 
+                         'payment_confirmation', 'tax_form', 'contract')),
+  
   source_trust_tier INTEGER NOT NULL,         -- 1-8 (see trust tiers above)
   trust_score DECIMAL(3,2) NOT NULL,          -- 0.40 - 1.00
 
@@ -96,15 +100,21 @@ CREATE TABLE financial_documents (
   title TEXT NOT NULL,
   file_key TEXT,                              -- R2 object key (shared bucket or ChittyTrace bucket)
   file_type TEXT,                             -- 'pdf', 'eml', 'csv', 'png', 'xlsx'
+  CHECK (file_type IS NULL OR file_type IN ('pdf', 'eml', 'csv', 'png', 'xlsx')),
+  
   file_hash TEXT,                             -- SHA-256 for integrity verification
 
   -- Origin tracking
   origin_service TEXT NOT NULL,               -- 'chittytrace', 'chittyfinance', 'manual_upload'
+  CHECK (origin_service IN ('chittytrace', 'chittyfinance', 'manual_upload')),
+  
   origin_ref TEXT,                            -- ChittyTrace document ID or external ref
   ingested_by TEXT,                           -- Worker/service that processed it
 
   -- Processing status
   status TEXT NOT NULL DEFAULT 'pending',     -- 'pending', 'processing', 'extracted', 'verified', 'failed'
+  CHECK (status IN ('pending', 'processing', 'extracted', 'verified', 'failed')),
+  
   facts_extracted INTEGER DEFAULT 0,
 
   -- Immutability
@@ -131,12 +141,18 @@ CREATE TABLE financial_facts (
   fact_type TEXT NOT NULL,                    -- 'amount', 'vendor', 'date', 'account_ref',
                                               -- 'invoice_number', 'tax_amount', 'line_item',
                                               -- 'payment_method', 'category'
+  CHECK (fact_type IN ('amount', 'vendor', 'date', 'account_ref', 'invoice_number', 
+                       'tax_amount', 'line_item', 'payment_method', 'category')),
+  
   fact_value TEXT NOT NULL,                   -- The extracted value (string representation)
   fact_normalized JSONB,                      -- Typed/normalized: {"amount": 450.00, "currency": "USD"}
 
   -- Confidence
   confidence DECIMAL(3,2) NOT NULL,           -- 0.00 - 1.00 (AI extraction confidence)
+  CHECK (confidence >= 0.00 AND confidence <= 1.00),
+  
   extraction_method TEXT NOT NULL,            -- 'ai_gpt4o', 'ai_claude', 'ocr', 'structured_parse', 'manual'
+  CHECK (extraction_method IN ('ai_gpt4o', 'ai_claude', 'ocr', 'structured_parse', 'manual')),
 
   -- Verification
   verified BOOLEAN DEFAULT false,
@@ -158,7 +174,6 @@ CREATE TABLE transaction_links (
 
   -- ChittyLedger side
   document_id UUID NOT NULL REFERENCES financial_documents(id),
-  fact_ids UUID[] NOT NULL,                   -- Array of financial_facts.id values used for matching
 
   -- ChittyFinance side
   tenant_id UUID NOT NULL,
@@ -167,17 +182,42 @@ CREATE TABLE transaction_links (
 
   -- Match quality
   match_type TEXT NOT NULL,                   -- 'exact', 'partial', 'manual', 'suggested'
+  CHECK (match_type IN ('exact', 'partial', 'manual', 'suggested')),
+  
   match_confidence DECIMAL(3,2) NOT NULL,     -- 0.00 - 1.00
+  CHECK (match_confidence >= 0.00 AND match_confidence <= 1.00),
+  
   match_method TEXT NOT NULL,                 -- 'auto_amount_date_vendor', 'auto_ref_number',
                                               -- 'fuzzy_vendor', 'manual_user', 'ai_suggested'
+  CHECK (match_method IN ('auto_amount_date_vendor', 'auto_ref_number', 
+                          'fuzzy_vendor', 'manual_user', 'ai_suggested')),
 
   -- Status
   status TEXT NOT NULL DEFAULT 'pending',     -- 'pending', 'confirmed', 'rejected', 'superseded'
+  CHECK (status IN ('pending', 'confirmed', 'rejected', 'superseded')),
+  
   confirmed_by TEXT,                          -- User ID who confirmed
   confirmed_at TIMESTAMPTZ,
 
   metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+### `transaction_link_facts`
+
+Junction table linking transaction_links to the specific financial_facts used for matching.
+This provides proper FK integrity that UUID[] arrays cannot enforce.
+
+```sql
+CREATE TABLE transaction_link_facts (
+  transaction_link_id UUID NOT NULL REFERENCES transaction_links(id) ON DELETE CASCADE,
+  financial_fact_id UUID NOT NULL REFERENCES financial_facts(id) ON DELETE CASCADE,
+  
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  -- Composite primary key prevents duplicate fact associations
+  PRIMARY KEY (transaction_link_id, financial_fact_id)
 );
 ```
 
@@ -195,7 +235,12 @@ CREATE TABLE reconciliation_conflicts (
                                               -- 'missing_receipt', 'missing_transaction',
                                               -- 'date_discrepancy', 'vendor_mismatch',
                                               -- 'category_mismatch'
+  CHECK (conflict_type IN ('amount_mismatch', 'duplicate_charge', 'missing_receipt', 
+                           'missing_transaction', 'date_discrepancy', 'vendor_mismatch', 
+                           'category_mismatch')),
+  
   severity TEXT NOT NULL,                     -- 'critical', 'high', 'medium', 'low'
+  CHECK (severity IN ('critical', 'high', 'medium', 'low')),
 
   -- References
   document_id UUID REFERENCES financial_documents(id),
@@ -210,8 +255,13 @@ CREATE TABLE reconciliation_conflicts (
 
   -- Resolution
   status TEXT NOT NULL DEFAULT 'open',        -- 'open', 'investigating', 'resolved', 'dismissed'
+  CHECK (status IN ('open', 'investigating', 'resolved', 'dismissed')),
+  
   resolution TEXT,                            -- 'corrected_transaction', 'corrected_document',
                                               -- 'accepted_difference', 'duplicate_removed'
+  CHECK (resolution IS NULL OR resolution IN ('corrected_transaction', 'corrected_document', 
+                                               'accepted_difference', 'duplicate_removed')),
+  
   resolved_by TEXT,
   resolved_at TIMESTAMPTZ,
 
@@ -234,6 +284,9 @@ CREATE TABLE financial_audit_log (
   action TEXT NOT NULL,                       -- 'ingested', 'facts_extracted', 'matched',
                                               -- 'conflict_detected', 'reconciled',
                                               -- 'manually_verified', 'exported'
+  CHECK (action IN ('ingested', 'facts_extracted', 'matched', 'conflict_detected', 
+                    'reconciled', 'manually_verified', 'exported')),
+  
   performed_by TEXT NOT NULL,                 -- User ID, service name, or worker ID
 
   -- Integrity
@@ -284,6 +337,10 @@ CREATE INDEX idx_transaction_links_document_id ON transaction_links(document_id)
 CREATE INDEX idx_transaction_links_transaction_id ON transaction_links(transaction_id);
 CREATE INDEX idx_transaction_links_tenant_id ON transaction_links(tenant_id);
 
+-- transaction_link_facts (junction table)
+CREATE INDEX idx_transaction_link_facts_link_id ON transaction_link_facts(transaction_link_id);
+CREATE INDEX idx_transaction_link_facts_fact_id ON transaction_link_facts(financial_fact_id);
+
 -- reconciliation_conflicts
 CREATE INDEX idx_reconciliation_conflicts_tenant_id ON reconciliation_conflicts(tenant_id);
 CREATE INDEX idx_reconciliation_conflicts_status ON reconciliation_conflicts(status);
@@ -292,6 +349,10 @@ CREATE INDEX idx_reconciliation_conflicts_document_id ON reconciliation_conflict
 -- financial_audit_log
 CREATE INDEX idx_financial_audit_log_document_id ON financial_audit_log(document_id);
 CREATE INDEX idx_financial_audit_log_tenant_id ON financial_audit_log(tenant_id);
+
+-- reconciliation_signals (ChittyFinance table)
+CREATE INDEX idx_reconciliation_signals_tenant_status ON reconciliation_signals(tenant_id, status);
+CREATE INDEX idx_reconciliation_signals_document_id ON reconciliation_signals(document_id);
 ```
 
 ## Reconciliation Signal Schema
@@ -331,6 +392,7 @@ interface ReconciliationSignal {
 
     // For match events
     match?: {
+      linkId?: string;           // Optional transaction_links.id for correlation
       transactionId: string;
       confidence: number;
       method: string;
@@ -338,6 +400,7 @@ interface ReconciliationSignal {
 
     // For conflict events
     conflict?: {
+      conflictId?: string;       // Optional reconciliation_conflicts.id for correlation
       type: string;
       severity: string;
       expected: string;
@@ -361,7 +424,7 @@ interface ReconciliationSignal {
 
 ```typescript
 // Add to transactions table (system.schema.ts)
-reconciliationSource: text('reconciliation_source'),  // ChittyLedger document_id
+reconciliationSource: uuid('reconciliation_source'),  // ChittyLedger financial_documents.id (UUID)
 reconciliationScore: decimal('reconciliation_score', { precision: 3, scale: 2 }),
 reconciledAt: timestamp('reconciled_at'),
 
@@ -384,12 +447,37 @@ reconciliationSignals: pgTable('reconciliation_signals', {
 
 ```text
 POST /api/reconciliation/signals    -- Receive signals from ChittyLedger-Finance
+                                    -- Authentication: HMAC-SHA256 signature in X-ChittyLedger-Signature header
+                                    -- OR restrict to Cloudflare service bindings / queue consumers only
 GET  /api/reconciliation/pending    -- List unmatched documents
 GET  /api/reconciliation/conflicts  -- List active conflicts
 POST /api/reconciliation/confirm    -- Manually confirm a match
 POST /api/reconciliation/dismiss    -- Dismiss a conflict
 GET  /api/transactions/:id/documents -- View linked source documents
 ```
+
+**Authentication Strategy for `POST /api/reconciliation/signals`**:
+
+This endpoint accepts financial reconciliation signals and must be secured to prevent forgery of transactions or conflicts.
+
+**Recommended approaches** (choose one):
+
+1. **HMAC Signature Verification** (for webhook POSTs):
+   - ChittyLedger-Finance signs each request with `HMAC-SHA256(secret, payload)`
+   - Signature sent in `X-ChittyLedger-Signature` header
+   - ChittyFinance validates signature using shared secret before processing
+   - Reject any request with missing or invalid signature
+
+2. **Cloudflare Service Bindings** (for same-account deployments):
+   - Use Cloudflare Workers service bindings for direct RPC-style calls
+   - No public HTTP endpoint - only callable from bound services
+   - Automatic authentication via Workers platform
+
+3. **Queue-Based Delivery** (recommended for production):
+   - ChittyLedger-Finance pushes to Cloudflare Queue
+   - ChittyFinance consumes via queue consumer (not HTTP)
+   - Authentication handled by queue infrastructure
+   - No public write endpoint needed
 
 ## Infrastructure
 
@@ -427,4 +515,4 @@ ChittyLedger-Finance writes. ChittyFinance reads.
 1. Should ChittyLedger-Finance share a database with ChittyLedger core, or have its own?
 2. Does ChittyTrace push directly to ChittyLedger-Finance, or through ChittyRouter?
 3. Should the R2 bucket be shared or should ChittyFinance copy documents it needs?
-4. What tenant ID format is canonical across services? (UUID from ChittyFinance? ChittyID DID?)
+4. ~~What tenant ID format is canonical across services?~~ **RESOLVED**: Tenant IDs use `UUID NOT NULL` format per `database/system.schema.ts` convention. ChittyID DIDs are an identity-layer concern and not used for database-level tenant IDs.
