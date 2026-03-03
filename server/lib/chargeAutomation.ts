@@ -42,10 +42,6 @@ export async function getRecurringCharges(userId: number | string): Promise<Char
         const wavappsCharges = await fetchWavAppsCharges(integration);
         charges.push(...wavappsCharges);
         break;
-      case 'doorloop':
-        const doorloopCharges = await fetchDoorLoopCharges(integration);
-        charges.push(...doorloopCharges);
-        break;
       case 'stripe':
         const stripeCharges = await fetchStripeCharges(integration);
         charges.push(...stripeCharges);
@@ -77,12 +73,6 @@ async function fetchMercuryBankCharges(_integration: Integration): Promise<Charg
 // TODO: Wire to Wave Accounting API (real integration exists in wave-api.ts)
 async function fetchWavAppsCharges(_integration: Integration): Promise<ChargeDetails[]> {
   console.warn('Wave Accounting recurring charge detection not yet implemented');
-  return [];
-}
-
-// TODO: Wire to DoorLoop property management API
-async function fetchDoorLoopCharges(_integration: Integration): Promise<ChargeDetails[]> {
-  console.warn('DoorLoop recurring charge detection not yet implemented');
   return [];
 }
 

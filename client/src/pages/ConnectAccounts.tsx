@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
-import { Building, CreditCard, DollarSign, BarChart4, Home, CreditCard as CreditCardIcon } from "lucide-react";
+import { Building, CreditCard, DollarSign, BarChart4, CreditCard as CreditCardIcon } from "lucide-react";
 import { AuthContext } from "../App";
 
 // Service connection card component
@@ -54,7 +54,7 @@ export default function ConnectAccounts() {
   const [loading, setLoading] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [connectedServices, setConnectedServices] = useState<string[]>([
-    "mercury_bank", "doorloop" // Default connected services
+    "mercury_bank" // Default connected services
   ]);
 
   // Redirect to login if not authenticated
@@ -124,7 +124,6 @@ export default function ConnectAccounts() {
       "quickbooks": "QuickBooks",
       "xero": "Xero Accounting",
       "wavapps": "WavApps",
-      "doorloop": "DoorLoop",
       "brex": "Brex",
       "gusto": "Gusto Payroll"
     };
@@ -138,7 +137,6 @@ export default function ConnectAccounts() {
       "quickbooks": "Accounting Software",
       "xero": "Global Accounting Platform",
       "wavapps": "Financial Software",
-      "doorloop": "Property Management",
       "brex": "Business Credit & Expenses",
       "gusto": "Payroll & HR"
     };
@@ -157,8 +155,6 @@ export default function ConnectAccounts() {
         return <BarChart4 size={size} />;
       case "brex":
         return <CreditCardIcon size={size} />;
-      case "doorloop":
-        return <Home size={size} />;
       case "xero":
         return <BarChart4 size={size} />;
       case "gusto":
@@ -238,13 +234,6 @@ export default function ConnectAccounts() {
               icon={getServiceIcon("wavapps", 28)}
               connected={connectedServices.includes("wavapps")}
               onConnect={() => handleConnect("wavapps")}
-            />
-            <ServiceCard
-              name="DoorLoop"
-              description="Property Management"
-              icon={getServiceIcon("doorloop", 28)}
-              connected={connectedServices.includes("doorloop")}
-              onConnect={() => handleConnect("doorloop")}
             />
           </TabsContent>
 
