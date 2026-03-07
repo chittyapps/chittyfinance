@@ -1,0 +1,21 @@
+repo_id=chittyapps/chittyfinance
+repo_path=/Users/nb/Desktop/Projects/github.com/CHITTYAPPS/chittyfinance
+timestamp=2026-03-01T23:44:35Z
+
+status=ok
+head=484fde5
+
+[working-tree-pattern-scan]
+
+[history-grep-known-literals]
+-- literal: test-secret-key-for-github-actions-testing
+5de6d24 Fix package.json: add missing dependencies and update project name
+a683bbb Add enhanced features: integrations, AI assistants, security improvements, and deployment workflows
+-- literal: test-secret-for-security-headers-check
+5de6d24 Fix package.json: add missing dependencies and update project name
+a683bbb Add enhanced features: integrations, AI assistants, security improvements, and deployment workflows
+-- literal: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+5de6d24 Fix package.json: add missing dependencies and update project name
+a683bbb Add enhanced features: integrations, AI assistants, security improvements, and deployment workflows
+
+[trufflehog] skipped (not installed)

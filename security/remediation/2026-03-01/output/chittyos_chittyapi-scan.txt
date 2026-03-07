@@ -1,0 +1,5 @@
+repo_id=chittyos/chittyapi
+repo_path=/Users/nb/Desktop/Projects/github.com/CHITTYOS/chittyapi
+timestamp=2026-03-01T23:44:36Z
+
+status=missing_git
