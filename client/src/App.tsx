@@ -13,6 +13,7 @@ import Properties from "@/pages/Properties";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import Connections from "@/pages/Connections";
+import Dashboard from "@/pages/Dashboard";
 import { User } from "@shared/schema";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TenantProvider } from "@/contexts/TenantContext";
@@ -31,6 +32,7 @@ function Router() {
         <main className="flex-1 relative overflow-y-auto cf-scrollbar focus:outline-none bg-[hsl(var(--cf-base))]">
           <Switch>
             <Route path="/" component={Properties} />
+            <Route path="/dashboard" component={Dashboard} />
             <Route path="/properties/:id" component={PropertyDetail} />
             <Route path="/connections" component={Connections} />
             <Route path="/admin" component={Admin} />

@@ -70,7 +70,6 @@ export function getServiceIcon(serviceType: string): React.ReactNode {
   const iconMap: Record<string, string> = {
     'mercury_bank': 'M',
     'wavapps': 'W',
-    'doorloop': 'D',
     'stripe': 'S',
     'quickbooks': 'Q',
     'xero': 'X',
@@ -87,7 +86,6 @@ export function getServiceColor(serviceType: string): string {
   const colorMap: Record<string, string> = {
     'mercury_bank': 'bg-blue-500',
     'wavapps': 'bg-teal-500',
-    'doorloop': 'bg-orange-500',
     'stripe': 'bg-purple-500',
     'quickbooks': 'bg-green-500',
     'xero': 'bg-blue-400',

@@ -1,0 +1,161 @@
+diff --git a/scripts/security/check-workflow-secrets.sh b/scripts/security/check-workflow-secrets.sh
+new file mode 100755
+index 0000000..8c9659c
+--- /dev/null
++++ b/scripts/security/check-workflow-secrets.sh
+@@ -0,0 +1,44 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++WORKFLOW_DIR=".github/workflows"
++
++if [[ ! -d "$WORKFLOW_DIR" ]]; then
++  echo "No workflow directory found; skipping workflow secret checks."
++  exit 0
++fi
++
++fail=0
++
++# 1) Explicitly blocked historical literals
++blocked_literals=(
++  "test-secret-key-for-github-actions-testing"
++  "test-secret-for-security-headers-check"
++  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
++)
++
++for literal in "${blocked_literals[@]}"; do
++  if grep -RIn --include='*.yml' --include='*.yaml' "$literal" "$WORKFLOW_DIR" >/dev/null 2>&1; then
++    echo "Blocked literal found in workflow files: $literal"
++    grep -RIn --include='*.yml' --include='*.yaml' "$literal" "$WORKFLOW_DIR" || true
++    fail=1
++  fi
++done
++
++# 2) Hardcoded secret-style env assignments in workflows.
++# Allow GitHub Secrets interpolation only.
++while IFS= read -r line; do
++  # line format: file:line:text
++  value="${line#*:*:}"
++  if [[ "$value" != *'${{ secrets.'* ]]; then
++    echo "Hardcoded secret-like workflow assignment found: $line"
++    fail=1
++  fi
++done < <(grep -RInE --include='*.yml' --include='*.yaml' 'SESSION_SECRET\s*:\s*".+"|ENCRYPTION_KEY\s*:\s*".+"' "$WORKFLOW_DIR" || true)
++
++if [[ "$fail" -ne 0 ]]; then
++  echo "Workflow secret policy check failed."
++  exit 1
++fi
++
++echo "Workflow secret policy check passed."
+diff --git a/.github/workflows/security-gates.yml b/.github/workflows/security-gates.yml
+new file mode 100644
+index 0000000..2d95f7a
+--- /dev/null
++++ b/.github/workflows/security-gates.yml
+@@ -0,0 +1,105 @@
++name: Security Gates
++
++on:
++  pull_request:
++    branches: [main]
++  push:
++    branches: [main, develop]
++  workflow_dispatch:
++
++concurrency:
++  group: security-gates-${{ github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  workflow-secret-policy:
++    name: Workflow Secret Policy
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Enforce workflow secret policy
++        run: ./scripts/security/check-workflow-secrets.sh
++
++  working-tree-secret-scan:
++    name: Working Tree Secret Scan
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Scan for high-risk secret patterns
++        shell: bash
++        run: |
++          set -euo pipefail
++
++          if grep -RInE \
++            --exclude-dir=.git \
++            --exclude-dir=node_modules \
++            --exclude-dir=dist \
++            --exclude-dir=.wrangler \
++            --exclude='*.png' \
++            --exclude='*.jpg' \
++            --exclude='*.jpeg' \
++            --exclude='*.gif' \
++            'ghp_[A-Za-z0-9]{20,}|sk_live_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA|EC|OPENSSH|PGP)? ?PRIVATE KEY' .; then
++            echo "Secret-like pattern detected in working tree."
++            exit 1
++          fi
++
++          echo "Working tree secret scan passed."
++
++  dependency-audit:
++    name: Dependency Audit (High+)
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++          cache: 'npm'
++
++      - name: Resolve package root
++        id: pkg
++        run: |
++          set -euo pipefail
++          if [ -f package.json ]; then
++            echo "dir=." >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
++          if [ -f development/chittyschema/package.json ]; then
++            echo "dir=development/chittyschema" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
++          echo "dir=" >> "$GITHUB_OUTPUT"
++          echo "No Node package root detected; skipping dependency audit."
++
++      - name: Install dependencies
++        if: steps.pkg.outputs.dir != ''
++        run: |
++          set -euo pipefail
++          cd "${{ steps.pkg.outputs.dir }}"
++          if [ -f package-lock.json ]; then
++            npm ci
++          elif [ -f pnpm-lock.yaml ]; then
++            npm i -g pnpm
++            pnpm i --frozen-lockfile
++          else
++            echo "No lockfile found in $PWD"
++            exit 1
++          fi
++
++      - name: Enforce npm audit high threshold
++        if: steps.pkg.outputs.dir != ''
++        run: |
++          set -euo pipefail
++          cd "${{ steps.pkg.outputs.dir }}"
++          if command -v pnpm >/dev/null 2>&1 && [ -f pnpm-lock.yaml ]; then
++            pnpm audit --prod --audit-level high
++          else
++            npm audit --audit-level=high --omit=dev
++          fi

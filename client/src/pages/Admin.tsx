@@ -33,7 +33,6 @@ const SERVICES: ServiceHealth[] = [
   { name: "ChittyCommand", url: "command.chitty.cc", status: "healthy", latency: 67, lastCheck: "1m ago", version: "3.1.0" },
   { name: "ChittyRegister", url: "register.chitty.cc", status: "healthy", latency: 31, lastCheck: "1m ago", version: "1.0.5" },
   { name: "ChittyRouter", url: "router.chitty.cc", status: "degraded", latency: 234, lastCheck: "2m ago", version: "1.1.0" },
-  { name: "DoorLoop", url: "api.doorloop.com", status: "unknown", lastCheck: "—" },
   { name: "Wave Accounting", url: "api.waveapps.com", status: "healthy", latency: 156, lastCheck: "5m ago" },
 ];
 
@@ -51,7 +50,6 @@ const INTEGRATIONS: IntegrationConfig[] = [
   { name: "Wave Accounting", configured: true, envVars: ["WAVE_CLIENT_ID", "WAVE_CLIENT_SECRET"], status: "active", lastSync: "1h ago" },
   { name: "Stripe Payments", configured: true, envVars: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"], status: "active", lastSync: "5m ago" },
   { name: "OpenAI (GPT-4o)", configured: true, envVars: ["OPENAI_API_KEY"], status: "active" },
-  { name: "DoorLoop", configured: false, envVars: ["DOORLOOP_API_KEY"], status: "inactive" },
   { name: "GitHub", configured: true, envVars: ["GITHUB_TOKEN"], status: "active" },
 ];
 

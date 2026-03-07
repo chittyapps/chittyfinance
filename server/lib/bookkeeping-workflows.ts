@@ -6,7 +6,6 @@
 
 import { WaveBookkeepingClient } from './wave-bookkeeping';
 import { ChittyRentalClient } from './chittyrental-integration';
-import { DoorLoopClient } from './doorloop-integration';
 import { StripeConnectClient } from './stripe-connect';
 import { storage } from '../storage';
 import { logToChronicle } from './chittychronicle-logging';
@@ -34,7 +33,6 @@ export async function runDailyBookkeeping(tenantId: string): Promise<{
   synced: {
     wave: number;
     rental: number;
-    doorloop: number;
     stripe: number;
   };
   categorized: number;
@@ -43,7 +41,7 @@ export async function runDailyBookkeeping(tenantId: string): Promise<{
   console.log(`Running daily bookkeeping for tenant ${tenantId}`);
 
   const result = {
-    synced: { wave: 0, rental: 0, doorloop: 0, stripe: 0 },
+    synced: { wave: 0, rental: 0, stripe: 0 },
     categorized: 0,
     anomalies: 0,
   };
@@ -69,35 +67,7 @@ export async function runDailyBookkeeping(tenantId: string): Promise<{
       }
     }
 
-    // 2. Sync DoorLoop data (real property management system)
-    const doorloopIntegrations = await storage.listIntegrationsByService('doorloop');
-    for (const integration of doorloopIntegrations) {
-      if (integration.tenantId === tenantId && integration.connected) {
-        try {
-          const credentials = integration.credentials as any;
-          const doorloopClient = new DoorLoopClient(credentials.api_key);
-
-          // Get all DoorLoop properties
-          const doorloopProperties = await doorloopClient.getProperties();
-
-          // Sync each property
-          for (const dlProperty of doorloopProperties) {
-            const syncResult = await doorloopClient.syncProperty(
-              dlProperty.id,
-              tenantId,
-              new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() // Last 7 days
-            );
-
-            result.synced.doorloop += syncResult.rentPayments + syncResult.expenses;
-          }
-
-          console.log(`✅ Synced ${doorloopProperties.length} DoorLoop properties`);
-        } catch (error) {
-          console.error('DoorLoop sync error:', error);
-          // Continue with other integrations even if DoorLoop fails
-        }
-      }
-    }
+    // 2. (DoorLoop removed — property management now handled via TurboTenant CSV import)
 
     // 3. Sync ChittyRental data (if using ChittyOS rental service)
     const properties = await storage.getProperties?.(tenantId);

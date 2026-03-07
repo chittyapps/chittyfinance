@@ -915,7 +915,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         switch (platformId) {
           case "mercury_bank":
           case "wavapps":
-          case "doorloop":
           case "stripe":
           case "quickbooks":
           case "xero":
@@ -946,7 +945,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let recurringCharges;
 
         // Only test recurring charges on platforms that support it
-        if (["mercury_bank", "wavapps", "doorloop", "stripe", "quickbooks", "xero", "brex"].includes(platformId)) {
+        if (["mercury_bank", "wavapps", "stripe", "quickbooks", "xero", "brex"].includes(platformId)) {
           recurringCharges = await getRecurringCharges(user.id);
 
           results.tests.push({

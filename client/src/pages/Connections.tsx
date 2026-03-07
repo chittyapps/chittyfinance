@@ -42,15 +42,6 @@ const integrationConfigs = [
     requiresApproval: false,
     features: ['Payment processing', 'Subscription management', 'Customer portal'],
   },
-  {
-    type: 'doorloop',
-    name: 'DoorLoop',
-    description: 'Property management integration for rent collection and maintenance tracking',
-    icon: '🏠',
-    docsUrl: 'https://www.doorloop.com',
-    requiresApproval: false,
-    features: ['Rent roll', 'Maintenance requests', 'Lease management'],
-  },
 ];
 
 export default function Connections() {

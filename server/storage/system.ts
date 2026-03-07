@@ -478,4 +478,125 @@ export class SystemStorage {
       .returning();
     return row;
   }
+
+  // ── CONSOLIDATED REPORTING HELPERS ──
+
+  async getTenantDescendantIds(rootTenantId: string) {
+    const seen = new Set<string>();
+    const queue: string[] = [rootTenantId];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (seen.has(current)) continue;
+      seen.add(current);
+
+      const children = await this.db
+        .select({ id: schema.tenants.id })
+        .from(schema.tenants)
+        .where(eq(schema.tenants.parentId, current));
+
+      for (const child of children) {
+        if (!seen.has(child.id)) queue.push(child.id);
+      }
+    }
+
+    return Array.from(seen);
+  }
+
+  async getTenantsByIds(tenantIds: string[]) {
+    if (tenantIds.length === 0) return [];
+    return this.db
+      .select()
+      .from(schema.tenants)
+      .where(inArray(schema.tenants.id, tenantIds));
+  }
+
+  async getTransactionsForTenantScope(
+    tenantIds: string[],
+    startDateIso: string,
+    endDateIso: string,
+    entityTypes?: string[],
+  ) {
+    if (tenantIds.length === 0) return [];
+
+    const conditions = [
+      inArray(schema.transactions.tenantId, tenantIds),
+      sql`${schema.transactions.date} >= ${startDateIso}`,
+      sql`${schema.transactions.date} <= ${endDateIso}`,
+    ];
+
+    if (entityTypes && entityTypes.length > 0) {
+      conditions.push(inArray(schema.tenants.type, entityTypes));
+    }
+
+    return this.db
+      .select({
+        id: schema.transactions.id,
+        tenantId: schema.transactions.tenantId,
+        tenantName: schema.tenants.name,
+        tenantType: schema.tenants.type,
+        tenantMetadata: schema.tenants.metadata,
+        accountId: schema.transactions.accountId,
+        amount: schema.transactions.amount,
+        type: schema.transactions.type,
+        category: schema.transactions.category,
+        description: schema.transactions.description,
+        date: schema.transactions.date,
+        payee: schema.transactions.payee,
+        propertyId: schema.transactions.propertyId,
+        propertyState: schema.properties.state,
+        reconciled: schema.transactions.reconciled,
+        metadata: schema.transactions.metadata,
+      })
+      .from(schema.transactions)
+      .innerJoin(schema.tenants, eq(schema.transactions.tenantId, schema.tenants.id))
+      .leftJoin(schema.properties, eq(schema.transactions.propertyId, schema.properties.id))
+      .where(and(...conditions))
+      .orderBy(desc(schema.transactions.date));
+  }
+
+  async getAccountsForTenantScope(tenantIds: string[]) {
+    if (tenantIds.length === 0) return [];
+    return this.db
+      .select({
+        id: schema.accounts.id,
+        tenantId: schema.accounts.tenantId,
+        tenantName: schema.tenants.name,
+        tenantType: schema.tenants.type,
+        type: schema.accounts.type,
+        balance: schema.accounts.balance,
+        currency: schema.accounts.currency,
+      })
+      .from(schema.accounts)
+      .innerJoin(schema.tenants, eq(schema.accounts.tenantId, schema.tenants.id))
+      .where(inArray(schema.accounts.tenantId, tenantIds));
+  }
+
+  async getInternalIntercompanyLinkedTransactionIds(
+    tenantIds: string[],
+    startDateIso: string,
+    endDateIso: string,
+  ) {
+    if (tenantIds.length === 0) return new Set<string>();
+
+    const links = await this.db
+      .select({
+        fromTransactionId: schema.intercompanyTransactions.fromTransactionId,
+        toTransactionId: schema.intercompanyTransactions.toTransactionId,
+      })
+      .from(schema.intercompanyTransactions)
+      .where(and(
+        inArray(schema.intercompanyTransactions.fromTenantId, tenantIds),
+        inArray(schema.intercompanyTransactions.toTenantId, tenantIds),
+        sql`${schema.intercompanyTransactions.date} >= ${startDateIso}`,
+        sql`${schema.intercompanyTransactions.date} <= ${endDateIso}`,
+      ));
+
+    const ids = new Set<string>();
+    for (const row of links) {
+      if (row.fromTransactionId) ids.add(row.fromTransactionId);
+      if (row.toTransactionId) ids.add(row.toTransactionId);
+    }
+    return ids;
+  }
 }

@@ -1,9 +1,21 @@
 import { Bell, Search, Command } from "lucide-react";
 import { useRole } from "@/contexts/RoleContext";
+import { useLocation } from "wouter";
 import { TenantSwitcher } from "./TenantSwitcher";
+
+const PAGE_LABELS: Record<string, string> = {
+  '/': 'Portfolio',
+  '/dashboard': 'Dashboard',
+  '/connections': 'Connections',
+  '/admin': 'Admin',
+  '/settings': 'Settings',
+};
 
 export default function Header() {
   const { currentRole, roleConfig } = useRole();
+  const [location] = useLocation();
+  const pageLabel = PAGE_LABELS[location] || (location.startsWith('/properties/') ? 'Property Detail' : 'Overview');
+
   return (
     <header className="flex items-center h-14 px-4 border-b border-[hsl(var(--cf-border-subtle))] bg-[hsl(var(--cf-void))]">
       {/* Tenant Switcher / Breadcrumb */}
@@ -11,7 +23,7 @@ export default function Header() {
         <TenantSwitcher />
         <span className="text-[hsl(var(--cf-text-muted))]">/</span>
         <span className="text-sm text-[hsl(var(--cf-text-secondary))] truncate">
-          Overview
+          {pageLabel}
         </span>
       </div>
 
