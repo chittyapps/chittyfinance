@@ -1,0 +1,2 @@
+failed	5
+skipped	1

@@ -1,0 +1,3 @@
+# Add repo-specific literal secrets here (old==>new)
+# Example:
+# ghp_OLDTOKEN==>REMOVED_ROTATED_GH_PAT

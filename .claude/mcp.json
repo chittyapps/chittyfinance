@@ -6,9 +6,9 @@
       "args": [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "/Volumes/chitty"
+        "/Users/nb/Desktop/Projects/github.com/CHITTYAPPS/chittyfinance"
       ],
-      "description": "File system access for ChittyOS development volume"
+      "description": "File system access for the ChittyFinance repository"
     }
   }
 }

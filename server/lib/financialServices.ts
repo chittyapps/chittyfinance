@@ -136,12 +136,6 @@ export async function fetchWavAppsData(integration: Integration): Promise<Partia
   }
 }
 
-// TODO: Wire to DoorLoop property management API (real integration pending)
-export async function fetchDoorLoopData(_integration: Integration): Promise<Partial<FinancialData>> {
-  console.warn('DoorLoop integration not yet implemented — returning empty data');
-  return {};
-}
-
 // TODO: Wire to Stripe API for financial data (real integration exists in stripe.ts for payments)
 export async function fetchStripeData(_integration: Integration): Promise<Partial<FinancialData>> {
   console.warn('Stripe financial data fetch not yet implemented — returning empty data');
@@ -202,9 +196,6 @@ export async function getAggregatedFinancialData(integrations: Integration[]): P
         break;
       case 'wavapps':
         serviceData = await fetchWavAppsData(integration);
-        break;
-      case 'doorloop':
-        serviceData = await fetchDoorLoopData(integration);
         break;
       case 'stripe':
         serviceData = await fetchStripeData(integration);

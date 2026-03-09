@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { getCloudflareProxyCapabilities, invokeCloudflareProxy } from '../lib/chittyagent-cloudflare';
 
 export const integrationRoutes = new Hono<HonoEnv>();
 
@@ -62,4 +63,37 @@ integrationRoutes.patch('/api/integrations/:id', async (c) => {
   const body = await c.req.json();
   const updated = await storage.updateIntegration(id, body);
   return c.json(updated);
+});
+
+// GET /api/integrations/chittyagent/cloudflare/capabilities — list proxy capabilities + config checks
+integrationRoutes.get('/api/integrations/chittyagent/cloudflare/capabilities', async (c) => {
+  const capabilities = getCloudflareProxyCapabilities(c.env);
+  return c.json(capabilities);
+});
+
+// POST /api/integrations/chittyagent/cloudflare/execute — execute an audited Cloudflare operation through ChittyAgent proxy
+integrationRoutes.post('/api/integrations/chittyagent/cloudflare/execute', async (c) => {
+  const body = await c.req.json();
+
+  if (!body.operation || !body.action) {
+    return c.json({ error: 'operation and action are required' }, 400);
+  }
+  if (!body.intent || !body.rollbackNotes) {
+    return c.json({ error: 'intent and rollbackNotes are required' }, 400);
+  }
+
+  try {
+    const result = await invokeCloudflareProxy(c.env, {
+      operation: body.operation,
+      action: body.action,
+      payload: body.payload || {},
+      intent: body.intent,
+      rollbackNotes: body.rollbackNotes,
+    });
+    return c.json(result, result.ok ? 200 : 502);
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : 'Cloudflare proxy request failed',
+    }, 400);
+  }
 });

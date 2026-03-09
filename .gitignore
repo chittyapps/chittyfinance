@@ -3,7 +3,6 @@ dist
 .DS_Store
 server/public
 vite.config.ts.*
-*.tar.gz
 
 # Environment files with secrets
 .env
@@ -23,3 +22,22 @@ vite.config.ts.*
 *.db-shm
 *.db-wal
 migrations/
+
+# Chat agent (separate project, has its own node_modules)
+chat-agent/
+
+# Lockfile (using pnpm)
+package-lock.json
+
+# Large binary/archive files
+*.zip
+*.tar.gz
+
+# Replit artifacts
+.replit
+replit.md
+attached_assets/
+generated-icon.png
+
+# One-off patches and scripts
+*.patch

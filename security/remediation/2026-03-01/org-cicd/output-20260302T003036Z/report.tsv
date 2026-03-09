@@ -1,0 +1,7 @@
+owner	repo	default_branch	action	result	message
+chittyapps	<org-ruleset>		org-ruleset	dry-run	would create/update org ruleset
+chittyfoundation	<org-ruleset>		org-ruleset	dry-run	would create/update org ruleset
+chittyos	<org-ruleset>		org-ruleset	dry-run	would create/update org ruleset
+chitcommit	<org-ruleset>		org-ruleset	dry-run	would create/update org ruleset
+furnished-condos	<org-ruleset>		org-ruleset	dry-run	would create/update org ruleset
+chittycorp	<org-ruleset>		org-ruleset	dry-run	would create/update org ruleset

@@ -1,9 +1,8 @@
 import { Integration } from "@shared/schema";
 import { FinancialData } from "./financialServices";
-import { 
+import {
   fetchMercuryBankData,
   fetchWavAppsData,
-  fetchDoorLoopData,
   fetchStripeData,
   fetchQuickBooksData,
   fetchXeroData,
@@ -178,7 +177,6 @@ export async function transformToUniversalFormat(
 function getSourceFromTransactionId(id: string): string {
   if (id.startsWith('merc-')) return 'mercury_bank';
   if (id.startsWith('wavapps-')) return 'wavapps';
-  if (id.startsWith('doorloop-')) return 'doorloop';
   if (id.startsWith('stripe-')) return 'stripe';
   if (id.startsWith('qb-')) return 'quickbooks';
   if (id.startsWith('xero-')) return 'xero';
@@ -193,7 +191,6 @@ function getSourceFromTransactionId(id: string): string {
 function getSourceFromChargeId(id: string): string {
   if (id.startsWith('merc-charge-')) return 'mercury_bank';
   if (id.startsWith('wavapps-charge-')) return 'wavapps';
-  if (id.startsWith('doorloop-charge-')) return 'doorloop';
   if (id.startsWith('stripe-charge-')) return 'stripe';
   if (id.startsWith('qb-charge-')) return 'quickbooks';
   if (id.startsWith('xero-charge-')) return 'xero';

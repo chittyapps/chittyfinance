@@ -1,10 +1,9 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
-  BarChart3, ArrowLeftRight, FileText, Receipt,
-  Settings, Plug, Building2, Users, BookOpen, Calculator, Shield,
-  ChevronDown, ChevronRight, ChevronsUpDown, Wallet,
-  Menu, X, Activity
+  Settings, Plug, Building2, Shield,
+  ChevronDown, ChevronRight, ChevronsUpDown,
+  Menu, X, Activity, LayoutDashboard
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useRole, type UserRole } from "@/contexts/RoleContext";
@@ -21,14 +20,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Portfolio", icon: Building2, roles: ["cfo", "accountant", "bookkeeper", "user"] },
-  { href: "/accounts", label: "Accounts", icon: Wallet, roles: ["cfo", "accountant", "bookkeeper"] },
-  { href: "/transactions", label: "Transactions", icon: ArrowLeftRight, roles: ["cfo", "accountant", "bookkeeper", "user"] },
-  { href: "/reports", label: "Reports", icon: BarChart3, roles: ["cfo", "accountant"] },
-  { href: "/reconciliation", label: "Reconciliation", icon: Calculator, roles: ["accountant", "bookkeeper"] },
-  { href: "/invoices", label: "Invoices", icon: FileText, roles: ["cfo", "accountant", "bookkeeper"] },
-  { href: "/expenses", label: "Expenses", icon: Receipt, roles: ["user"] },
-  { href: "/journal", label: "Journal", icon: BookOpen, roles: ["accountant"] },
-  { href: "/team", label: "Team", icon: Users, roles: ["cfo"] },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["cfo", "accountant", "bookkeeper", "user"] },
   { href: "/connections", label: "Connections", icon: Plug, roles: ["cfo", "accountant"] },
   { href: "/admin", label: "Admin", icon: Shield, roles: ["cfo"] },
   { href: "/settings", label: "Settings", icon: Settings, roles: ["cfo", "accountant", "bookkeeper", "user"] },
@@ -196,7 +188,7 @@ export default function Sidebar() {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { currentRole } = useRole();
-  const { currentTenant, tenants, switchTenant, isSystemMode } = useTenant();
+  const { currentTenant, tenants, switchTenant } = useTenant();
   const [entityExpanded, setEntityExpanded] = useState(true);
 
   const entityTree = useMemo(() => buildEntityTree(tenants), [tenants]);

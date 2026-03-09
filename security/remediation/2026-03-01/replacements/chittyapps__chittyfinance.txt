@@ -1,0 +1,8 @@
+# chittyapps/chittyfinance replacements
+# Format: old==>new
+
+test-secret-key-for-github-actions-testing==>REMOVED_ROTATED_SESSION_SECRET
+
+test-secret-for-security-headers-check==>REMOVED_ROTATED_SESSION_SECRET
+
+0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef==>REMOVED_ROTATED_ENCRYPTION_KEY

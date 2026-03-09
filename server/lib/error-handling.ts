@@ -347,6 +347,5 @@ export const circuitBreakers = {
   mercury: new CircuitBreaker(5, 60000),
   wave: new CircuitBreaker(5, 60000),
   stripe: new CircuitBreaker(5, 60000),
-  doorloop: new CircuitBreaker(5, 60000),
   chittyConnect: new CircuitBreaker(3, 30000),
 };
