@@ -5,7 +5,6 @@
  */
 
 import { parse } from 'csv-parse/sync';
-import * as XLSX from 'xlsx';
 import { z } from 'zod';
 import { storage } from '../storage';
 import type { InsertTransaction } from '../../database/system.schema';
@@ -72,27 +71,14 @@ export function parseCSV(fileContent: string): TransactionImportRow[] {
 
 /**
  * Parse Excel file to transaction rows
+ * xlsx package removed due to unpatched high vulnerabilities (GHSA-4r6h-8v6p-xvw6, GHSA-5pgg-2g8v-p4x9).
+ * Convert .xlsx/.xls to CSV before importing.
  */
-export function parseExcel(fileBuffer: Buffer): TransactionImportRow[] {
-  const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-  const sheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[sheetName];
-  const records = XLSX.utils.sheet_to_json(worksheet);
-
-  return records.map((record: any) => ({
-    date: record.date || record.Date || record.DATE,
-    amount: record.amount || record.Amount || record.AMOUNT,
-    type: record.type || record.Type || record.TYPE,
-    description: record.description || record.Description || record.DESCRIPTION,
-    category: record.category || record.Category || record.CATEGORY,
-    accountId: record.accountId || record.account_id,
-    payee: record.payee || record.Payee || record.PAYEE,
-    externalId: record.externalId || record.external_id || record.id,
-    propertyId: record.propertyId || record.property_id,
-    unitId: record.unitId || record.unit_id,
-    reconciled: record.reconciled === true || record.reconciled === 'true' || record.reconciled === 1,
-    metadata: typeof record.metadata === 'object' ? record.metadata : undefined,
-  }));
+export function parseExcel(_fileBuffer: Buffer): TransactionImportRow[] {
+  throw new Error(
+    'Excel import is disabled due to a security vulnerability in the xlsx library. ' +
+    'Please convert your file to CSV and import that instead.'
+  );
 }
 
 /**
