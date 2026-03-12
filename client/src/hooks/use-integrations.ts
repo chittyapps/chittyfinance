@@ -74,18 +74,16 @@ export function useTurboTenantImport() {
   const qc = useQueryClient();
   const tenantId = useTenantId();
   return useMutation({
-    mutationFn: ({ file, accountId }: { file: File; accountId: string }) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      return fetch(`/api/import/turbotenant?tenantId=${tenantId}`, {
+    mutationFn: async ({ file, accountId }: { file: File; accountId: string }) => {
+      const csv = await file.text();
+      const res = await fetch(`/api/import/turbotenant?tenantId=${tenantId}`, {
         method: 'POST',
-        headers: { 'X-Account-ID': accountId },
-        body: formData,
+        headers: { 'X-Account-ID': accountId, 'Content-Type': 'text/csv' },
+        body: csv,
         credentials: 'include',
-      }).then(async (res) => {
-        if (!res.ok) throw new Error(await res.text());
-        return res.json();
       });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/api/transactions', tenantId] });
