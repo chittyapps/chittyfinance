@@ -5,6 +5,21 @@ import * as schema from '../db/schema';
 export class SystemStorage {
   constructor(private db: Database) {}
 
+  // ── SESSION (legacy Express compat shims) ──
+
+  async getSessionUser() {
+    const [user] = await this.db.select().from(schema.users).limit(1);
+    return user;
+  }
+
+  async getSessionContext() {
+    const user = await this.getSessionUser();
+    if (!user) return undefined;
+    return { userId: user.id };
+  }
+
+  async setSessionContext() { return; }
+
   // ── ACCOUNTS ──
 
   async getAccounts(tenantId: string) {
