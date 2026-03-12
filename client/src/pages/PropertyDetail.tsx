@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useRoute, useLocation } from 'wouter';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -5,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowLeft, DollarSign, TrendingUp, Users, BarChart3 } from 'lucide-react';
+import { ArrowLeft, DollarSign, TrendingUp, Users, BarChart3, Plus, Pencil } from 'lucide-react';
 import {
   useProperty, usePropertyUnits, usePropertyLeases,
   usePropertyFinancials,
@@ -14,11 +15,21 @@ import { formatCurrency } from '@/lib/utils';
 import RentRollTable from '@/components/property/RentRollTable';
 import PnLReport from '@/components/property/PnLReport';
 import ValuationTab from '@/components/property/ValuationTab';
+import AddUnitDialog from '@/components/property/AddUnitDialog';
+import AddLeaseDialog from '@/components/property/AddLeaseDialog';
+import EditPropertyDialog from '@/components/property/EditPropertyDialog';
+import WorkspaceTab from '@/components/property/WorkspaceTab';
+import CommsPanel from '@/components/property/CommsPanel';
+import WorkflowBoard from '@/components/property/WorkflowBoard';
 
 export default function PropertyDetail() {
   const [, params] = useRoute('/properties/:id');
   const id = params?.id;
   const [, navigate] = useLocation();
+
+  const [addUnitOpen, setAddUnitOpen] = useState(false);
+  const [addLeaseOpen, setAddLeaseOpen] = useState(false);
+  const [editPropertyOpen, setEditPropertyOpen] = useState(false);
 
   const { data: property, isLoading } = useProperty(id);
   const { data: units = [] } = usePropertyUnits(id);
@@ -62,14 +73,33 @@ export default function PropertyDetail() {
           </div>
           <p className="text-muted-foreground">{property.address}, {property.city} {property.state} {property.zip}</p>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => setEditPropertyOpen(true)}>
+            <Pencil className="h-4 w-4 mr-1" /> Edit
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setAddUnitOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Unit
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setAddLeaseOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Lease
+          </Button>
+        </div>
       </div>
 
+      {/* Dialogs */}
+      {id && <AddUnitDialog propertyId={id} open={addUnitOpen} onOpenChange={setAddUnitOpen} />}
+      {id && <AddLeaseDialog propertyId={id} open={addLeaseOpen} onOpenChange={setAddLeaseOpen} />}
+      {property && <EditPropertyDialog property={property} open={editPropertyOpen} onOpenChange={setEditPropertyOpen} />}
+
       <Tabs defaultValue="overview">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="rent-roll">Rent Roll</TabsTrigger>
           <TabsTrigger value="pnl">P&L</TabsTrigger>
           <TabsTrigger value="valuation">Valuation</TabsTrigger>
+          <TabsTrigger value="workspace">Workspace</TabsTrigger>
+          <TabsTrigger value="comms">Communications</TabsTrigger>
+          <TabsTrigger value="workflows">Workflows</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -174,6 +204,21 @@ export default function PropertyDetail() {
         {/* Valuation Tab */}
         <TabsContent value="valuation" className="mt-4">
           <ValuationTab propertyId={id!} />
+        </TabsContent>
+
+        {/* Workspace Tab (Google Calendar/Sheets/Drive) */}
+        <TabsContent value="workspace" className="mt-4">
+          <WorkspaceTab propertyId={id!} />
+        </TabsContent>
+
+        {/* Communications Tab */}
+        <TabsContent value="comms" className="mt-4">
+          <CommsPanel propertyId={id!} leases={leases} />
+        </TabsContent>
+
+        {/* Workflows Tab */}
+        <TabsContent value="workflows" className="mt-4">
+          <WorkflowBoard propertyId={id!} />
         </TabsContent>
       </Tabs>
     </div>

@@ -21,6 +21,17 @@ export interface Env {
   REDFIN_API_KEY?: string;
   HOUSECANARY_API_KEY?: string;
   ATTOM_API_KEY?: string;
+  // Google Workspace integration
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
+  // Twilio SMS
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+  TWILIO_PHONE_NUMBER?: string;
+  // SendGrid email
+  SENDGRID_API_KEY?: string;
+  SENDGRID_FROM_EMAIL?: string;
   MODE?: string;
   NODE_ENV?: string;
   APP_VERSION?: string;

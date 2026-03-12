@@ -26,6 +26,43 @@ accountRoutes.get('/api/accounts', async (c) => {
   })));
 });
 
+// POST /api/accounts — create any account type
+accountRoutes.post('/api/accounts', async (c) => {
+  const storage = c.get('storage');
+  const tenantId = c.get('tenantId');
+  const body = await c.req.json();
+
+  if (!body.name) return c.json({ error: 'name is required' }, 400);
+  if (!body.type) return c.json({ error: 'type is required' }, 400);
+
+  const VALID_TYPES = ['checking', 'savings', 'credit', 'investment', 'mortgage', 'loan', 'tax_liability'];
+  if (!VALID_TYPES.includes(body.type)) {
+    return c.json({ error: `Invalid type. Must be one of: ${VALID_TYPES.join(', ')}` }, 400);
+  }
+
+  const created = await storage.createAccount({
+    tenantId,
+    name: body.name,
+    type: body.type,
+    institution: body.institution || null,
+    accountNumber: body.accountNumber || null,
+    balance: body.balance ?? '0',
+    currency: body.currency || 'USD',
+    externalId: body.externalId || null,
+    liabilityDetails: body.liabilityDetails || null,
+    metadata: body.metadata || null,
+  });
+
+  return c.json({
+    id: created.id,
+    name: created.name,
+    type: created.type,
+    institution: created.institution || '',
+    balance: parseFloat(created.balance),
+    currency: created.currency,
+  }, 201);
+});
+
 // POST /api/accounts/liability — create or upsert a liability account
 accountRoutes.post('/api/accounts/liability', async (c) => {
   const storage = c.get('storage');

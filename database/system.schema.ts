@@ -303,3 +303,50 @@ export const aiMessages = pgTable('ai_messages', {
 export const insertAiMessageSchema = createInsertSchema(aiMessages);
 export type AiMessage = typeof aiMessages.$inferSelect;
 export type InsertAiMessage = z.infer<typeof insertAiMessageSchema>;
+
+// Communication log (SMS/email sent to tenants)
+export const commsLog = pgTable('comms_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  propertyId: uuid('property_id').references(() => properties.id),
+  recipientName: text('recipient_name').notNull(),
+  recipientContact: text('recipient_contact').notNull(), // phone or email
+  channel: text('channel').notNull(), // 'sms', 'email'
+  template: text('template'), // template name, if used
+  body: text('body').notNull(),
+  status: text('status').notNull().default('sent'), // 'sent', 'delivered', 'failed'
+  sentAt: timestamp('sent_at').notNull().defaultNow(),
+  metadata: jsonb('metadata'),
+}, (table) => ({
+  tenantIdx: index('comms_log_tenant_idx').on(table.tenantId),
+  propertyIdx: index('comms_log_property_idx').on(table.propertyId),
+  channelIdx: index('comms_log_channel_idx').on(table.channel),
+}));
+
+export const insertCommsLogSchema = createInsertSchema(commsLog);
+export type CommsLog = typeof commsLog.$inferSelect;
+export type InsertCommsLog = z.infer<typeof insertCommsLogSchema>;
+
+// Approval workflows (maintenance requests, expense approvals, vendor management)
+export const workflows = pgTable('workflows', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  propertyId: uuid('property_id').references(() => properties.id),
+  type: text('type').notNull(), // 'maintenance_request', 'expense_approval', 'vendor_dispatch'
+  title: text('title').notNull(),
+  description: text('description'),
+  requestor: text('requestor'), // name or userId
+  costEstimate: decimal('cost_estimate', { precision: 12, scale: 2 }),
+  status: text('status').notNull().default('requested'), // 'requested', 'approved', 'in_progress', 'completed', 'rejected'
+  metadata: jsonb('metadata'), // approvedBy, approvedAt, completedAt, vendor info, etc.
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  tenantIdx: index('workflows_tenant_idx').on(table.tenantId),
+  propertyIdx: index('workflows_property_idx').on(table.propertyId),
+  statusIdx: index('workflows_status_idx').on(table.status),
+}));
+
+export const insertWorkflowSchema = createInsertSchema(workflows);
+export type Workflow = typeof workflows.$inferSelect;
+export type InsertWorkflow = z.infer<typeof insertWorkflowSchema>;

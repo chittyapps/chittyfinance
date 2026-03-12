@@ -5,6 +5,21 @@ import * as schema from '../db/schema';
 export class SystemStorage {
   constructor(private db: Database) {}
 
+  // ── SESSION (legacy Express compat shims) ──
+
+  async getSessionUser() {
+    const [user] = await this.db.select().from(schema.users).limit(1);
+    return user;
+  }
+
+  async getSessionContext() {
+    const user = await this.getSessionUser();
+    if (!user) return undefined;
+    return { userId: user.id };
+  }
+
+  async setSessionContext() { return; }
+
   // ── ACCOUNTS ──
 
   async getAccounts(tenantId: string) {
@@ -89,6 +104,15 @@ export class SystemStorage {
 
   async createTransaction(data: typeof schema.transactions.$inferInsert) {
     const [row] = await this.db.insert(schema.transactions).values(data).returning();
+    return row;
+  }
+
+  async updateTransaction(id: string, tenantId: string, data: Partial<typeof schema.transactions.$inferInsert>) {
+    const [row] = await this.db
+      .update(schema.transactions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(schema.transactions.id, id), eq(schema.transactions.tenantId, tenantId)))
+      .returning();
     return row;
   }
 
@@ -598,5 +622,61 @@ export class SystemStorage {
       if (row.toTransactionId) ids.add(row.toTransactionId);
     }
     return ids;
+  }
+
+  // ── COMMS LOG ──
+
+  async createCommsLog(data: typeof schema.commsLog.$inferInsert) {
+    const [row] = await this.db.insert(schema.commsLog).values(data).returning();
+    return row;
+  }
+
+  async getCommsLog(tenantId: string, propertyId?: string) {
+    const conditions = [eq(schema.commsLog.tenantId, tenantId)];
+    if (propertyId) conditions.push(eq(schema.commsLog.propertyId, propertyId));
+    return this.db
+      .select()
+      .from(schema.commsLog)
+      .where(and(...conditions))
+      .orderBy(desc(schema.commsLog.sentAt));
+  }
+
+  // ── WORKFLOWS ──
+
+  async getWorkflows(tenantId: string, propertyId?: string) {
+    const conditions = [eq(schema.workflows.tenantId, tenantId)];
+    if (propertyId) conditions.push(eq(schema.workflows.propertyId, propertyId));
+    return this.db
+      .select()
+      .from(schema.workflows)
+      .where(and(...conditions))
+      .orderBy(desc(schema.workflows.createdAt));
+  }
+
+  async getWorkflow(id: string) {
+    const [row] = await this.db.select().from(schema.workflows).where(eq(schema.workflows.id, id));
+    return row;
+  }
+
+  async createWorkflow(data: typeof schema.workflows.$inferInsert) {
+    const [row] = await this.db.insert(schema.workflows).values(data).returning();
+    return row;
+  }
+
+  async updateWorkflow(id: string, data: Partial<typeof schema.workflows.$inferInsert>) {
+    // Merge metadata instead of overwriting
+    const existing = await this.getWorkflow(id);
+    if (!existing) return undefined;
+
+    const mergedMetadata = data.metadata
+      ? { ...(existing.metadata as Record<string, unknown> || {}), ...(data.metadata as Record<string, unknown>) }
+      : existing.metadata;
+
+    const [row] = await this.db
+      .update(schema.workflows)
+      .set({ ...data, metadata: mergedMetadata, updatedAt: new Date() })
+      .where(eq(schema.workflows.id, id))
+      .returning();
+    return row;
   }
 }

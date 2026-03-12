@@ -14,6 +14,10 @@ import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import Connections from "@/pages/Connections";
 import Dashboard from "@/pages/Dashboard";
+import Transactions from "@/pages/Transactions";
+import Accounts from "@/pages/Accounts";
+import Reports from "@/pages/Reports";
+import Integrations from "@/pages/Integrations";
 import { User } from "@shared/schema";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TenantProvider } from "@/contexts/TenantContext";
@@ -33,6 +37,10 @@ function Router() {
           <Switch>
             <Route path="/" component={Properties} />
             <Route path="/dashboard" component={Dashboard} />
+            <Route path="/transactions" component={Transactions} />
+            <Route path="/accounts" component={Accounts} />
+            <Route path="/reports" component={Reports} />
+            <Route path="/integrations" component={Integrations} />
             <Route path="/properties/:id" component={PropertyDetail} />
             <Route path="/connections" component={Connections} />
             <Route path="/admin" component={Admin} />
