@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useLocation } from 'wouter';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
@@ -11,7 +12,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Building2, DollarSign, TrendingUp, BarChart3, Users, Maximize2, X,
+  Building2, DollarSign, TrendingUp, BarChart3, Users, Maximize2, X, Plus, Pencil,
 } from 'lucide-react';
 import {
   useProperty, usePropertyUnits, usePropertyLeases, usePropertyFinancials,
@@ -21,6 +22,9 @@ import RentRollTable from '@/components/property/RentRollTable';
 import PnLReport from '@/components/property/PnLReport';
 import ValuationTab from '@/components/property/ValuationTab';
 import AIAdvisorTab from '@/components/property/AIAdvisorTab';
+import AddUnitDialog from '@/components/property/AddUnitDialog';
+import AddLeaseDialog from '@/components/property/AddLeaseDialog';
+import EditPropertyDialog from '@/components/property/EditPropertyDialog';
 
 interface PropertyDetailPanelProps {
   propertyId: string | null;
@@ -29,6 +33,9 @@ interface PropertyDetailPanelProps {
 
 export default function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanelProps) {
   const [, navigate] = useLocation();
+  const [addUnitOpen, setAddUnitOpen] = useState(false);
+  const [addLeaseOpen, setAddLeaseOpen] = useState(false);
+  const [editPropertyOpen, setEditPropertyOpen] = useState(false);
 
   const open = propertyId !== null;
   const { data: property, isLoading } = useProperty(propertyId ?? undefined);
@@ -94,6 +101,15 @@ export default function PropertyDetailPanel({ propertyId, onClose }: PropertyDet
                     </SheetDescription>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <Button variant="outline" size="sm" onClick={() => setEditPropertyOpen(true)}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setAddUnitOpen(true)}>
+                      <Plus className="h-3 w-3 mr-1" />Unit
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setAddLeaseOpen(true)}>
+                      <Plus className="h-3 w-3 mr-1" />Lease
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -293,6 +309,11 @@ export default function PropertyDetailPanel({ propertyId, onClose }: PropertyDet
                 </TabsContent>
               </Tabs>
             </div>
+
+            {/* Dialogs */}
+            {propertyId && <AddUnitDialog propertyId={propertyId} open={addUnitOpen} onOpenChange={setAddUnitOpen} />}
+            {propertyId && <AddLeaseDialog propertyId={propertyId} open={addLeaseOpen} onOpenChange={setAddLeaseOpen} />}
+            {property && <EditPropertyDialog property={property} open={editPropertyOpen} onOpenChange={setEditPropertyOpen} />}
           </>
         )}
       </SheetContent>

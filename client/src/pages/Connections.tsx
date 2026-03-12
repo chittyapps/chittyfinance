@@ -42,6 +42,15 @@ const integrationConfigs = [
     requiresApproval: false,
     features: ['Payment processing', 'Subscription management', 'Customer portal'],
   },
+  {
+    type: 'google',
+    name: 'Google Workspace',
+    description: 'Connect Google Calendar, Sheets, and Drive for property scheduling, maintenance logs, and document management',
+    icon: '📅',
+    docsUrl: 'https://developers.google.com/workspace',
+    requiresApproval: false,
+    features: ['Calendar scheduling', 'Maintenance spreadsheets', 'Document storage'],
+  },
 ];
 
 export default function Connections() {
@@ -57,9 +66,8 @@ export default function Connections() {
   // Check for OAuth callback success/error
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('wave') === 'connected') {
+    if (params.get('wave') === 'connected' || params.get('google') === 'connected') {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
-      // Clean up URL
       window.history.replaceState({}, '', '/connections');
     }
   }, [queryClient]);
@@ -113,14 +121,28 @@ export default function Connections() {
     return integrations.find(i => i.serviceType === type);
   };
 
+  const connectGoogle = async () => {
+    setConnectingType('google');
+    try {
+      const response = await fetch('/api/integrations/google/authorize');
+      const data: { authUrl?: string } = await response.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      }
+    } catch (error) {
+      console.error('Failed to start Google authorization:', error);
+      setConnectingType(null);
+    }
+  };
+
   const handleConnect = async (type: string) => {
     if (type === 'wavapps') {
       await connectWave();
+    } else if (type === 'google') {
+      await connectGoogle();
     } else if (type === 'mercury_bank') {
-      // Redirect to ChittyConnect
       window.location.href = '/connect';
     } else {
-      // For other integrations, show message
       alert(`${type} integration coming soon!`);
     }
   };
@@ -305,6 +327,18 @@ export default function Connections() {
               Stripe Dashboard
             </a>
             .
+          </p>
+          <p>
+            <strong>Google Workspace:</strong> Create OAuth credentials in the{' '}
+            <a
+              href="https://console.cloud.google.com/apis/credentials"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Google Cloud Console
+            </a>
+            . Enable Calendar, Sheets, and Drive APIs.
           </p>
         </CardContent>
       </Card>
