@@ -20,7 +20,8 @@ export interface RecurringCharge {
   category: string;
   recurring: boolean;
   nextChargeDate?: string;
-  subscriptionId?: string;
+  frequency: 'monthly' | 'quarterly' | 'annual' | 'irregular';
+  occurrences: number;
 }
 
 export interface OptimizationRecommendation {

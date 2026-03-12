@@ -151,7 +151,7 @@ export default function Integrations() {
         </div>
         {charges.length === 0 ? (
           <div className="cf-card p-6 text-center text-sm text-[hsl(var(--cf-text-muted))]">
-            No recurring charges detected. Connect integrations that support charge detection.
+            No recurring charges detected. Add transactions with payee info to enable pattern detection.
           </div>
         ) : (
           <div className="cf-card overflow-hidden">
@@ -160,6 +160,7 @@ export default function Integrations() {
                 <tr className="border-b border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text-muted))]">
                   <th className="text-left px-3 py-2 font-medium">Merchant</th>
                   <th className="text-left px-3 py-2 font-medium">Category</th>
+                  <th className="text-left px-3 py-2 font-medium">Frequency</th>
                   <th className="text-right px-3 py-2 font-medium">Amount</th>
                   <th className="text-left px-3 py-2 font-medium">Next Charge</th>
                 </tr>
@@ -167,8 +168,19 @@ export default function Integrations() {
               <tbody>
                 {charges.map(ch => (
                   <tr key={ch.id} className="border-b border-[hsl(var(--cf-border-subtle))] hover:bg-[hsl(var(--cf-raised))]">
-                    <td className="px-3 py-2 text-[hsl(var(--cf-text))] font-medium">{ch.merchantName}</td>
+                    <td className="px-3 py-2 text-[hsl(var(--cf-text))] font-medium">
+                      {ch.merchantName}
+                      <span className="ml-1.5 text-[10px] text-[hsl(var(--cf-text-muted))]">({ch.occurrences}x)</span>
+                    </td>
                     <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">{ch.category}</Badge></td>
+                    <td className="px-3 py-2">
+                      <Badge className={`text-[10px] ${
+                        ch.frequency === 'monthly' ? 'bg-blue-500/20 text-blue-400' :
+                        ch.frequency === 'quarterly' ? 'bg-violet-500/20 text-violet-400' :
+                        ch.frequency === 'annual' ? 'bg-emerald-500/20 text-emerald-400' :
+                        'bg-zinc-500/20 text-zinc-400'
+                      }`}>{ch.frequency}</Badge>
+                    </td>
                     <td className="px-3 py-2 text-right font-mono text-rose-400">{formatCurrency(ch.amount)}</td>
                     <td className="px-3 py-2 text-[hsl(var(--cf-text-secondary))]">{ch.nextChargeDate ? formatDate(ch.nextChargeDate) : '-'}</td>
                   </tr>
