@@ -1,19 +1,11 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
+import {
+  ROLE_CONFIGS,
+  type RoleConfig,
+  type UserRole,
+} from '@/lib/operating-model';
 
-export type UserRole = 'cfo' | 'accountant' | 'bookkeeper' | 'user';
-
-export interface RoleConfig {
-  id: UserRole;
-  label: string;
-  description: string;
-}
-
-export const ROLES: RoleConfig[] = [
-  { id: 'cfo', label: 'CFO', description: 'Executive overview across all entities' },
-  { id: 'accountant', label: 'Accountant', description: 'GL, reconciliation, and reporting' },
-  { id: 'bookkeeper', label: 'Bookkeeper', description: 'Transaction entry and categorization' },
-  { id: 'user', label: 'User', description: 'Personal expenses and approvals' },
-];
+export type { UserRole, RoleConfig } from '@/lib/operating-model';
 
 interface RoleContextValue {
   currentRole: UserRole;
@@ -29,7 +21,7 @@ const STORAGE_KEY = 'cf-current-role';
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [currentRole, setCurrentRoleState] = useState<UserRole>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved && ROLES.some(r => r.id === saved)) return saved as UserRole;
+    if (saved && ROLE_CONFIGS.some(r => r.id === saved)) return saved as UserRole;
     return 'cfo';
   });
 
@@ -38,10 +30,10 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, role);
   };
 
-  const roleConfig = ROLES.find(r => r.id === currentRole) || ROLES[0];
+  const roleConfig = ROLE_CONFIGS.find(r => r.id === currentRole) || ROLE_CONFIGS[0];
 
   return (
-    <RoleContext.Provider value={{ currentRole, setCurrentRole, roleConfig, roles: ROLES }}>
+    <RoleContext.Provider value={{ currentRole, setCurrentRole, roleConfig, roles: ROLE_CONFIGS }}>
       {children}
     </RoleContext.Provider>
   );

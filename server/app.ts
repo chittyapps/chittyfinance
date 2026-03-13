@@ -5,6 +5,7 @@ import type { HonoEnv } from './env';
 import type { MiddlewareHandler } from 'hono';
 import { errorHandler } from './middleware/error';
 import { serviceAuth } from './middleware/auth';
+import { callerContext } from './middleware/caller';
 import { tenantMiddleware } from './middleware/tenant';
 import { healthRoutes } from './routes/health';
 import { docRoutes } from './routes/docs';
@@ -41,8 +42,8 @@ const storageMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
   await next();
 };
 
-// Combined auth + tenant + storage middleware stack
-const protectedRoute: MiddlewareHandler<HonoEnv>[] = [serviceAuth, tenantMiddleware, storageMiddleware];
+const authAndContext: MiddlewareHandler<HonoEnv>[] = [serviceAuth, storageMiddleware, callerContext];
+const protectedRoute: MiddlewareHandler<HonoEnv>[] = [...authAndContext, tenantMiddleware];
 
 export function createApp() {
   const app = new Hono<HonoEnv>();
@@ -86,11 +87,13 @@ export function createApp() {
   // ── Protected API routes (auth + tenant + storage) ──
   // Register middleware for each protected path prefix
   const protectedPrefixes = [
-    '/api/accounts', '/api/transactions', '/api/tenants', '/api/properties',
+    '/api/accounts', '/api/transactions', '/api/properties',
     '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/ai', '/api/summary',
     '/api/mercury', '/api/github', '/api/charges', '/api/forensics', '/api/portfolio', '/api/import', '/api/reports',
     '/api/google', '/api/comms', '/api/workflows', '/mcp',
   ];
+  app.use('/api/tenants', ...authAndContext);
+  app.use('/api/tenants/*', ...authAndContext);
   for (const prefix of protectedPrefixes) {
     app.use(prefix, ...protectedRoute);
     app.use(`${prefix}/*`, ...protectedRoute);

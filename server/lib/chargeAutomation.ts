@@ -8,6 +8,7 @@ export interface ChargeDetails {
   category: string;
   recurring: boolean;
   nextChargeDate?: Date;
+  subscriptionId?: string;
   frequency: 'monthly' | 'quarterly' | 'annual' | 'irregular';
   occurrences: number;
 }
