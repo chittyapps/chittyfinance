@@ -88,6 +88,12 @@ function App() {
       });
   }, []);
 
+  const authContextValue = useMemo<AuthContextValue>(() => ({
+    user,
+    isAuthenticated: !!user,
+    isLoading: loading,
+  }), [user, loading]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-[hsl(var(--cf-void))]">
@@ -100,12 +106,6 @@ function App() {
       </div>
     );
   }
-
-  const authContextValue = useMemo<AuthContextValue>(() => ({
-    user,
-    isAuthenticated: !!user,
-    isLoading: loading,
-  }), [user, loading]);
 
   return (
     <QueryClientProvider client={queryClient}>

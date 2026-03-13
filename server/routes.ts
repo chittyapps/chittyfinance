@@ -2,9 +2,7 @@
 import express, { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-// Legacy Express shims — Hono middleware can't be used as Express middleware
-const chittyConnectAuth = (_req: any, _res: any, next: any) => next();
-const resolveTenant = (_req: any, _res: any, next: any) => next();
+import { createCallerContext, createTenantAccessResolver } from "./middleware/express-context";
 const serviceAuth = (_req: any, _res: any, next: any) => next();
 import { getServiceBase } from "./lib/registry";
 import { getServiceAuthHeader } from "./lib/chitty-connect";
@@ -57,6 +55,8 @@ import { toStringId } from "./lib/id-compat";
 import { transformToUniversalFormat } from "./lib/universal";
 // Legacy shims — original Hono middleware can't work as Express middleware
 const isAuthenticated = (_req: any, _res: any, next: any) => next();
+const chittyConnectAuth = createCallerContext(storage);
+const resolveTenant = createTenantAccessResolver(storage);
 
 const MODE = process.env.MODE || 'standalone';
 
@@ -149,16 +149,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Tenant endpoints (system mode only)
   if (MODE === 'system') {
     api.get("/tenants", chittyConnectAuth, async (req: Request, res: Response) => {
-      const userId = req.userId || (await storage.getSessionUser())?.id;
-      if (!userId) return res.status(401).json({ error: 'Authentication required' });
-      const tenants = await storage.getUserTenants(String(userId));
-      res.json(tenants);
+      const memberships = await storage.getUserTenants(String(req.userId));
+      res.json(
+        memberships.map((membership: any) => ({
+          ...membership.tenant,
+          role: membership.role,
+        })),
+      );
     });
 
     api.get("/tenants/:id", chittyConnectAuth, async (req: Request, res: Response) => {
+      const memberships = await storage.getUserTenants(String(req.userId));
+      const membership = memberships.find((item: any) => item.tenant.id === req.params.id);
+      if (!membership) return res.status(404).json({ error: 'Tenant not found' });
+
       const tenant = await storage.getTenant(req.params.id);
       if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
-      res.json(tenant);
+      res.json({
+        ...tenant,
+        role: membership.role,
+      });
     });
 
     api.get("/accounts", chittyConnectAuth, resolveTenant, async (req: Request, res: Response) => {
