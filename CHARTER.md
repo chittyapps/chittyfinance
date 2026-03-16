@@ -148,7 +148,7 @@ This charter is part of a synchronized documentation triad. Changes to shared fi
 
 ## Compliance
 
-- [ ] Service registered in ChittyRegistry
+- [x] Service registered in ChittyRegistry (did:chitty:REG-XE6835, 2026-02-22)
 - [x] Health endpoint operational at /health
 - [x] CLAUDE.md development guide present
 - [x] CHARTER.md present
