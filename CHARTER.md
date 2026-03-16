@@ -15,7 +15,7 @@ visibility: PUBLIC
 ## Classification
 - **Canonical URI**: `chittycanon://core/services/chittyfinance`
 - **Tier**: 3 (Service Layer)
-- **Organization**: CHITTYOS
+- **Organization**: CHITTYAPPS
 - **Domain**: finance.chitty.cc
 
 ## Mission
