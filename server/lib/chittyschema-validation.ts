@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * ChittySchema Integration for ChittyFinance
  * Validates financial data against centralized ChittyOS schema service
@@ -54,7 +54,7 @@ export async function validateWithChittySchema(
       }
     );
 
-    const result = await response.json();
+    const result = await response.json() as ValidationResult;
     return result;
   } catch (error) {
     console.error('ChittySchema validation error:', error);
@@ -84,7 +84,7 @@ export async function getEntityTypes(): Promise<EntityTypeInfo[]> {
       }
     );
 
-    const result = await response.json();
+    const result = await response.json() as { types?: EntityTypeInfo[] };
     return result.types || [];
   } catch (error) {
     console.error('ChittySchema entity types fetch error:', error);
@@ -110,11 +110,11 @@ export async function getSchemaDetails(entityType: string): Promise<EntityTypeIn
       }
     );
 
-    if (response.status === 404) {
+    if (!response.ok) {
       return null;
     }
 
-    const result = await response.json();
+    const result = await response.json() as EntityTypeInfo;
     return result;
   } catch (error) {
     console.error(`ChittySchema details fetch error for ${entityType}:`, error);

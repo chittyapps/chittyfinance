@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * Storage Helpers - Smart wrappers for multi-tenant storage access
  *
@@ -10,18 +10,25 @@ import type { Request } from 'express';
 import { storage } from '../storage';
 import { toStringId } from './id-compat';
 
+const store = storage as any;
+
+interface StorageRequest extends Request {
+  userId?: string | number;
+  tenantId?: string | number;
+}
+
 const MODE = process.env.MODE || 'standalone';
 
 /**
  * Get the appropriate storage context from a request
  */
-export function getStorageContext(req: Request): {
+export function getStorageContext(req: StorageRequest): {
   userId: string;
   tenantId: string;
   mode: 'standalone' | 'system';
 } {
   const mode = MODE === 'system' ? 'system' : 'standalone';
-  const userId = toStringId(req.userId || (req as any).userId || 1);
+  const userId = toStringId(req.userId || 1);
   const tenantId = toStringId(req.tenantId || userId); // In standalone, userId === tenantId
 
   return {
@@ -34,16 +41,16 @@ export function getStorageContext(req: Request): {
 /**
  * Get integrations for current user/tenant
  */
-export async function getIntegrations(req: Request) {
+export async function getIntegrations(req: StorageRequest) {
   const ctx = getStorageContext(req);
-  return storage.getIntegrations(ctx.tenantId);
+  return store.getIntegrations(ctx.tenantId);
 }
 
 /**
  * Get single integration
  */
 export async function getIntegration(req: Request, id: number | string) {
-  return storage.getIntegration(toStringId(id));
+  return store.getIntegration(toStringId(id));
 }
 
 /**
@@ -52,7 +59,7 @@ export async function getIntegration(req: Request, id: number | string) {
 export async function createIntegration(req: Request, data: any) {
   const ctx = getStorageContext(req);
 
-  return storage.createIntegration({
+  return store.createIntegration({
     ...data,
     tenantId: ctx.tenantId,
     userId: MODE === 'standalone' ? parseInt(ctx.userId, 10) : undefined,
@@ -63,7 +70,7 @@ export async function createIntegration(req: Request, data: any) {
  * Update integration
  */
 export async function updateIntegration(req: Request, id: number | string, data: any) {
-  return storage.updateIntegration(toStringId(id), data);
+  return store.updateIntegration(toStringId(id), data);
 }
 
 /**
@@ -71,14 +78,14 @@ export async function updateIntegration(req: Request, id: number | string, data:
  */
 export async function getTasks(req: Request, limit?: number) {
   const ctx = getStorageContext(req);
-  return storage.getTasks(ctx.tenantId, limit);
+  return store.getTasks(ctx.tenantId, limit);
 }
 
 /**
  * Get single task
  */
 export async function getTask(req: Request, id: number | string) {
-  return storage.getTask(toStringId(id));
+  return store.getTask(toStringId(id));
 }
 
 /**
@@ -87,7 +94,7 @@ export async function getTask(req: Request, id: number | string) {
 export async function createTask(req: Request, data: any) {
   const ctx = getStorageContext(req);
 
-  return storage.createTask({
+  return store.createTask({
     ...data,
     tenantId: ctx.tenantId,
     userId: MODE === 'standalone' ? parseInt(ctx.userId, 10) : ctx.userId,
@@ -98,7 +105,7 @@ export async function createTask(req: Request, data: any) {
  * Update task
  */
 export async function updateTask(req: Request, id: number | string, data: any) {
-  return storage.updateTask(toStringId(id), data);
+  return store.updateTask(toStringId(id), data);
 }
 
 /**
@@ -106,7 +113,7 @@ export async function updateTask(req: Request, id: number | string, data: any) {
  */
 export async function getAiMessages(req: Request, limit?: number) {
   const ctx = getStorageContext(req);
-  return storage.getAiMessages(ctx.tenantId, ctx.userId, limit);
+  return store.getAiMessages(ctx.tenantId, ctx.userId, limit);
 }
 
 /**
@@ -115,7 +122,7 @@ export async function getAiMessages(req: Request, limit?: number) {
 export async function createAiMessage(req: Request, data: any) {
   const ctx = getStorageContext(req);
 
-  return storage.createAiMessage({
+  return store.createAiMessage({
     ...data,
     tenantId: MODE === 'standalone' ? parseInt(ctx.tenantId, 10) : ctx.tenantId,
     userId: MODE === 'standalone' ? parseInt(ctx.userId, 10) : ctx.userId,
@@ -127,7 +134,7 @@ export async function createAiMessage(req: Request, data: any) {
  */
 export async function getTransactions(req: Request, limit?: number) {
   const ctx = getStorageContext(req);
-  return storage.getTransactions(ctx.tenantId, limit);
+  return store.getTransactions(ctx.tenantId, limit);
 }
 
 /**
@@ -136,7 +143,7 @@ export async function getTransactions(req: Request, limit?: number) {
 export async function createTransaction(req: Request, data: any) {
   const ctx = getStorageContext(req);
 
-  return storage.createTransaction({
+  return store.createTransaction({
     ...data,
     tenantId: MODE === 'standalone' ? parseInt(ctx.tenantId, 10) : ctx.tenantId,
     userId: MODE === 'standalone' ? parseInt(ctx.userId, 10) : undefined,
@@ -146,12 +153,12 @@ export async function createTransaction(req: Request, data: any) {
 /**
  * Get financial summary for current user/tenant
  */
-export async function getFinancialSummary(req: Request) {
+export async function getFinancialSummary(req: StorageRequest) {
   const ctx = getStorageContext(req);
 
-  if (!storage.getFinancialSummary) {
+  if (!store.getFinancialSummary) {
     return undefined; // System mode doesn't have this method
   }
 
-  return storage.getFinancialSummary(ctx.userId);
+  return store.getFinancialSummary(ctx.userId);
 }

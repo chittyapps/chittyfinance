@@ -1,0 +1,53 @@
+title = "ChittyFinance Gitleaks Configuration"
+
+[allowlist]
+  description = "Allowlisted patterns and paths"
+  paths = [
+    '''\.github/secret-catalog\.json''',
+    '''\.github/allowed-workflow-secrets\.txt''',
+    '''tests/.*\.test\.(js|ts)''',
+    '''__tests__/.*\.test\.(js|ts)''',
+    '''\.env\.example''',
+  ]
+
+[[rules]]
+  id = "neon-database-url"
+  description = "Neon Database URL"
+  regex = '''postgres(ql)?:\/\/[^:]+:[^@]+@[a-z0-9\-]+\.neon\.tech'''
+
+[[rules]]
+  id = "openai-api-key"
+  description = "OpenAI API Key"
+  regex = '''sk-[a-zA-Z0-9]{20,}'''
+
+[[rules]]
+  id = "stripe-secret-key"
+  description = "Stripe Secret Key"
+  regex = '''sk_(test|live)_[a-zA-Z0-9]{20,}'''
+
+[[rules]]
+  id = "stripe-webhook-secret"
+  description = "Stripe Webhook Secret"
+  regex = '''whsec_[a-zA-Z0-9]{20,}'''
+
+[[rules]]
+  id = "cloudflare-api-token"
+  description = "Cloudflare API Token"
+  regex = '''(?i)cloudflare[_\-]?api[_\-]?token\s*[:=]\s*["\']([a-zA-Z0-9_\-]{40,})'''
+  secretGroup = 1
+
+[[rules]]
+  id = "onepassword-token"
+  description = "1Password Service Account Token"
+  regex = '''ops_[a-zA-Z0-9_\-]{20,}'''
+
+[[rules]]
+  id = "github-token"
+  description = "GitHub Personal Access Token"
+  regex = '''ghp_[a-zA-Z0-9]{36,}'''
+
+[[rules]]
+  id = "wave-client-secret"
+  description = "Wave Client Secret"
+  regex = '''(?i)wave[_\-]?client[_\-]?secret\s*[:=]\s*["\']([^\s"\']{20,})'''
+  secretGroup = 1

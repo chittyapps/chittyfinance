@@ -1,0 +1,144 @@
+name: Register with ChittyRegister
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/registration/**'
+      - 'deploy/system-wrangler.toml'
+      - '.github/workflows/register.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: register-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Preflight Checks
+    runs-on: ubuntu-latest
+    outputs:
+      health_ok: ${{ steps.health.outputs.ok }}
+      status_ok: ${{ steps.status.outputs.ok }}
+    steps:
+      - name: Health endpoint
+        id: health
+        run: |
+          resp=$(curl -sf https://finance.chitty.cc/health 2>/dev/null || echo '{}')
+          status=$(echo "$resp" | jq -r '.status // empty')
+          if [ "$status" = "ok" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "Health check passed: $resp"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Health check failed: $resp"
+            exit 1
+          fi
+
+      - name: Status endpoint
+        id: status
+        run: |
+          resp=$(curl -sf https://finance.chitty.cc/api/v1/status 2>/dev/null || echo '{}')
+          version=$(echo "$resp" | jq -r '.version // empty')
+          mode=$(echo "$resp" | jq -r '.mode // empty')
+          if [ -n "$version" ] && [ "$mode" = "system" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "Status check passed: v${version} mode=${mode}"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Status check failed: $resp"
+            exit 1
+          fi
+
+  register:
+    name: Submit Registration
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate payload locally
+        run: |
+          set -euo pipefail
+          payload="deploy/registration/chittyfinance.registration.json"
+          if [ ! -f "$payload" ]; then
+            echo "::error::Payload not found: $payload"
+            exit 1
+          fi
+
+          # Validate required fields
+          for field in name description version endpoints schema security metadata; do
+            val=$(jq -r ".$field // empty" "$payload")
+            if [ -z "$val" ] || [ "$val" = "null" ]; then
+              echo "::error::Missing required field: $field"
+              exit 1
+            fi
+          done
+
+          # Validate /health and /api/v1/status in endpoints
+          for ep in "/health" "/api/v1/status"; do
+            if ! jq -e ".endpoints | index(\"$ep\")" "$payload" > /dev/null 2>&1; then
+              echo "::error::endpoints must include $ep"
+              exit 1
+            fi
+          done
+
+          # Validate schema.relationships exists
+          count=$(jq '.schema.relationships | length' "$payload")
+          if [ "$count" -lt 1 ]; then
+            echo "::error::schema.relationships must not be empty"
+            exit 1
+          fi
+
+          # Validate security.authentication enum
+          auth=$(jq -r '.security.authentication' "$payload")
+          case "$auth" in
+            jwt|oauth2|apikey) ;;
+            *) echo "::error::security.authentication must be jwt, oauth2, or apikey (got: $auth)"; exit 1 ;;
+          esac
+
+          echo "Payload validation passed"
+          jq '{name, version, endpoints_count: (.endpoints | length), entities: (.schema.entities | length), auth: .security.authentication}' "$payload"
+
+      - name: Submit to ChittyRegister
+        env:
+          CHITTY_REGISTER_TOKEN: ${{ secrets.CHITTY_REGISTER_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CHITTY_REGISTER_TOKEN:-}" ]; then
+            echo "::error::CHITTY_REGISTER_TOKEN secret not set. Add it via: gh secret set CHITTY_REGISTER_TOKEN"
+            exit 1
+          fi
+
+          echo "Submitting registration to https://register.chitty.cc/api/v1/register ..."
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            https://register.chitty.cc/api/v1/register \
+            -H "Authorization: Bearer $CHITTY_REGISTER_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data @deploy/registration/chittyfinance.registration.json)
+
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP $http_code"
+          echo "$body" | jq . 2>/dev/null || echo "$body"
+
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "Registration submitted successfully"
+          else
+            echo "::error::Registration failed with HTTP $http_code"
+            exit 1
+          fi
+
+      - name: Verify registration
+        env:
+          CHITTY_REGISTER_TOKEN: ${{ secrets.CHITTY_REGISTER_TOKEN }}
+        run: |
+          # Give the registry a moment to process
+          sleep 2
+          resp=$(curl -sS \
+            -H "Authorization: Bearer $CHITTY_REGISTER_TOKEN" \
+            https://register.chitty.cc/api/v1/services/chittyfinance 2>/dev/null || echo '{}')
+          echo "Registry entry:"
+          echo "$resp" | jq . 2>/dev/null || echo "$resp"

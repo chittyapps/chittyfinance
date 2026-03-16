@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * ChittyChronicle Integration for ChittyFinance
  * Sends all financial events to centralized audit trail
@@ -64,7 +64,7 @@ export async function logToChronicle(event: AuditEvent): Promise<ChronicleRespon
       }
     );
 
-    const result = await response.json();
+    const result = await response.json() as ChronicleResponse;
     return result;
   } catch (error) {
     console.error('ChittyChronicle logging error:', error);
@@ -346,12 +346,13 @@ async function logAPIAction(req: any, res: any, responseData: any): Promise<void
     return;
   }
 
-  const action = {
+  const actionMap: Record<string, string> = {
     POST: 'created',
     PUT: 'updated',
     PATCH: 'updated',
     DELETE: 'deleted',
-  }[req.method] || 'modified';
+  };
+  const action = actionMap[req.method] || 'modified';
 
   // Extract entity info from URL
   const urlParts = req.path.split('/').filter(Boolean);

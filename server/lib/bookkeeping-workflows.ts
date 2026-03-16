@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * Comprehensive Bookkeeping Workflows for ChittyFinance
  * Automated workflows for accounting, reconciliation, and reporting
@@ -11,6 +11,22 @@ import { storage } from '../storage';
 import { logToChronicle } from './chittychronicle-logging';
 import { reconcileAccount } from './reconciliation';
 import { categorizeTransaction } from './ml-categorization';
+
+// Cross-cutting storage access that works across both modes
+const store = storage as any;
+
+interface TransactionRecord {
+  id: string;
+  date: string | Date;
+  amount: string;
+  type: string;
+  description: string;
+  category?: string | null;
+  payee?: string | null;
+  externalId?: string | null;
+  accountId?: string;
+  tenantId?: string;
+}
 
 export interface BookkeepingWorkflow {
   id: string;
@@ -48,7 +64,7 @@ export async function runDailyBookkeeping(tenantId: string): Promise<{
 
   try {
     // 1. Sync Wave data
-    const waveIntegrations = await storage.listIntegrationsByService('wavapps');
+    const waveIntegrations = await store.listIntegrationsByService('wavapps');
     for (const integration of waveIntegrations) {
       if (integration.tenantId === tenantId && integration.connected) {
         const credentials = integration.credentials as any;
@@ -70,7 +86,7 @@ export async function runDailyBookkeeping(tenantId: string): Promise<{
     // 2. (DoorLoop removed — property management now handled via TurboTenant CSV import)
 
     // 3. Sync ChittyRental data (if using ChittyOS rental service)
-    const properties = await storage.getProperties?.(tenantId);
+    const properties = await store.getProperties?.(tenantId);
     if (properties) {
       const rentalClient = new ChittyRentalClient();
 
@@ -86,7 +102,7 @@ export async function runDailyBookkeeping(tenantId: string): Promise<{
     }
 
     // 4. Sync Stripe Connect data (connected accounts)
-    const stripeIntegrations = await storage.listIntegrationsByService('stripe');
+    const stripeIntegrations = await store.listIntegrationsByService('stripe');
     for (const integration of stripeIntegrations) {
       if (integration.tenantId === tenantId && integration.connected) {
         try {
@@ -109,9 +125,9 @@ export async function runDailyBookkeeping(tenantId: string): Promise<{
     }
 
     // 5. Auto-categorize uncategorized transactions
-    const allTransactions = await storage.getTransactions(tenantId);
+    const allTransactions: TransactionRecord[] = await store.getTransactions(tenantId);
     const uncategorized = allTransactions.filter(
-      t => !t.category || t.category === 'other_expense' || t.category === 'other_income'
+      (t: TransactionRecord) => !t.category || t.category === 'other_expense' || t.category === 'other_income'
     );
 
     for (const tx of uncategorized.slice(0, 50)) { // Limit to avoid rate limits
@@ -174,7 +190,7 @@ export async function runWeeklyReconciliation(tenantId: string): Promise<{
   };
 
   try {
-    const accounts = await storage.getAccounts?.(tenantId);
+    const accounts = await store.getAccounts?.(tenantId);
 
     if (!accounts) {
       return result;
@@ -254,20 +270,20 @@ export async function runMonthlyClose(tenantId: string, month: number, year: num
   const endDate = new Date(year, month, 0); // Last day of month
 
   // Get all transactions for the month
-  const allTransactions = await storage.getTransactions(tenantId);
-  const monthTransactions = allTransactions.filter(t => {
+  const allTransactions: TransactionRecord[] = await store.getTransactions(tenantId);
+  const monthTransactions = allTransactions.filter((t: TransactionRecord) => {
     const txDate = new Date(t.date);
     return txDate >= startDate && txDate <= endDate;
   });
 
   // Calculate profit & loss
   const revenue = monthTransactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    .filter((t: TransactionRecord) => t.type === 'income')
+    .reduce((sum: number, t: TransactionRecord) => sum + parseFloat(t.amount), 0);
 
   const expenses = monthTransactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + Math.abs(parseFloat(t.amount)), 0);
+    .filter((t: TransactionRecord) => t.type === 'expense')
+    .reduce((sum: number, t: TransactionRecord) => sum + Math.abs(parseFloat(t.amount)), 0);
 
   const profitLoss = {
     revenue,
@@ -276,12 +292,12 @@ export async function runMonthlyClose(tenantId: string, month: number, year: num
   };
 
   // Calculate balance sheet (simplified)
-  const accounts = await storage.getAccounts?.(tenantId);
+  const accounts: Array<{ type: string; balance: string; name: string }> | undefined = await store.getAccounts?.(tenantId);
   let assets = 0;
   let liabilities = 0;
 
   if (accounts) {
-    accounts.forEach(account => {
+    accounts.forEach((account: { type: string; balance: string }) => {
       if (account.type === 'checking' || account.type === 'savings' || account.type === 'investment') {
         assets += parseFloat(account.balance);
       } else if (account.type === 'credit') {
@@ -298,12 +314,12 @@ export async function runMonthlyClose(tenantId: string, month: number, year: num
 
   // Calculate tax summary
   const taxableIncome = monthTransactions
-    .filter(t => t.type === 'income' && !t.category?.includes('non_taxable'))
-    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    .filter((t: TransactionRecord) => t.type === 'income' && !t.category?.includes('non_taxable'))
+    .reduce((sum: number, t: TransactionRecord) => sum + parseFloat(t.amount), 0);
 
   const deductions = monthTransactions
-    .filter(t => t.type === 'expense' && t.category !== 'personal')
-    .reduce((sum, t) => sum + Math.abs(parseFloat(t.amount)), 0);
+    .filter((t: TransactionRecord) => t.type === 'expense' && t.category !== 'personal')
+    .reduce((sum: number, t: TransactionRecord) => sum + Math.abs(parseFloat(t.amount)), 0);
 
   // Sales tax (would calculate from transactions with tax metadata)
   const salesTax = 0;
@@ -362,20 +378,20 @@ export async function runQuarterlyTaxPrep(
   const endDate = new Date(year, startMonth + 3, 0);
 
   // Get all transactions for the quarter
-  const allTransactions = await storage.getTransactions(tenantId);
-  const quarterTransactions = allTransactions.filter(t => {
+  const allTransactions: TransactionRecord[] = await store.getTransactions(tenantId);
+  const quarterTransactions = allTransactions.filter((t: TransactionRecord) => {
     const txDate = new Date(t.date);
     return txDate >= startDate && txDate <= endDate;
   });
 
   // Calculate income and expenses
   const income = quarterTransactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    .filter((t: TransactionRecord) => t.type === 'income')
+    .reduce((sum: number, t: TransactionRecord) => sum + parseFloat(t.amount), 0);
 
   const expenses = quarterTransactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + Math.abs(parseFloat(t.amount)), 0);
+    .filter((t: TransactionRecord) => t.type === 'expense')
+    .reduce((sum: number, t: TransactionRecord) => sum + Math.abs(parseFloat(t.amount)), 0);
 
   const netIncome = income - expenses;
 
@@ -383,8 +399,8 @@ export async function runQuarterlyTaxPrep(
   const deductionMap = new Map<string, number>();
 
   quarterTransactions
-    .filter(t => t.type === 'expense')
-    .forEach(t => {
+    .filter((t: TransactionRecord) => t.type === 'expense')
+    .forEach((t: TransactionRecord) => {
       const category = t.category || 'other';
       deductionMap.set(category, (deductionMap.get(category) || 0) + Math.abs(parseFloat(t.amount)));
     });
@@ -453,20 +469,20 @@ export async function runYearEndClose(tenantId: string, year: number): Promise<{
   const endDate = new Date(year, 11, 31);
 
   // Get all transactions for the year
-  const allTransactions = await storage.getTransactions(tenantId);
-  const yearTransactions = allTransactions.filter(t => {
+  const allTransactions: TransactionRecord[] = await store.getTransactions(tenantId);
+  const yearTransactions = allTransactions.filter((t: TransactionRecord) => {
     const txDate = new Date(t.date);
     return txDate >= startDate && txDate <= endDate;
   });
 
   // Calculate annual totals
   const revenue = yearTransactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    .filter((t: TransactionRecord) => t.type === 'income')
+    .reduce((sum: number, t: TransactionRecord) => sum + parseFloat(t.amount), 0);
 
   const expenses = yearTransactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + Math.abs(parseFloat(t.amount)), 0);
+    .filter((t: TransactionRecord) => t.type === 'expense')
+    .reduce((sum: number, t: TransactionRecord) => sum + Math.abs(parseFloat(t.amount)), 0);
 
   const netIncome = revenue - expenses;
 

@@ -1,58 +1,89 @@
 {
   "name": "chittyfinance",
-  "canonicalUri": "chittycanon://core/services/chittyfinance",
-  "tier": 3,
-  "domain": "finance.chitty.cc",
   "description": "AI-powered financial operations for the ChittyOS ecosystem. Multi-tenant property management, Mercury/Wave/Stripe integrations, forensic accounting, valuation, and AI CFO assistant.",
   "version": "2.0.0",
   "endpoints": [
-    { "path": "/health", "method": "GET", "auth": false, "description": "Health check" },
-    { "path": "/api/v1/status", "method": "GET", "auth": false, "description": "Service status and mode" },
-    { "path": "/api/v1/metrics", "method": "GET", "auth": false, "description": "Service metrics" },
-    { "path": "/api/v1/documentation", "method": "GET", "auth": false, "description": "OpenAPI spec" },
-    { "path": "/api/tenants", "method": "GET", "auth": true, "description": "List tenants" },
-    { "path": "/api/accounts", "method": "GET", "auth": true, "description": "List accounts" },
-    { "path": "/api/transactions", "method": "GET", "auth": true, "description": "List transactions" },
-    { "path": "/api/summary", "method": "GET", "auth": true, "description": "Financial summary" },
-    { "path": "/api/properties", "method": "GET", "auth": true, "description": "List properties" },
-    { "path": "/api/properties/:id/financials", "method": "GET", "auth": true, "description": "Property financials" },
-    { "path": "/api/properties/:id/rent-roll", "method": "GET", "auth": true, "description": "Rent roll" },
-    { "path": "/api/properties/:id/pnl", "method": "GET", "auth": true, "description": "Property P&L" },
-    { "path": "/api/properties/:id/valuation", "method": "GET", "auth": true, "description": "Property valuation" },
-    { "path": "/api/portfolio/summary", "method": "GET", "auth": true, "description": "Portfolio summary" },
-    { "path": "/api/ai/property-advice", "method": "POST", "auth": true, "description": "AI property advisor" },
-    { "path": "/api/integrations/status", "method": "GET", "auth": true, "description": "Integration config status" },
-    { "path": "/api/mercury/accounts", "method": "GET", "auth": true, "description": "Mercury accounts via ChittyConnect" },
-    { "path": "/api/charges/recurring", "method": "GET", "auth": true, "description": "Recurring charges" },
-    { "path": "/api/forensics/investigations", "method": "GET", "auth": true, "description": "List investigations" },
-    { "path": "/api/import/turbotenant", "method": "POST", "auth": true, "description": "TurboTenant CSV import" },
-    { "path": "/api/import/wave-sync", "method": "POST", "auth": true, "description": "Wave sync import" }
+    "/health",
+    "/api/v1/status",
+    "/api/v1/metrics",
+    "/api/v1/documentation",
+    "/api/tenants",
+    "/api/accounts",
+    "/api/transactions",
+    "/api/summary",
+    "/api/properties",
+    "/api/properties/:id/financials",
+    "/api/properties/:id/rent-roll",
+    "/api/properties/:id/pnl",
+    "/api/properties/:id/valuation",
+    "/api/portfolio/summary",
+    "/api/ai/property-advice",
+    "/api/integrations/status",
+    "/api/mercury/accounts",
+    "/api/charges/recurring",
+    "/api/forensics/investigations",
+    "/api/import/turbotenant",
+    "/api/import/wave-sync"
   ],
   "schema": {
     "version": "2.0.0",
     "entities": [
-      "users", "tenants", "tenantUsers",
-      "accounts", "transactions", "intercompanyTransactions",
-      "properties", "units", "leases", "propertyValuations",
-      "integrations", "tasks", "aiMessages"
+      "users",
+      "tenants",
+      "tenantUsers",
+      "accounts",
+      "transactions",
+      "intercompanyTransactions",
+      "properties",
+      "units",
+      "leases",
+      "propertyValuations",
+      "integrations",
+      "tasks",
+      "aiMessages"
+    ],
+    "relationships": [
+      "tenants -> accounts",
+      "tenants -> properties",
+      "tenants -> transactions",
+      "tenants -> users (via tenantUsers)",
+      "properties -> units",
+      "properties -> leases",
+      "properties -> propertyValuations",
+      "users -> aiMessages",
+      "users -> tasks",
+      "accounts -> transactions",
+      "tenants -> intercompanyTransactions"
     ]
   },
-  "dependencies": [
-    { "service": "chittyconnect", "purpose": "Mercury Bank integration (static egress IP)" },
-    { "service": "chittyledger", "purpose": "Immutable audit trail for all mutations" },
-    { "service": "chittyagent", "purpose": "AI property advice (optional)" }
-  ],
   "security": {
-    "authentication": "bearer-token",
-    "encryption": "tls",
-    "tenantIsolation": true,
-    "headers": ["Authorization", "X-Tenant-ID"]
+    "authentication": "jwt",
+    "encryption": "tls"
   },
-  "infrastructure": {
+  "metadata": {
+    "maintainer": "chittyos-infrastructure",
+    "repository": "https://github.com/CHITTYAPPS/chittyfinance",
+    "documentation": "https://finance.chitty.cc/api/v1/documentation",
+    "canonicalUri": "chittycanon://core/services/chittyfinance",
+    "tier": 3,
+    "domain": "finance.chitty.cc",
+    "certifier": "chittycanon://core/services/chittycertify",
+    "contact": "finance@chitty.cc",
     "platform": "cloudflare-workers",
     "database": "neon-postgresql",
-    "kv": "FINANCE_KV",
-    "r2": "chittyfinance-storage",
-    "observability": true
+    "mode": "system",
+    "workerRoute": "finance.chitty.cc/*",
+    "bindings": {
+      "kv": "FINANCE_KV",
+      "r2": "chittyfinance-storage",
+      "durableObject": "ChittyAgent"
+    },
+    "dependencies": [
+      { "service": "chittyconnect", "type": "peer", "purpose": "Mercury Bank integration (static egress IP)", "required": false },
+      { "service": "chittyauth", "type": "upstream", "purpose": "Token validation", "required": true },
+      { "service": "chittyledger", "type": "peer", "purpose": "Immutable audit trail for all mutations", "required": false },
+      { "service": "chittyagent", "type": "peer", "purpose": "AI property advice", "required": false }
+    ],
+    "notes": "ChittyConnect configured=false is expected — Mercury Bank proxy is an optional peer dependency. Service operates fully without it."
   }
 }

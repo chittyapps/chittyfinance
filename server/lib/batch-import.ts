@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * Batch Import Module for ChittyFinance
  * Supports CSV, Excel, and JSON imports with validation and deduplication
@@ -7,7 +7,8 @@
 import { parse } from 'csv-parse/sync';
 import { z } from 'zod';
 import { storage } from '../storage';
-import type { InsertTransaction } from '../../database/system.schema';
+
+const store = storage as any;
 
 // Transaction import schema for validation
 const TransactionImportSchema = z.object({
@@ -130,7 +131,7 @@ async function findDuplicates(
   const duplicates = new Set<string>();
 
   // Get existing transactions for this tenant
-  const existing = await storage.getTransactions(tenantId);
+  const existing: Array<{ externalId?: string; id: string }> = await store.getTransactions(tenantId);
 
   // Create lookup maps
   const externalIdMap = new Map(
@@ -200,7 +201,7 @@ export async function importTransactions(
 
     for (const row of batch) {
       try {
-        const transaction: InsertTransaction = {
+        const transaction = {
           tenantId,
           accountId: row.accountId || defaultAccountId!,
           amount: row.amount.toString(),
@@ -216,7 +217,7 @@ export async function importTransactions(
           metadata: row.metadata,
         };
 
-        await storage.createTransaction(transaction);
+        await store.createTransaction(transaction);
         result.imported++;
       } catch (error) {
         result.errors.push({
