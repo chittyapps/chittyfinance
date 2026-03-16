@@ -1,0 +1,55 @@
+name: Governance Gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Workflow Secret Policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          ALLOWLIST=".github/allowed-workflow-secrets.txt"
+          if [ ! -f "$ALLOWLIST" ]; then
+            echo "::error::Missing $ALLOWLIST"
+            exit 1
+          fi
+          violations=0
+          for wf in .github/workflows/*.yml; do
+            while IFS= read -r secret; do
+              secret=$(echo "$secret" | xargs)
+              [ -z "$secret" ] && continue
+              [[ "$secret" == \#* ]] && continue
+              if ! grep -q "$secret" "$ALLOWLIST"; then
+                echo "::error file=$wf::Secret '$secret' referenced but not in allowlist"
+                violations=$((violations + 1))
+              fi
+            done < <(grep -oP 'secrets\.\K[A-Z_]+' "$wf" 2>/dev/null | sort -u || true)
+          done
+          if [ "$violations" -gt 0 ]; then
+            echo "::error::$violations secret policy violation(s) found"
+            exit 1
+          fi
+          echo "✅ All workflow secrets are allowlisted"
+
+      - name: Secret Scan (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+      - name: Dependency Audit
+        shell: bash
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm audit --audit-level=high || true
+          fi
+          echo "✅ Dependency audit complete"

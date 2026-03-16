@@ -1,0 +1,50 @@
+name: Adversarial Review Orchestrator
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    env:
+      REQUEST_REVIEWERS: ${{ vars.CHITTY_REQUEST_REVIEWERS || 'coderabbitai' }}
+      REVIEW_TAG_SEQUENCE: ${{ vars.CHITTY_REVIEW_TAG_SEQUENCE || '@coderabbitai review' }}
+    steps:
+      - name: Request Reviewer Agents
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reviewers = process.env.REQUEST_REVIEWERS.split(',').map(r => r.trim()).filter(Boolean);
+            if (reviewers.length > 0) {
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  reviewers,
+                });
+                console.log(`Requested reviewers: ${reviewers.join(', ')}`);
+              } catch (err) {
+                console.log(`Could not request reviewers: ${err.message}`);
+              }
+            }
+
+      - name: Trigger Bot Review Comments
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tags = process.env.REVIEW_TAG_SEQUENCE.split('||').map(t => t.trim());
+            const body = tags.join('\n\n') + '\n\nPlease evaluate:\n- Security implications\n- Credential exposure risk\n- Dependency supply chain concerns\n- Breaking API changes';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });

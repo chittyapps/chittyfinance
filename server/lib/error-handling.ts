@@ -1,10 +1,10 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * Error Handling and Retry Logic for ChittyFinance
  * Provides comprehensive error handling, retry mechanisms, and rate limit management
  */
 
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response as ExpressResponse, NextFunction } from 'express';
 
 // Custom error types
 export class APIError extends Error {
@@ -172,7 +172,7 @@ setInterval(() => {
  * Express middleware for rate limiting
  */
 export function rateLimitMiddleware(limiter: RateLimiter) {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: ExpressResponse, next: NextFunction) => {
     const key = req.ip || req.socket.remoteAddress || 'unknown';
     const result = await limiter.check(key);
 
@@ -192,7 +192,7 @@ export function rateLimitMiddleware(limiter: RateLimiter) {
 /**
  * Express error handling middleware
  */
-export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(err: Error, req: Request, res: ExpressResponse, _next: NextFunction) {
   console.error('Error:', err);
 
   // Handle known error types
@@ -233,8 +233,8 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
 /**
  * Wrapper for async route handlers
  */
-export function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) {
-  return (req: Request, res: Response, next: NextFunction) => {
+export function asyncHandler(fn: (req: Request, res: ExpressResponse, next: NextFunction) => Promise<any>) {
+  return (req: Request, res: ExpressResponse, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 }

@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * ChittyRental Integration for ChittyFinance
  * Property management, rent collection, maintenance tracking, and bookkeeping
@@ -7,6 +7,8 @@
 import { fetchWithRetry, IntegrationError } from './error-handling';
 import { storage } from '../storage';
 import { logToChronicle } from './chittychronicle-logging';
+
+const store = storage as any;
 
 const CHITTYRENTAL_BASE_URL = process.env.CHITTYRENTAL_URL || 'https://rental.chitty.cc';
 const CHITTYRENTAL_TOKEN = process.env.CHITTYRENTAL_TOKEN || process.env.CHITTY_AUTH_SERVICE_TOKEN;
@@ -152,7 +154,7 @@ export class ChittyRentalClient {
   private baseUrl: string;
   private token: string;
 
-  constructor(baseUrl: string = CHITTYRENTAL_BASE_URL, token: string = CHITTYRENTAL_TOKEN) {
+  constructor(baseUrl: string = CHITTYRENTAL_BASE_URL, token: string = CHITTYRENTAL_TOKEN || '') {
     this.baseUrl = baseUrl;
     this.token = token;
   }
@@ -317,11 +319,11 @@ export class ChittyRentalClient {
         for (const payment of payments) {
           if (payment.status === 'paid' && payment.paidDate) {
             // Check if already synced
-            const existing = await storage.getTransactions(tenantId);
+            const existing = await store.getTransactions(tenantId) as Array<{ externalId?: string }>;
             const alreadySynced = existing.some(t => t.externalId === payment.id);
 
             if (!alreadySynced) {
-              await storage.createTransaction({
+              await store.createTransaction({
                 tenantId,
                 accountId: 'rent-income-account', // Would map correctly
                 amount: payment.amount.toString(),
@@ -380,11 +382,11 @@ export class ChittyRentalClient {
     for (const expense of expenses) {
       try {
         // Check if already synced
-        const existing = await storage.getTransactions(tenantId);
+        const existing = await store.getTransactions(tenantId) as Array<{ externalId?: string }>;
         const alreadySynced = existing.some(t => t.externalId === expense.id);
 
         if (!alreadySynced) {
-          await storage.createTransaction({
+          await store.createTransaction({
             tenantId,
             accountId: 'property-expense-account',
             amount: (-expense.amount).toString(),

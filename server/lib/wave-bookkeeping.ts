@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * Enhanced Wave Bookkeeping Integration
  * Comprehensive bookkeeping features: invoices, bills, payments, tax tracking
@@ -8,6 +8,9 @@ import { WaveAPIClient, createWaveClient } from './wave-api';
 import { storage } from '../storage';
 import { logToChronicle } from './chittychronicle-logging';
 import { validateTransaction } from './chittyschema-validation';
+
+// Cast storage for cross-cutting calls that work across both modes
+const store = storage as any;
 
 export interface WaveInvoice {
   id: string;
@@ -90,7 +93,7 @@ export interface WaveVendor {
   };
 }
 
-export interface WaveAccount {
+export interface WaveBookkeepingAccount {
   id: string;
   name: string;
   type: string;
@@ -150,7 +153,7 @@ export class WaveBookkeepingClient extends WaveAPIClient {
   /**
    * Get all invoices with detailed information
    */
-  async getInvoices(businessId: string, options?: {
+  async getDetailedInvoices(businessId: string, options?: {
     status?: string;
     customerId?: string;
     startDate?: string;
@@ -312,7 +315,7 @@ export class WaveBookkeepingClient extends WaveAPIClient {
     const data = await this.graphql<{ invoiceCreate: { invoice: any } }>(mutation, { input });
 
     // Fetch full invoice details
-    const invoices = await this.getInvoices(businessId, {
+    const invoices = await this.getDetailedInvoices(businessId, {
       pageSize: 1,
     });
 
@@ -468,7 +471,7 @@ export class WaveBookkeepingClient extends WaveAPIClient {
   /**
    * Get chart of accounts
    */
-  async getAccounts(businessId: string): Promise<WaveAccount[]> {
+  async getBookkeepingAccounts(businessId: string): Promise<WaveBookkeepingAccount[]> {
     const query = `
       query GetAccounts($businessId: ID!) {
         business(id: $businessId) {
@@ -518,7 +521,7 @@ export class WaveBookkeepingClient extends WaveAPIClient {
     endDate: string
   ): Promise<BookkeepingReport['profitLoss']> {
     // Get invoices (revenue) and expenses
-    const invoices = await this.getInvoices(businessId, { startDate, endDate, status: 'PAID' });
+    const invoices = await this.getDetailedInvoices(businessId, { startDate, endDate, status: 'PAID' });
     const expenses = await this.getExpenses(businessId, 1, 200);
 
     // Filter expenses by date
@@ -566,13 +569,13 @@ export class WaveBookkeepingClient extends WaveAPIClient {
 
     try {
       // Sync invoices as income transactions
-      const invoices = await this.getInvoices(businessId, { status: 'PAID' });
+      const invoices = await this.getDetailedInvoices(businessId, { status: 'PAID' });
 
       for (const invoice of invoices) {
         try {
           // Check if already synced
-          const existing = await storage.getTransactions(tenantId);
-          const alreadySynced = existing.some(t => t.externalId === invoice.id);
+          const existing = await store.getTransactions(tenantId) as Array<{ externalId?: string }>;
+          const alreadySynced = existing.some((t: { externalId?: string }) => t.externalId === invoice.id);
 
           if (!alreadySynced) {
             const transactionData = {
@@ -604,7 +607,7 @@ export class WaveBookkeepingClient extends WaveAPIClient {
               console.warn(`ChittySchema validation unavailable for invoice ${invoice.id}:`, error);
             }
 
-            await storage.createTransaction(transactionData);
+            await store.createTransaction(transactionData);
             synced.invoices++;
           }
         } catch (error) {
@@ -617,8 +620,8 @@ export class WaveBookkeepingClient extends WaveAPIClient {
 
       for (const expense of expenses) {
         try {
-          const existing = await storage.getTransactions(tenantId);
-          const alreadySynced = existing.some(t => t.externalId === expense.id);
+          const existing = await store.getTransactions(tenantId) as Array<{ externalId?: string }>;
+          const alreadySynced = existing.some((t: { externalId?: string }) => t.externalId === expense.id);
 
           if (!alreadySynced) {
             const transactionData = {
@@ -634,7 +637,7 @@ export class WaveBookkeepingClient extends WaveAPIClient {
               reconciled: true,
               metadata: {
                 source: 'wave',
-                vendorId: expense.vendor?.id,
+                vendorName: expense.vendor?.name,
               },
             };
 
@@ -649,7 +652,7 @@ export class WaveBookkeepingClient extends WaveAPIClient {
               console.warn(`ChittySchema validation unavailable for expense ${expense.id}:`, error);
             }
 
-            await storage.createTransaction(transactionData);
+            await store.createTransaction(transactionData);
             synced.expenses++;
           }
         } catch (error) {

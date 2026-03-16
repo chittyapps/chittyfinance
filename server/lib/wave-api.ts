@@ -213,7 +213,7 @@ export class WaveAPIClient {
   /**
    * Execute GraphQL query
    */
-  private async graphql<T = any>(query: string, variables?: Record<string, any>): Promise<T> {
+  protected async graphql<T = any>(query: string, variables?: Record<string, any>): Promise<T> {
     if (!this.accessToken) {
       throw new Error('Wave API: Access token not set. Call setAccessToken() first.');
     }

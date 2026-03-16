@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 // Weekly token budget guard for OpenAI usage
 // Supports per-user persistent tracking via DB and a global in-memory fallback.
 import { db } from "../db";

@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * Reconciliation Module for ChittyFinance
  * Provides bank reconciliation and transaction matching functionality
@@ -6,6 +6,8 @@
 
 import { storage } from '../storage';
 import { logReconciliation } from './chittychronicle-logging';
+
+const store = storage as any;
 
 export interface ReconciliationMatch {
   internalTransaction: {
@@ -207,14 +209,15 @@ export async function reconcileAccount(
   endDate: Date
 ): Promise<ReconciliationSummary> {
   // Get internal transactions for the period
-  const allTransactions = await storage.getTransactions(tenantId);
+  interface StoredTransaction { id: string; date: string | Date; amount: string; description: string; externalId?: string | null; accountId?: string }
+  const allTransactions: StoredTransaction[] = await store.getTransactions(tenantId);
   const internalTransactions = allTransactions
-    .filter(t =>
+    .filter((t: StoredTransaction) =>
       t.accountId === accountId &&
       new Date(t.date) >= startDate &&
       new Date(t.date) <= endDate
     )
-    .map(t => ({
+    .map((t: StoredTransaction) => ({
       id: t.id,
       date: new Date(t.date),
       amount: parseFloat(t.amount),
@@ -238,7 +241,7 @@ export async function reconcileAccount(
   const difference = statementBalance - bookBalance;
 
   // Get account info
-  const account = await storage.getAccount(accountId);
+  const account = await store.getAccount(accountId, tenantId) as { name?: string } | undefined;
 
   return {
     accountId,

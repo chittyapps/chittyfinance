@@ -1,4 +1,4 @@
-// @ts-nocheck - TODO: Add proper types
+
 /**
  * Stripe Connect Integration for ChittyFinance
  * Access financial data from connected Stripe accounts
@@ -9,7 +9,7 @@ import { storage } from '../storage';
 import { logToChronicle } from './chittychronicle-logging';
 import { validateTransaction } from './chittyschema-validation';
 
-const STRIPE_API_VERSION: Stripe.LatestApiVersion = '2024-06-20' as any;
+const store = storage as any;
 
 export interface StripeConnectedAccount {
   id: string;
@@ -19,9 +19,7 @@ export interface StripeConnectedAccount {
     name?: string;
     url?: string;
   };
-  capabilities?: {
-    [key: string]: string;
-  };
+  capabilities?: Record<string, string | undefined>;
   chargesEnabled: boolean;
   payoutsEnabled: boolean;
   defaultCurrency: string;
@@ -42,7 +40,7 @@ export interface StripeTransaction {
   description: string;
   status: string;
   customer?: string;
-  metadata?: Record<string, string>;
+  metadata?: Record<string, string> | null;
 }
 
 /**
@@ -56,7 +54,7 @@ export class StripeConnectClient {
     if (!key) {
       throw new Error('STRIPE_SECRET_KEY is required');
     }
-    this.stripe = new Stripe(key, { apiVersion: STRIPE_API_VERSION });
+    this.stripe = new Stripe(key);
   }
 
   /**
@@ -73,7 +71,7 @@ export class StripeConnectClient {
         name: account.business_profile.name || undefined,
         url: account.business_profile.url || undefined,
       } : undefined,
-      capabilities: account.capabilities || {},
+      capabilities: (account.capabilities || {}) as Record<string, string | undefined>,
       chargesEnabled: account.charges_enabled || false,
       payoutsEnabled: account.payouts_enabled || false,
       defaultCurrency: account.default_currency || 'usd',
@@ -94,7 +92,7 @@ export class StripeConnectClient {
         name: account.business_profile.name || undefined,
         url: account.business_profile.url || undefined,
       } : undefined,
-      capabilities: account.capabilities || {},
+      capabilities: (account.capabilities || {}) as Record<string, string | undefined>,
       chargesEnabled: account.charges_enabled || false,
       payoutsEnabled: account.payouts_enabled || false,
       defaultCurrency: account.default_currency || 'usd',
@@ -317,7 +315,7 @@ export class StripeConnectClient {
       for (const transaction of transactions) {
         try {
           // Check if already synced
-          const existing = await storage.getTransactions(tenantId);
+          const existing: Array<{ externalId?: string }> = await store.getTransactions(tenantId);
           const alreadySynced = existing.some(
             t => t.externalId === `stripe-${transaction.type}-${transaction.id}`
           );
@@ -381,7 +379,7 @@ export class StripeConnectClient {
               console.warn(`ChittySchema validation unavailable for ${transaction.type} ${transaction.id}:`, error);
             }
 
-            await storage.createTransaction(transactionData);
+            await store.createTransaction(transactionData);
 
             synced++;
           }

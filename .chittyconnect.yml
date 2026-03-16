@@ -1,10 +1,12 @@
-# ChittyConnect Configuration for chittyfinance
+# ChittyConnect Configuration for ChittyFinance
+# @canon: chittycanon://core/services/chittyfinance
+
 service:
   name: chittyfinance
   display_name: ChittyFinance
   type: service
   tier: 3
-  organization: CHITTYOS
+  organization: CHITTYAPPS
   chitty_id: ${CHITTYFINANCE_SERVICE_ID}
   domains:
     production: finance.chitty.cc
@@ -12,6 +14,21 @@ service:
 onboarding:
   endpoint: https://get.chitty.cc/api/onboard
   provisions: [chitty_id, service_token, certificate, trust_chain]
+  context_consciousness:
+    enabled: true
+    session_binding: required
+  chittydna:
+    enabled: true
+    identity_lineage: required
+  memorycloude:
+    enabled: true
+    memory_policy: required
+  synthetic_entity:
+    type: person
+    classification: synthetic
+    authority_scope: least_privilege
+    access_scope: explicit_scopes_only
+    actor_binding: required
 
 auth:
   provider: chittyauth
@@ -27,7 +44,7 @@ secrets:
     production: op://ChittyOS/chittyfinance-prod
 
 github:
-  repository: chittyapps/chittyfinance
+  repository: CHITTYAPPS/chittyfinance
 
 monitoring:
   health:
