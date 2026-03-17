@@ -12,7 +12,7 @@ healthRoutes.get('/api/v1/status', (c) => {
   const mode = c.env.MODE || 'system';
   const nodeEnv = c.env.NODE_ENV || 'production';
   const dbConfigured = Boolean(c.env.DATABASE_URL);
-  const chittyConfigured = Boolean(c.env.CHITTYCONNECT_API_BASE && c.env.CHITTY_AUTH_SERVICE_TOKEN);
+  const chittyConfigured = Boolean(c.env.CHITTYCONNECT_API_BASE && (c.env.CHITTY_AUTH_SERVICE_TOKEN || c.env.CHITTYCONNECT_API_TOKEN));
 
   return c.json({
     name: 'ChittyFinance',
@@ -26,7 +26,7 @@ healthRoutes.get('/api/v1/status', (c) => {
 
 healthRoutes.get('/api/v1/metrics', (c) => {
   const dbConfigured = c.env.DATABASE_URL ? 1 : 0;
-  const chittyConfigured = (c.env.CHITTYCONNECT_API_BASE && c.env.CHITTY_AUTH_SERVICE_TOKEN) ? 1 : 0;
+  const chittyConfigured = (c.env.CHITTYCONNECT_API_BASE && (c.env.CHITTY_AUTH_SERVICE_TOKEN || c.env.CHITTYCONNECT_API_TOKEN)) ? 1 : 0;
   const lines = [
     '# HELP service_database_configured Database configured (1) or not (0)',
     '# TYPE service_database_configured gauge',
