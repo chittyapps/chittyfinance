@@ -126,19 +126,27 @@ jobs:
 
           if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
             echo "Registration submitted successfully"
+          elif [ "$http_code" = "400" ] && echo "$body" | jq -e '.errors[]? | select(. == "Service name already registered")' > /dev/null 2>&1; then
+            echo "Service already registered — verifying compliance instead"
           else
             echo "::error::Registration failed with HTTP $http_code"
             exit 1
           fi
 
-      - name: Verify registration
+      - name: Verify compliance
         env:
           CHITTY_REGISTER_TOKEN: ${{ secrets.CHITTY_REGISTER_TOKEN }}
         run: |
-          # Give the registry a moment to process
           sleep 2
           resp=$(curl -sS \
             -H "Authorization: Bearer $CHITTY_REGISTER_TOKEN" \
-            https://register.chitty.cc/api/v1/services/chittyfinance 2>/dev/null || echo '{}')
-          echo "Registry entry:"
-          echo "$resp" | jq . 2>/dev/null || echo "$resp"
+            https://register.chitty.cc/api/v1/compliance/chittyfinance 2>/dev/null || echo '{}')
+          echo "Compliance status:"
+          echo "$resp" | jq '{name, chitty_id, status, compliant, registeredAt, certificate: .certificate.certificate_id}' 2>/dev/null || echo "$resp"
+
+          compliant=$(echo "$resp" | jq -r '.compliant // false')
+          if [ "$compliant" = "true" ]; then
+            echo "Service is compliant"
+          else
+            echo "::warning::Service compliance check returned: $compliant"
+          fi
