@@ -21,18 +21,19 @@ routes = [
 MODE = "system"
 NODE_ENV = "production"
 APP_VERSION = "2.0.0"
+CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
 
 # Secrets (set with: wrangler secret put SECRET_NAME)
-# Run these commands to set secrets:
-# wrangler secret put DATABASE_URL
-# wrangler secret put OPENAI_API_KEY
-# wrangler secret put MERCURY_API_KEY
-# wrangler secret put WAVE_API_TOKEN
-# wrangler secret put STRIPE_SECRET_KEY
-# wrangler secret put CHITTY_ID_SERVICE_TOKEN
-# wrangler secret put CHITTY_AUTH_SERVICE_TOKEN
-# wrangler secret put JWT_SECRET
-# wrangler secret put AI_GATEWAY_ENDPOINT  # CF AI Gateway URL (optional)
+# Required:
+#   wrangler secret put DATABASE_URL            # Neon PostgreSQL connection string
+#   wrangler secret put CHITTY_AUTH_SERVICE_TOKEN # ChittyAuth service token (also used for ChittyConnect)
+#   wrangler secret put JWT_SECRET              # JWT signing secret
+# Integrations (optional):
+#   wrangler secret put OPENAI_API_KEY
+#   wrangler secret put STRIPE_SECRET_KEY
+#   wrangler secret put STRIPE_WEBHOOK_SECRET
+#   wrangler secret put WAVE_CLIENT_SECRET
+#   wrangler secret put CHITTYCONNECT_API_TOKEN  # If separate from CHITTY_AUTH_SERVICE_TOKEN
 
 [observability]
 enabled = true
