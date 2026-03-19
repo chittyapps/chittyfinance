@@ -18,6 +18,7 @@ import Transactions from "@/pages/Transactions";
 import Accounts from "@/pages/Accounts";
 import Reports from "@/pages/Reports";
 import Integrations from "@/pages/Integrations";
+import OrbitalConsole from "@/pages/OrbitalConsole";
 import { User } from "@shared/schema";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TenantProvider } from "@/contexts/TenantContext";
@@ -44,6 +45,7 @@ function Router() {
             <Route path="/properties/:id" component={PropertyDetail} />
             <Route path="/connections" component={Connections} />
             <Route path="/admin" component={Admin} />
+            <Route path="/orbital" component={OrbitalConsole} />
             <Route path="/settings" component={Settings} />
             <Route path="/login" component={Login} />
             <Route path="/connect-accounts" component={ConnectAccounts} />
