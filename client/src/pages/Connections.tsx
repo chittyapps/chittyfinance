@@ -6,6 +6,7 @@ import {
   ExternalLink, Loader2, Plug, RefreshCw, ShieldCheck, Unplug, Zap,
 } from 'lucide-react';
 import { useConnectionHealth, type ServiceHealth } from '@/hooks/use-connection-health';
+import { useToast } from '@/hooks/use-toast';
 
 /* ─── Types ─── */
 interface Integration {
@@ -373,58 +374,79 @@ function IntegrationCard({
 function StripeInlineActions() {
   const [amount, setAmount] = useState('2000');
   const [pending, setPending] = useState(false);
+  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const connect = async () => {
+    setFeedback(null);
     try {
       setPending(true);
       const r = await fetch('/api/integrations/stripe/connect', { method: 'POST' });
-      if (!r.ok) throw new Error('Stripe connect failed');
+      if (!r.ok) throw new Error(`Stripe connect failed (${r.status})`);
+      setFeedback({ ok: true, msg: 'Customer synced' });
+    } catch (err) {
+      console.error('Stripe connect:', err);
+      setFeedback({ ok: false, msg: err instanceof Error ? err.message : 'Connect failed' });
     } finally {
       setPending(false);
     }
   };
 
   const checkout = async () => {
+    setFeedback(null);
+    const cents = parseInt(amount, 10);
+    if (!Number.isFinite(cents) || cents < 50) {
+      setFeedback({ ok: false, msg: 'Amount must be at least 50 cents' });
+      return;
+    }
     try {
       setPending(true);
-      const cents = parseInt(amount, 10);
-      if (!Number.isFinite(cents) || cents < 50) return;
       const r = await fetch('/api/integrations/stripe/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ amountCents: cents, label: 'ChittyFinance Payment', purpose: 'test' }),
       });
-      if (!r.ok) throw new Error('Failed to create checkout');
+      if (!r.ok) throw new Error(`Checkout failed (${r.status})`);
       const data: { url?: string } = await r.json();
-      if (data.url) window.location.href = data.url;
+      if (!data.url) throw new Error('No checkout URL returned');
+      window.location.href = data.url;
+    } catch (err) {
+      console.error('Stripe checkout:', err);
+      setFeedback({ ok: false, msg: err instanceof Error ? err.message : 'Checkout failed' });
     } finally {
       setPending(false);
     }
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider mr-2">Quick Actions</p>
-      <input
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        placeholder="Cents"
-        className="w-20 h-7 px-2 rounded-md text-xs font-mono bg-[hsl(var(--cf-surface))] border border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text))] placeholder:text-[hsl(var(--cf-text-muted))] focus:border-[hsl(var(--cf-violet)/0.4)] focus:outline-none transition-colors"
-      />
-      <button
-        disabled={pending}
-        onClick={checkout}
-        className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[hsl(var(--cf-violet)/0.1)] text-[hsl(var(--cf-violet))] border border-[hsl(var(--cf-violet)/0.2)] hover:bg-[hsl(var(--cf-violet)/0.15)] disabled:opacity-40 transition-colors"
-      >
-        Checkout
-      </button>
-      <button
-        disabled={pending}
-        onClick={connect}
-        className="px-2.5 py-1 rounded-md text-[11px] font-medium text-[hsl(var(--cf-text-secondary))] border border-[hsl(var(--cf-border-subtle))] hover:bg-[hsl(var(--cf-raised))] disabled:opacity-40 transition-colors"
-      >
-        Sync Customer
-      </button>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider mr-2">Quick Actions</p>
+        <input
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="Cents"
+          className="w-20 h-7 px-2 rounded-md text-xs font-mono bg-[hsl(var(--cf-surface))] border border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text))] placeholder:text-[hsl(var(--cf-text-muted))] focus:border-[hsl(var(--cf-violet)/0.4)] focus:outline-none transition-colors"
+        />
+        <button
+          disabled={pending}
+          onClick={checkout}
+          className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[hsl(var(--cf-violet)/0.1)] text-[hsl(var(--cf-violet))] border border-[hsl(var(--cf-violet)/0.2)] hover:bg-[hsl(var(--cf-violet)/0.15)] disabled:opacity-40 transition-colors"
+        >
+          Checkout
+        </button>
+        <button
+          disabled={pending}
+          onClick={connect}
+          className="px-2.5 py-1 rounded-md text-[11px] font-medium text-[hsl(var(--cf-text-secondary))] border border-[hsl(var(--cf-border-subtle))] hover:bg-[hsl(var(--cf-raised))] disabled:opacity-40 transition-colors"
+        >
+          Sync Customer
+        </button>
+      </div>
+      {feedback && (
+        <p className={`text-[10px] font-mono ${feedback.ok ? 'text-[hsl(var(--cf-emerald))]' : 'text-[hsl(var(--cf-rose))]'}`}>
+          {feedback.msg}
+        </p>
+      )}
     </div>
   );
 }
@@ -433,6 +455,7 @@ function StripeInlineActions() {
 export default function Connections() {
   const [_] = useLocation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [connectingType, setConnectingType] = useState<string | null>(null);
 
   // Real health monitoring with auto-refresh
@@ -478,25 +501,38 @@ export default function Connections() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/status'] });
+      toast({ title: 'Integration disconnected' });
+    },
+    onError: () => {
+      toast({ title: 'Failed to disconnect', variant: 'destructive' });
     },
   });
 
   const handleConnect = async (type: string) => {
     setConnectingType(type);
     try {
-      if (type === 'wavapps') {
-        const response = await fetch('/api/integrations/wave/authorize');
+      if (type === 'wavapps' || type === 'google') {
+        const endpoint = type === 'wavapps'
+          ? '/api/integrations/wave/authorize'
+          : '/api/integrations/google/authorize';
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => null) as { message?: string } | null;
+          throw new Error(errBody?.message ?? `Authorization failed (${response.status})`);
+        }
         const data: { authUrl?: string } = await response.json();
-        if (data.authUrl) window.location.href = data.authUrl;
-      } else if (type === 'google') {
-        const response = await fetch('/api/integrations/google/authorize');
-        const data: { authUrl?: string } = await response.json();
-        if (data.authUrl) window.location.href = data.authUrl;
+        if (!data.authUrl) throw new Error('No authorization URL returned');
+        window.location.href = data.authUrl;
       } else if (type === 'mercury_bank') {
         window.location.href = '/connect';
       }
     } catch (error) {
       console.error(`Failed to start ${type} authorization:`, error);
+      toast({
+        title: 'Connection failed',
+        description: error instanceof Error ? error.message : 'Unable to start authorization',
+        variant: 'destructive',
+      });
     } finally {
       setConnectingType(null);
     }

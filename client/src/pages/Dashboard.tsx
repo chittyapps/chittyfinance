@@ -306,10 +306,16 @@ function AIQuickChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: q }),
       });
-      const data: { content: string } = r.ok ? await r.json() : { content: 'Unable to reach AI advisor.' };
+      if (!r.ok) {
+        console.error(`AI advisor: ${r.status} ${r.statusText}`);
+        setMessages((prev) => [...prev, { role: 'assistant', content: `AI advisor unavailable (${r.status}). Try again shortly.` }]);
+        return;
+      }
+      const data: { content: string } = await r.json();
       setMessages((prev) => [...prev, { role: 'assistant', content: data.content }]);
-    } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Connection error.' }]);
+    } catch (err) {
+      console.error('AI advisor error:', err);
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Unable to reach AI advisor. Check your connection.' }]);
     } finally {
       setPending(false);
     }
@@ -386,8 +392,8 @@ function OrbitalPreview() {
     if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
-      ctx.scale(dpr, dpr);
     }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const w = rect.width;
     const h = rect.height;

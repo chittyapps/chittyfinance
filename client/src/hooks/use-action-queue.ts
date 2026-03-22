@@ -37,27 +37,46 @@ const SEVERITY_ORDER: Record<ActionSeverity, number> = { critical: 0, warning: 1
 export function useActionQueue() {
   const tenantId = useTenantId();
 
-  const { data: portfolio } = usePortfolioSummary();
+  const { data: portfolio, isError: portfolioError } = usePortfolioSummary();
 
-  const { data: integrationStatus } = useQuery<Record<string, IntegrationStatus>>({
+  const { data: integrationStatus, isError: integrationError } = useQuery<Record<string, IntegrationStatus>>({
     queryKey: ['/api/integrations/status'],
     staleTime: 60_000,
   });
 
-  const now = new Date();
-  const { data: reportData } = useConsolidatedReport(
+  // Stable year bounds — recalculates only on mount
+  const yearBounds = useMemo(() => {
+    const y = new Date().getFullYear();
+    return { startDate: `${y}-01-01`, endDate: `${y}-12-31` };
+  }, []);
+
+  const { data: reportData, isError: reportError } = useConsolidatedReport(
     tenantId
       ? {
-          startDate: `${now.getFullYear()}-01-01`,
-          endDate: `${now.getFullYear()}-12-31`,
+          ...yearBounds,
           includeDescendants: true,
           includeIntercompany: false,
         }
       : null,
   );
 
+  const hasDataError = portfolioError || integrationError || reportError;
+
   const items = useMemo(() => {
     const queue: ActionItem[] = [];
+
+    // Surface data fetch failures so the dashboard doesn't show false "all clear"
+    if (hasDataError) {
+      queue.push({
+        id: 'data-fetch-error',
+        type: 'quality_issue',
+        severity: 'critical',
+        title: 'Unable to load action data',
+        detail: 'Some data sources failed to respond — action items may be incomplete',
+        actionLabel: 'Refresh',
+        actionHref: '/dashboard',
+      });
+    }
 
     // Use server-computed quality metrics from consolidated report
     // instead of fetching all transactions client-side
@@ -177,7 +196,7 @@ export function useActionQueue() {
 
     queue.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
     return queue;
-  }, [portfolio, integrationStatus, reportData]);
+  }, [portfolio, integrationStatus, reportData, hasDataError]);
 
   return {
     items,

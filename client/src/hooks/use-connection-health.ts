@@ -60,8 +60,11 @@ export function useConnectionHealth() {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/status'] });
       setAutoRefreshAttempted(false);
     },
-    onError: () => {
+    onError: (err) => {
+      console.error('Wave token refresh failed:', err);
+      // Latch to prevent tight loop, but reset after 60s to allow retry
       setAutoRefreshAttempted(true);
+      setTimeout(() => setAutoRefreshAttempted(false), 60_000);
     },
   });
 
