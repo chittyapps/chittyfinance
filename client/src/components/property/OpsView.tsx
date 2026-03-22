@@ -1,16 +1,13 @@
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Clock } from 'lucide-react';
+import { AlertCircle, Clock, DollarSign } from 'lucide-react';
 import type { Property } from '@/hooks/use-property';
 import { usePropertyRentRoll, usePropertyLeases } from '@/hooks/use-property';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
-const STATUS_STYLES: Record<string, string> = {
-  paid: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
-  partial: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
-  overdue: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
-  vacant: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
+  paid: { bg: 'hsl(var(--cf-emerald) / 0.1)', text: 'hsl(var(--cf-emerald))' },
+  partial: { bg: 'hsl(var(--cf-amber) / 0.1)', text: 'hsl(var(--cf-amber))' },
+  overdue: { bg: 'hsl(var(--cf-rose) / 0.1)', text: 'hsl(var(--cf-rose))' },
+  vacant: { bg: 'hsl(var(--cf-overlay))', text: 'hsl(var(--cf-text-muted))' },
 };
 
 function PropertyRentRollRows({ property }: { property: Property }) {
@@ -18,23 +15,29 @@ function PropertyRentRollRows({ property }: { property: Property }) {
 
   return (
     <>
-      {rentRoll.map((entry) => (
-        <TableRow key={`${property.id}-${entry.unitId}`}>
-          <TableCell className="font-medium">{property.name}</TableCell>
-          <TableCell>{entry.unitNumber}</TableCell>
-          <TableCell>{entry.tenantName || '\u2014'}</TableCell>
-          <TableCell className="text-right">{formatCurrency(entry.expectedRent)}</TableCell>
-          <TableCell className="text-right">{formatCurrency(entry.actualPaid)}</TableCell>
-          <TableCell>
-            <Badge variant="outline" className={STATUS_STYLES[entry.status] || ''}>
-              {entry.status}
-            </Badge>
-          </TableCell>
-          <TableCell className="text-muted-foreground">
-            {entry.leaseEnd ? formatDate(entry.leaseEnd) : '\u2014'}
-          </TableCell>
-        </TableRow>
-      ))}
+      {rentRoll.map((entry) => {
+        const style = STATUS_STYLES[entry.status] ?? STATUS_STYLES.vacant;
+        return (
+          <tr key={`${property.id}-${entry.unitId}`} className="border-b border-[hsl(var(--cf-border-subtle))] hover:bg-[hsl(var(--cf-raised))] transition-colors">
+            <td className="px-3 py-2 text-xs font-medium text-[hsl(var(--cf-text))]">{property.name}</td>
+            <td className="px-3 py-2 text-xs text-[hsl(var(--cf-text-secondary))] font-mono">{entry.unitNumber}</td>
+            <td className="px-3 py-2 text-xs text-[hsl(var(--cf-text-secondary))]">{entry.tenantName || '\u2014'}</td>
+            <td className="px-3 py-2 text-xs text-right font-mono text-[hsl(var(--cf-text))]">{formatCurrency(entry.expectedRent)}</td>
+            <td className="px-3 py-2 text-xs text-right font-mono text-[hsl(var(--cf-text))]">{formatCurrency(entry.actualPaid)}</td>
+            <td className="px-3 py-2">
+              <span
+                className="inline-flex px-1.5 py-0.5 rounded-sm text-[10px] font-semibold uppercase tracking-wider"
+                style={{ background: style.bg, color: style.text, border: `1px solid ${style.text}20` }}
+              >
+                {entry.status}
+              </span>
+            </td>
+            <td className="px-3 py-2 text-xs text-[hsl(var(--cf-text-muted))] font-mono">
+              {entry.leaseEnd ? formatDate(entry.leaseEnd) : '\u2014'}
+            </td>
+          </tr>
+        );
+      })}
     </>
   );
 }
@@ -44,26 +47,36 @@ function PropertyLeaseExpirations({ property }: { property: Property }) {
   const now = Date.now();
 
   const expiring = leases
-    .filter(l => l.status === 'active')
-    .map(l => ({ ...l, daysLeft: Math.ceil((new Date(l.endDate).getTime() - now) / 86400000) }))
-    .filter(l => l.daysLeft <= 90 && l.daysLeft > 0)
+    .filter((l) => l.status === 'active')
+    .map((l) => ({ ...l, daysLeft: Math.ceil((new Date(l.endDate).getTime() - now) / 86400000) }))
+    .filter((l) => l.daysLeft <= 90 && l.daysLeft > 0)
     .sort((a, b) => a.daysLeft - b.daysLeft);
 
   if (expiring.length === 0) return null;
 
   return (
     <>
-      {expiring.map(l => {
-        const urgency = l.daysLeft <= 30 ? 'text-red-600' : l.daysLeft <= 60 ? 'text-amber-600' : 'text-yellow-600';
+      {expiring.map((l) => {
+        const urgency =
+          l.daysLeft <= 30
+            ? 'var(--cf-rose)'
+            : l.daysLeft <= 60
+              ? 'var(--cf-amber)'
+              : 'var(--cf-lime-dim)';
         return (
-          <div key={l.id} className="flex items-center justify-between py-2 border-b last:border-0">
-            <div>
-              <span className="font-medium">{l.tenantName}</span>
-              <span className="text-muted-foreground text-sm ml-2">@ {property.name}</span>
+          <div
+            key={l.id}
+            className="flex items-center justify-between py-2.5 border-b border-[hsl(var(--cf-border-subtle))] last:border-b-0"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-[hsl(var(--cf-text))]">{l.tenantName}</span>
+              <span className="text-[10px] text-[hsl(var(--cf-text-muted))]">@ {property.name}</span>
             </div>
-            <div className={`flex items-center gap-1 text-sm font-medium ${urgency}`}>
-              <AlertCircle className="h-3.5 w-3.5" />
-              {l.daysLeft} days
+            <div className="flex items-center gap-1.5">
+              <AlertCircle className="w-3 h-3" style={{ color: `hsl(${urgency})` }} />
+              <span className="text-xs font-mono font-medium" style={{ color: `hsl(${urgency})` }}>
+                {l.daysLeft}d
+              </span>
             </div>
           </div>
         );
@@ -73,49 +86,61 @@ function PropertyLeaseExpirations({ property }: { property: Property }) {
 }
 
 export default function OpsView({ properties }: { properties: Property[] }) {
-  const active = properties.filter(p => p.isActive);
+  const active = properties.filter((p) => p.isActive);
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Rent Collection Status</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Property</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Tenant</TableHead>
-                <TableHead className="text-right">Expected</TableHead>
-                <TableHead className="text-right">Paid</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Lease Ends</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {active.map(p => (
+      {/* Rent Collection */}
+      <div className="cf-card overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-[hsl(var(--cf-border-subtle))]">
+          <DollarSign className="w-4 h-4 text-[hsl(var(--cf-lime))]" />
+          <span className="text-sm font-display font-semibold text-[hsl(var(--cf-text))]">Rent Collection Status</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text-muted))]">
+                <th className="text-left px-3 py-2 font-medium">Property</th>
+                <th className="text-left px-3 py-2 font-medium">Unit</th>
+                <th className="text-left px-3 py-2 font-medium">Tenant</th>
+                <th className="text-right px-3 py-2 font-medium">Expected</th>
+                <th className="text-right px-3 py-2 font-medium">Paid</th>
+                <th className="text-left px-3 py-2 font-medium">Status</th>
+                <th className="text-left px-3 py-2 font-medium">Lease Ends</th>
+              </tr>
+            </thead>
+            <tbody>
+              {active.map((p) => (
                 <PropertyRentRollRows key={p.id} property={p} />
               ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              {active.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-8 text-center text-[hsl(var(--cf-text-muted))]">
+                    No active properties
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Clock className="h-4 w-4" />
-            Upcoming Lease Expirations (90 days)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {active.map(p => (
+      {/* Lease Expirations */}
+      <div className="cf-card overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-[hsl(var(--cf-border-subtle))]">
+          <Clock className="w-4 h-4 text-[hsl(var(--cf-amber))]" />
+          <span className="text-sm font-display font-semibold text-[hsl(var(--cf-text))]">Upcoming Lease Expirations</span>
+          <span className="text-[10px] text-[hsl(var(--cf-text-muted))] ml-auto font-mono">90-day window</span>
+        </div>
+        <div className="p-4">
+          {active.map((p) => (
             <PropertyLeaseExpirations key={p.id} property={p} />
           ))}
-        </CardContent>
-      </Card>
+          {active.length === 0 && (
+            <p className="text-xs text-[hsl(var(--cf-text-muted))] text-center py-6">No active properties</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
