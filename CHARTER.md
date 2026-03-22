@@ -2,8 +2,8 @@
 uri: chittycanon://docs/ops/policy/chittyfinance-charter
 namespace: chittycanon://docs/ops
 type: policy
-version: 1.1.0
-status: CERTIFIED
+version: 2.0.0
+status: COMPATIBLE
 registered_with: chittycanon://core/services/canon
 title: ChittyFinance Charter
 certifier: chittycanon://core/services/chittycertify
@@ -158,4 +158,4 @@ This charter is part of a synchronized documentation triad. Changes to shared fi
 - [x] Multi-tenant data isolation
 
 ---
-*Charter Version: 1.1.0 | Last Updated: 2026-02-23*
+*Charter Version: 2.0.0 | Last Updated: 2026-03-22*
