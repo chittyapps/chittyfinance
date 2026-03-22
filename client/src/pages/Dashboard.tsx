@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight,
-  Building2, CheckCircle2, ChevronRight, Loader2, RefreshCw,
+  Building2, CheckCircle2, ChevronRight, Loader2, Orbit, RefreshCw,
   Send, ShieldAlert, Sparkles, Users, XCircle,
 } from 'lucide-react';
 import { useTenant, useTenantId } from '@/contexts/TenantContext';
@@ -361,6 +361,116 @@ function AIQuickChat() {
   );
 }
 
+// ─── Orbital Preview Widget ───
+const ORBIT_BODIES = [
+  { r: 0, size: 5, color: '#FFD700', speed: 0, label: 'ICBE' },
+  { r: 32, size: 3, color: '#818CF8', speed: 0.8, label: 'JAV' },
+  { r: 52, size: 4, color: '#F97316', speed: 0.5, label: 'ARIBIA' },
+  { r: 68, size: 2.5, color: '#2DD4BF', speed: 1.2, label: 'MGMT' },
+  { r: 80, size: 2.5, color: '#38BDF8', speed: 0.9, label: 'CITY' },
+  { r: 90, size: 2.5, color: '#A78BFA', speed: 0.7, label: 'ARLENE' },
+] as const;
+
+function OrbitalPreview() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef(0);
+
+  const draw = useCallback((time: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+    }
+
+    const w = rect.width;
+    const h = rect.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const scale = Math.min(w, h) / 200;
+    const t = time / 1000;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw orbit paths
+    for (const body of ORBIT_BODIES) {
+      if (body.r === 0) continue;
+      ctx.beginPath();
+      ctx.arc(cx, cy, body.r * scale, 0, Math.PI * 2);
+      ctx.strokeStyle = 'hsla(240, 4%, 16%, 0.4)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    // Draw bodies
+    for (const body of ORBIT_BODIES) {
+      const angle = t * body.speed;
+      const x = cx + Math.cos(angle) * body.r * scale;
+      const y = cy + Math.sin(angle) * body.r * scale;
+      const size = body.size * scale * 0.5;
+
+      // Glow
+      ctx.beginPath();
+      ctx.arc(x, y, size * 2.5, 0, Math.PI * 2);
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, size * 2.5);
+      glow.addColorStop(0, body.color + '30');
+      glow.addColorStop(1, body.color + '00');
+      ctx.fillStyle = glow;
+      ctx.fill();
+
+      // Body
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fillStyle = body.color;
+      ctx.fill();
+    }
+
+    animRef.current = requestAnimationFrame(draw);
+  }, []);
+
+  useEffect(() => {
+    animRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [draw]);
+
+  return (
+    <Link href="/orbital">
+      <div className="cf-card cf-card-glow cursor-pointer animate-slide-up group" style={{ animationDelay: '280ms' }}>
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+          <Orbit className="w-3.5 h-3.5 text-[hsl(var(--cf-lime))]" />
+          <span className="text-sm font-display font-semibold text-[hsl(var(--cf-text))]">Orbital Console</span>
+          <span className="ml-auto text-[11px] text-[hsl(var(--cf-lime))] opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+            Open <ChevronRight className="w-3 h-3" />
+          </span>
+        </div>
+        <canvas
+          ref={canvasRef}
+          className="w-full"
+          style={{ height: 140 }}
+        />
+        <div className="px-4 pb-3 flex items-center justify-between">
+          <span className="text-[10px] text-[hsl(var(--cf-text-muted))]">Entity hierarchy visualization</span>
+          <div className="flex -space-x-1">
+            {ORBIT_BODIES.slice(0, 5).map((b) => (
+              <span
+                key={b.label}
+                className="w-2.5 h-2.5 rounded-full border border-[hsl(var(--cf-surface))]"
+                style={{ background: b.color }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 // ─── Dashboard ───
 export default function Dashboard() {
   const tenantId = useTenantId();
@@ -477,10 +587,11 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Right column: health + connections */}
+        {/* Right column: health + connections + orbital */}
         <div className="space-y-5">
           <DataHealth />
           <ConnectionPulse />
+          <OrbitalPreview />
         </div>
       </div>
 

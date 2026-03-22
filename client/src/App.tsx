@@ -2,7 +2,7 @@ import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { createContext, useEffect, useMemo, useState } from "react";
+import { createContext, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
@@ -18,7 +18,9 @@ import Transactions from "@/pages/Transactions";
 import Accounts from "@/pages/Accounts";
 import Reports from "@/pages/Reports";
 import Integrations from "@/pages/Integrations";
-import OrbitalConsole from "@/pages/OrbitalConsole";
+
+// Lazy-load the Orbital Console (57KB + physics sim + canvas rendering)
+const OrbitalConsole = lazy(() => import("@/pages/OrbitalConsole"));
 import { User } from "@shared/schema";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TenantProvider } from "@/contexts/TenantContext";
@@ -45,7 +47,18 @@ function Router() {
             <Route path="/properties/:id" component={PropertyDetail} />
             <Route path="/connections" component={Connections} />
             <Route path="/admin" component={Admin} />
-            <Route path="/orbital" component={OrbitalConsole} />
+            <Route path="/orbital">
+              <Suspense fallback={
+                <div className="flex items-center justify-center h-full bg-[hsl(var(--cf-void))]">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 rounded-full border-2 border-[hsl(var(--cf-lime)/0.3)] border-t-[hsl(var(--cf-lime))] animate-spin" />
+                    <span className="text-xs text-[hsl(var(--cf-text-muted))] font-mono">Loading Orbital Console...</span>
+                  </div>
+                </div>
+              }>
+                <OrbitalConsole />
+              </Suspense>
+            </Route>
             <Route path="/settings" component={Settings} />
             <Route path="/login" component={Login} />
             <Route path="/connect-accounts" component={ConnectAccounts} />
