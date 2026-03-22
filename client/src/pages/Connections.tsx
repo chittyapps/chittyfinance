@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Cable, ChevronDown, ChevronRight, ExternalLink, Loader2, Plug,
-  RefreshCw, ShieldCheck, Unplug, Zap,
+  AlertTriangle, Cable, CheckCircle2, ChevronDown, ChevronRight,
+  ExternalLink, Loader2, Plug, RefreshCw, ShieldCheck, Unplug, Zap,
 } from 'lucide-react';
+import { useConnectionHealth, type ServiceHealth } from '@/hooks/use-connection-health';
 
 /* ─── Types ─── */
 interface Integration {
@@ -92,24 +93,17 @@ function ServiceMark({ shortName, color, connected }: { shortName: string; color
       <div
         className="w-11 h-11 rounded-lg flex items-center justify-center text-sm font-display font-bold tracking-tight transition-all duration-300"
         style={{
-          background: connected
-            ? `hsl(${color} / 0.12)`
-            : 'hsl(var(--cf-raised))',
+          background: connected ? `hsl(${color} / 0.12)` : 'hsl(var(--cf-raised))',
           border: `1px solid hsl(${connected ? `${color} / 0.25` : 'var(--cf-border-subtle)'})`,
-          color: connected
-            ? `hsl(${color})`
-            : 'hsl(var(--cf-text-muted))',
+          color: connected ? `hsl(${color})` : 'hsl(var(--cf-text-muted))',
         }}
       >
         {shortName}
       </div>
-      {/* Status dot */}
       <span
         className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[hsl(var(--cf-surface))] transition-colors duration-300"
         style={{
-          background: connected
-            ? `hsl(${color})`
-            : 'hsl(var(--cf-text-muted))',
+          background: connected ? `hsl(${color})` : 'hsl(var(--cf-text-muted))',
           boxShadow: connected ? `0 0 8px hsl(${color} / 0.5)` : 'none',
         }}
       />
@@ -117,11 +111,61 @@ function ServiceMark({ shortName, color, connected }: { shortName: string; color
   );
 }
 
+/* ─── Health Badge ─── */
+function HealthBadge({ health }: { health: ServiceHealth | undefined }) {
+  if (!health) return null;
+
+  // Token expiry warning for Wave
+  if (health.tokenExpiresAt) {
+    const expiresIn = health.tokenExpiresAt - Date.now();
+    const minutes = Math.floor(expiresIn / 60_000);
+    if (expiresIn > 0 && minutes < 30) {
+      return (
+        <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--cf-amber))] font-mono">
+          <AlertTriangle className="w-3 h-3" />
+          token expires in {minutes}m
+        </span>
+      );
+    }
+    if (expiresIn <= 0) {
+      return (
+        <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--cf-rose))] font-mono">
+          <AlertTriangle className="w-3 h-3" />
+          token expired
+        </span>
+      );
+    }
+  }
+
+  if (health.tokenRefreshing) {
+    return (
+      <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--cf-lime))] font-mono">
+        <RefreshCw className="w-3 h-3 animate-spin" />
+        refreshing
+      </span>
+    );
+  }
+
+  // Last checked timestamp
+  if (health.lastChecked) {
+    const secondsAgo = Math.round((Date.now() - health.lastChecked) / 1000);
+    const label = secondsAgo < 60 ? 'just now' : `${Math.floor(secondsAgo / 60)}m ago`;
+    return (
+      <span className="text-[10px] text-[hsl(var(--cf-text-muted))] font-mono">
+        checked {label}
+      </span>
+    );
+  }
+
+  return null;
+}
+
 /* ─── Integration Card ─── */
 function IntegrationCard({
   config,
   integration,
   envConfigured,
+  health,
   isConnecting,
   onConnect,
   onDisconnect,
@@ -131,6 +175,7 @@ function IntegrationCard({
   config: ServiceConfig;
   integration?: Integration;
   envConfigured: boolean;
+  health: ServiceHealth | undefined;
   isConnecting: boolean;
   onConnect: () => void;
   onDisconnect: (id: number) => void;
@@ -143,11 +188,8 @@ function IntegrationCard({
   return (
     <div
       className="cf-card group transition-all duration-300"
-      style={{
-        borderColor: connected ? `hsl(${config.color} / 0.2)` : undefined,
-      }}
+      style={{ borderColor: connected ? `hsl(${config.color} / 0.2)` : undefined }}
     >
-      {/* Top glow line when connected */}
       {connected && (
         <div
           className="absolute top-0 left-0 right-0 h-px"
@@ -165,21 +207,14 @@ function IntegrationCard({
               <span
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-semibold uppercase tracking-wider"
                 style={{
-                  background: connected
-                    ? `hsl(${config.color} / 0.1)`
-                    : 'hsl(var(--cf-raised))',
-                  color: connected
-                    ? `hsl(${config.color})`
-                    : 'hsl(var(--cf-text-muted))',
+                  background: connected ? `hsl(${config.color} / 0.1)` : 'hsl(var(--cf-raised))',
+                  color: connected ? `hsl(${config.color})` : 'hsl(var(--cf-text-muted))',
                   border: `1px solid ${connected ? `hsl(${config.color} / 0.2)` : 'hsl(var(--cf-border-subtle))'}`,
                 }}
               >
                 {connected ? (
                   <>
-                    <span
-                      className="w-1 h-1 rounded-full"
-                      style={{ background: `hsl(${config.color})` }}
-                    />
+                    <span className="w-1 h-1 rounded-full" style={{ background: `hsl(${config.color})` }} />
                     Live
                   </>
                 ) : envConfigured ? 'Ready' : 'Offline'}
@@ -190,18 +225,18 @@ function IntegrationCard({
             </div>
             <p className="text-xs text-[hsl(var(--cf-text-muted))] mt-1 leading-relaxed">{config.description}</p>
 
-            {/* Protocol tag */}
-            <div className="flex items-center gap-2 mt-2">
+            {/* Protocol + health badge */}
+            <div className="flex items-center gap-3 mt-2">
               <span className="text-[10px] font-mono text-[hsl(var(--cf-text-muted))] bg-[hsl(var(--cf-raised))] px-1.5 py-0.5 rounded">
                 {config.protocol}
               </span>
               {envConfigured && !connected && (
                 <span className="text-[10px] font-mono text-[hsl(var(--cf-emerald))]">env configured</span>
               )}
+              <HealthBadge health={health} />
             </div>
           </div>
 
-          {/* Expand toggle */}
           <button
             onClick={() => setExpanded(!expanded)}
             className="p-1.5 rounded-md text-[hsl(var(--cf-text-muted))] hover:text-[hsl(var(--cf-text))] hover:bg-[hsl(var(--cf-raised))] transition-colors"
@@ -210,7 +245,7 @@ function IntegrationCard({
           </button>
         </div>
 
-        {/* Capabilities strip — always visible */}
+        {/* Capabilities strip */}
         <div className="flex flex-wrap gap-1.5 mt-3 pl-[58px]">
           {config.capabilities.map((cap) => (
             <span
@@ -237,16 +272,28 @@ function IntegrationCard({
                     <span className="text-xs text-[hsl(var(--cf-text))] font-medium">{String(integration.credentials.business_name)}</span>
                   </div>
                 )}
+                {config.type === 'wavapps' && health?.tokenExpiresAt && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-[hsl(var(--cf-text-muted))]">Token expires:</span>
+                    <span className="text-xs text-[hsl(var(--cf-text))] font-mono">
+                      {new Date(health.tokenExpiresAt).toLocaleString()}
+                    </span>
+                  </div>
+                )}
                 {config.type === 'mercury_bank' && integration.credentials.selectedAccountIds && (
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-[hsl(var(--cf-text-muted))]">Accounts:</span>
-                    <span className="text-xs text-[hsl(var(--cf-text))] font-mono">{(integration.credentials.selectedAccountIds as string[]).length} synced</span>
+                    <span className="text-xs text-[hsl(var(--cf-text))] font-mono">
+                      {(integration.credentials.selectedAccountIds as string[]).length} synced
+                    </span>
                   </div>
                 )}
                 {config.type === 'stripe' && (
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-[hsl(var(--cf-text-muted))]">Webhook:</span>
-                    <span className="text-xs text-[hsl(var(--cf-emerald))] font-mono">verified</span>
+                    <span className="text-xs text-[hsl(var(--cf-emerald))] font-mono flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> verified
+                    </span>
                   </div>
                 )}
               </div>
@@ -258,7 +305,7 @@ function IntegrationCard({
             <p className="text-xs text-[hsl(var(--cf-text-secondary))] leading-relaxed">{config.helpNote}</p>
           </div>
 
-          {/* Stripe checkout (inline) */}
+          {/* Stripe inline actions */}
           {connected && config.type === 'stripe' && (
             <div className="px-4 py-3 border-b border-[hsl(var(--cf-border-subtle))]">
               <StripeInlineActions />
@@ -388,6 +435,17 @@ export default function Connections() {
   const queryClient = useQueryClient();
   const [connectingType, setConnectingType] = useState<string | null>(null);
 
+  // Real health monitoring with auto-refresh
+  const {
+    healthMap,
+    connectedCount,
+    configuredCount,
+    refresh: refreshHealth,
+    manualRefreshWave,
+    waveRefreshPending,
+    lastChecked,
+  } = useConnectionHealth();
+
   const { data: integrations = [], isLoading } = useQuery<Integration[]>({
     queryKey: ['/api/integrations'],
   });
@@ -402,6 +460,7 @@ export default function Connections() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('wave') === 'connected' || params.get('google') === 'connected') {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/status'] });
       window.history.replaceState({}, '', '/connections');
     }
   }, [queryClient]);
@@ -418,17 +477,7 @@ export default function Connections() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
-    },
-  });
-
-  const refreshWaveMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch('/api/integrations/wave/refresh', { method: 'POST' });
-      if (!response.ok) throw new Error('Failed to refresh token');
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/status'] });
     },
   });
 
@@ -455,8 +504,7 @@ export default function Connections() {
 
   const getIntegration = (type: string) => integrations.find((i) => i.serviceType === type);
 
-  const connectedCount = SERVICES.filter((s) => getIntegration(s.type)?.connected).length;
-  const configuredCount = Object.values(integrationStatus ?? {}).filter((s) => s.configured).length;
+  const timeSince = lastChecked ? Math.round((Date.now() - lastChecked) / 1000) : null;
 
   return (
     <div className="p-6 lg:p-8 max-w-[1280px] mx-auto space-y-6">
@@ -473,6 +521,13 @@ export default function Connections() {
             <span className="text-[10px] uppercase tracking-[0.08em] text-[hsl(var(--cf-text-muted))] font-mono">
               {connectedCount}/{SERVICES.length} live
             </span>
+            <button
+              onClick={refreshHealth}
+              className="p-1.5 rounded-md text-[hsl(var(--cf-text-muted))] hover:text-[hsl(var(--cf-text))] hover:bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border-subtle))] transition-colors"
+              title="Refresh all connection status"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
@@ -498,18 +553,24 @@ export default function Connections() {
         <div className="cf-card px-4 py-3">
           <div className="flex items-center gap-2 mb-1">
             <Zap className="w-3.5 h-3.5 text-[hsl(var(--cf-amber))]" />
-            <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">Protocols</p>
+            <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">Auto-heal</p>
           </div>
-          <p className="text-lg font-financial font-bold text-[hsl(var(--cf-text))]">3</p>
-          <p className="text-[10px] text-[hsl(var(--cf-text-muted))]">OAuth, REST, Webhook</p>
+          <p className="text-lg font-financial font-bold text-[hsl(var(--cf-text))]">
+            {healthMap.wave?.tokenExpiresAt ? 'Active' : 'Standby'}
+          </p>
+          <p className="text-[10px] text-[hsl(var(--cf-text-muted))]">
+            {waveRefreshPending ? 'Refreshing token...' : 'OAuth token monitor'}
+          </p>
         </div>
         <div className="cf-card px-4 py-3">
           <div className="flex items-center gap-2 mb-1">
             <Plug className="w-3.5 h-3.5 text-[hsl(var(--cf-cyan))]" />
-            <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">Capabilities</p>
+            <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">Last Check</p>
           </div>
-          <p className="text-lg font-financial font-bold text-[hsl(var(--cf-text))]">{SERVICES.reduce((s, svc) => s + svc.capabilities.length, 0)}</p>
-          <p className="text-[10px] text-[hsl(var(--cf-text-muted))]">across all services</p>
+          <p className="text-lg font-financial font-bold text-[hsl(var(--cf-text))]">
+            {timeSince !== null ? (timeSince < 60 ? 'Now' : `${Math.floor(timeSince / 60)}m`) : '\u2014'}
+          </p>
+          <p className="text-[10px] text-[hsl(var(--cf-text-muted))]">auto-polling every 60s</p>
         </div>
       </div>
 
@@ -527,6 +588,7 @@ export default function Connections() {
               : config.type === 'wavapps' ? 'wave'
               : config.type;
             const envConfigured = integrationStatus?.[envKey]?.configured ?? false;
+            const health = healthMap[envKey];
 
             return (
               <div
@@ -538,11 +600,12 @@ export default function Connections() {
                   config={config}
                   integration={integration}
                   envConfigured={envConfigured}
+                  health={health}
                   isConnecting={connectingType === config.type}
                   onConnect={() => handleConnect(config.type)}
                   onDisconnect={(id) => disconnectMutation.mutate(id)}
-                  onRefresh={config.type === 'wavapps' ? () => refreshWaveMutation.mutate() : undefined}
-                  refreshPending={refreshWaveMutation.isPending}
+                  onRefresh={config.type === 'wavapps' ? () => manualRefreshWave() : undefined}
+                  refreshPending={waveRefreshPending}
                 />
               </div>
             );
@@ -550,7 +613,7 @@ export default function Connections() {
         </div>
       )}
 
-      {/* Automation surface footer */}
+      {/* Integration surface map */}
       <div className="cf-card p-4 animate-slide-up" style={{ animationDelay: '240ms' }}>
         <div className="flex items-center gap-2 mb-3">
           <Zap className="w-3.5 h-3.5 text-[hsl(var(--cf-text-muted))]" />

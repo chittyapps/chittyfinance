@@ -6,6 +6,11 @@ import { TenantSwitcher } from "./TenantSwitcher";
 const PAGE_LABELS: Record<string, string> = {
   '/': 'Portfolio',
   '/dashboard': 'Dashboard',
+  '/transactions': 'Transactions',
+  '/accounts': 'Accounts',
+  '/orbital': 'Orbital Console',
+  '/reports': 'Reports',
+  '/integrations': 'Integrations',
   '/connections': 'Connections',
   '/admin': 'Admin',
   '/settings': 'Settings',
