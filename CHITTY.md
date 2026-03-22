@@ -2,8 +2,8 @@
 uri: chittycanon://docs/ops/summary/chittyfinance
 namespace: chittycanon://docs/ops
 type: summary
-version: 1.0.0
-status: CERTIFIED
+version: 2.0.0
+status: COMPATIBLE
 registered_with: chittycanon://core/services/canon
 title: "ChittyFinance"
 certifier: chittycanon://core/services/chittycertify

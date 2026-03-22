@@ -16,7 +16,7 @@ export async function verifyChittyToken(token: string): Promise<jose.JWTPayload 
 }
 
 export function getServiceAuthHeader() {
-  const token = process.env.CHITTY_CONNECT_SERVICE_TOKEN || process.env.CHITTYCONNECT_API_TOKEN;
-  if (!token) throw new Error('Missing CHITTY_CONNECT_SERVICE_TOKEN');
+  const token = process.env.CHITTYCONNECT_API_TOKEN || process.env.CHITTY_AUTH_SERVICE_TOKEN;
+  if (!token) throw new Error('Missing CHITTYCONNECT_API_TOKEN or CHITTY_AUTH_SERVICE_TOKEN');
   return { Authorization: `Bearer ${token}` } as const;
 }
