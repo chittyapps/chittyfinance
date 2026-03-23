@@ -6,6 +6,7 @@ import {
 } from '@/hooks/use-integrations';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useToast } from '@/hooks/use-toast';
+import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -20,10 +21,6 @@ import {
 function formatDate(dateStr: string | undefined) {
   if (!dateStr) return 'Never';
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 }
 
 const ACTION_COLORS = {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTenantId } from '@/contexts/TenantContext';
 import { useConsolidatedReport, useRunTaxAutomation, type ReportParams } from '@/hooks/use-reports';
 import { useToast } from '@/hooks/use-toast';
+import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -11,10 +12,6 @@ import {
   BarChart3, Download, Play, CheckCircle2, AlertTriangle, XCircle,
   TrendingUp, TrendingDown, Building2, MapPin, Shield
 } from 'lucide-react';
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
-}
 
 function pct(value: number, total: number) {
   if (total === 0) return '0%';

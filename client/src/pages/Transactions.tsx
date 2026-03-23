@@ -4,6 +4,7 @@ import { useTransactions, useCreateTransaction, useUpdateTransaction, type Trans
 import { useAccounts } from '@/hooks/use-accounts';
 import { useProperties } from '@/hooks/use-property';
 import { useToast } from '@/hooks/use-toast';
+import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -22,10 +23,6 @@ const CATEGORIES = [
 ];
 
 const PAGE_SIZE = 50;
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
-}
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
