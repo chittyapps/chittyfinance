@@ -98,6 +98,7 @@ export const transactions = pgTable('transactions', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   accountId: uuid('account_id').notNull().references(() => accounts.id),
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  currency: text('currency').notNull().default('USD'), // ISO 4217: USD, COP, etc.
   type: text('type').notNull(), // 'income', 'expense', 'transfer'
   category: text('category'), // 'rent', 'maintenance', 'utilities', 'management_fee', etc.
   description: text('description').notNull(),
@@ -127,6 +128,8 @@ export const intercompanyTransactions = pgTable('intercompany_transactions', {
   fromTenantId: uuid('from_tenant_id').notNull().references(() => tenants.id),
   toTenantId: uuid('to_tenant_id').notNull().references(() => tenants.id),
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  currency: text('currency').notNull().default('USD'), // ISO 4217: USD, COP, etc.
+  exchangeRate: decimal('exchange_rate', { precision: 12, scale: 6 }), // Multiply: amount * exchangeRate = USD equivalent (e.g., 100 COP * 0.000244 = 0.0244 USD)
   description: text('description').notNull(),
   date: timestamp('date').notNull(),
   fromTransactionId: uuid('from_transaction_id').references(() => transactions.id),
@@ -154,8 +157,10 @@ export const properties = pgTable('properties', {
   country: text('country').notNull().default('USA'),
   propertyType: text('property_type').notNull(), // 'condo', 'apartment', 'house', 'commercial'
   purchasePrice: decimal('purchase_price', { precision: 12, scale: 2 }),
+  purchaseCurrency: text('purchase_currency').notNull().default('USD'), // ISO 4217
   purchaseDate: timestamp('purchase_date'),
   currentValue: decimal('current_value', { precision: 12, scale: 2 }),
+  currentValueCurrency: text('current_value_currency').notNull().default('USD'), // ISO 4217
   metadata: jsonb('metadata'), // Photos, documents, etc.
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -177,6 +182,7 @@ export const units = pgTable('units', {
   bathrooms: decimal('bathrooms', { precision: 3, scale: 1 }),
   squareFeet: integer('square_feet'),
   monthlyRent: decimal('monthly_rent', { precision: 12, scale: 2 }),
+  rentCurrency: text('rent_currency').notNull().default('USD'), // ISO 4217
   isActive: boolean('is_active').notNull().default(true),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -199,7 +205,8 @@ export const leases = pgTable('leases', {
   startDate: timestamp('start_date').notNull(),
   endDate: timestamp('end_date').notNull(),
   monthlyRent: decimal('monthly_rent', { precision: 12, scale: 2 }).notNull(),
-  securityDeposit: decimal('security_deposit', { precision: 12, scale: 2 }),
+  currency: text('currency').notNull().default('USD'), // ISO 4217: USD, COP, etc.
+  securityDeposit: decimal('security_deposit', { precision: 12, scale: 2 }), // Same currency as lease.currency
   status: text('status').notNull().default('active'), // 'active', 'expired', 'terminated'
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -337,6 +344,7 @@ export const workflows = pgTable('workflows', {
   description: text('description'),
   requestor: text('requestor'), // name or userId
   costEstimate: decimal('cost_estimate', { precision: 12, scale: 2 }),
+  costCurrency: text('cost_currency').notNull().default('USD'), // ISO 4217
   status: text('status').notNull().default('requested'), // 'requested', 'approved', 'in_progress', 'completed', 'rejected'
   metadata: jsonb('metadata'), // approvedBy, approvedAt, completedAt, vendor info, etc.
   createdAt: timestamp('created_at').notNull().defaultNow(),
