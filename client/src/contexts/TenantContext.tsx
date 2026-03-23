@@ -23,8 +23,9 @@ interface TenantContextValue {
   currentTenant: Tenant | null;
   tenants: Tenant[];
   isLoading: boolean;
-  switchTenant: (tenant: Tenant) => void;
+  switchTenant: (tenant: Tenant | null) => void;
   isSystemMode: boolean;
+  consolidatedMode: boolean;
 }
 
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
@@ -64,20 +65,26 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     }
   }, [tenants, currentTenant, isSystemMode]);
 
-  // Persist and sync tenant ID
+  // Keep query client in sync with current tenant
   useEffect(() => {
     if (currentTenant) {
-      localStorage.setItem('currentTenantId', currentTenant.id);
       setActiveTenantId(currentTenant.id);
     }
   }, [currentTenant]);
 
-  const switchTenant = useCallback((tenant: Tenant) => {
+  const switchTenant = useCallback((tenant: Tenant | null) => {
     setCurrentTenant(tenant);
-    setActiveTenantId(tenant.id);
-    // Invalidate all tenant-scoped queries so they refetch with new tenantId
-    qc.invalidateQueries();
+    setActiveTenantId(tenant?.id ?? null);
+    if (tenant) {
+      localStorage.setItem('currentTenantId', tenant.id);
+    } else {
+      localStorage.removeItem('currentTenantId');
+    }
+    // Invalidate tenant-scoped queries (skip the tenants list itself — it doesn't change)
+    qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== '/api/tenants' });
   }, [qc]);
+
+  const consolidatedMode = isSystemMode && currentTenant === null;
 
   return (
     <TenantContext.Provider
@@ -87,6 +94,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         isLoading,
         switchTenant,
         isSystemMode,
+        consolidatedMode,
       }}
     >
       {children}
