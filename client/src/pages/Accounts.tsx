@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useTenantId } from '@/contexts/TenantContext';
 import { useAccounts, useAccountTransactions, useCreateAccount, useSyncAccount, type Account } from '@/hooks/use-accounts';
 import { useToast } from '@/hooks/use-toast';
+import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -24,10 +25,6 @@ const TYPE_CONFIG: Record<string, { label: string; icon: typeof Building; color:
   loan: { label: 'Loan', icon: DollarSign, color: 'text-orange-400', isLiability: true },
   tax_liability: { label: 'Tax Liability', icon: Landmark, color: 'text-red-400', isLiability: true },
 };
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
-}
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
