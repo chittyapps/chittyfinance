@@ -562,6 +562,7 @@ export class SystemStorage {
         tenantMetadata: schema.tenants.metadata,
         accountId: schema.transactions.accountId,
         amount: schema.transactions.amount,
+        currency: schema.transactions.currency,
         type: schema.transactions.type,
         category: schema.transactions.category,
         description: schema.transactions.description,
