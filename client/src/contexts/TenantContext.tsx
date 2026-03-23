@@ -73,18 +73,30 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   }, [currentTenant]);
 
   const switchTenant = useCallback((tenant: Tenant | null) => {
-    setCurrentTenant(tenant);
-    setActiveTenantId(tenant?.id ?? null);
-    if (tenant) {
-      localStorage.setItem('currentTenantId', tenant.id);
+    // null = consolidated portfolio mode → select root holding entity
+    const resolved = tenant ?? tenants.find(t => !t.parentId) ?? tenants[0] ?? null;
+    const isConsolidated = tenant === null;
+    setCurrentTenant(resolved);
+    setActiveTenantId(resolved?.id ?? null);
+    if (resolved) {
+      localStorage.setItem('currentTenantId', resolved.id);
     } else {
       localStorage.removeItem('currentTenantId');
     }
+    localStorage.setItem('consolidatedMode', isConsolidated ? '1' : '0');
     // Invalidate tenant-scoped queries (skip the tenants list itself — it doesn't change)
     qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== '/api/tenants' });
-  }, [qc]);
+  }, [qc, tenants]);
 
-  const consolidatedMode = isSystemMode && currentTenant === null;
+  const [consolidatedMode, setConsolidatedMode] = useState(
+    () => localStorage.getItem('consolidatedMode') === '1'
+  );
+
+  // Keep consolidatedMode in sync with switchTenant calls
+  useEffect(() => {
+    const val = localStorage.getItem('consolidatedMode') === '1';
+    setConsolidatedMode(val);
+  }, [currentTenant]);
 
   return (
     <TenantContext.Provider
