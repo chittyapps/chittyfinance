@@ -2,7 +2,7 @@ import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { createContext, lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useState } from "react";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
@@ -27,9 +27,19 @@ import { TenantProvider } from "@/contexts/TenantContext";
 import { RoleProvider } from "@/contexts/RoleContext";
 
 function Router() {
-  const [location] = useLocation();
-  const hideChromeRoutes = ["/login", "/register", "/connect-accounts"];
-  const showChrome = !hideChromeRoutes.includes(location);
+  const [location, setLocation] = useLocation();
+  const { isAuthenticated } = useContext(AuthContext);
+  const publicRoutes = ["/login", "/register", "/connect-accounts"];
+  const isPublicRoute = publicRoutes.includes(location);
+
+  // Redirect to login if not authenticated and not on a public route
+  useEffect(() => {
+    if (!isAuthenticated && !isPublicRoute) {
+      setLocation("/login");
+    }
+  }, [isAuthenticated, isPublicRoute, setLocation]);
+
+  const showChrome = !isPublicRoute && isAuthenticated;
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -88,7 +98,7 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/session")
+    fetch("/api/session", { credentials: "include" })
       .then(res => {
         if (!res.ok) throw new Error('Not authenticated');
         return res.json();
