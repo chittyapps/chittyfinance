@@ -22,7 +22,7 @@ interface GitHubCommit {
 
 interface GitHubPullRequest {
   id: number;
-  title: 'open' | 'closed' | 'merged';
+  title: string;
   state: 'open' | 'closed' | 'merged';
   author: string;
   createdAt: Date;

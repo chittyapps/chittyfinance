@@ -88,7 +88,7 @@ sessionRoutes.post('/api/session', async (c) => {
   setCookie(c, SESSION_COOKIE_NAME, sessionId, {
     path: '/',
     httpOnly: true,
-    secure: true,
+    secure: new URL(c.req.url).protocol === 'https:',
     sameSite: 'Lax',
     maxAge: SESSION_TTL,
   });

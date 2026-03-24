@@ -85,3 +85,23 @@ function timingSafeEqual(a: string, b: string): boolean {
   }
   return result === 0;
 }
+
+/**
+ * Constant-time token comparison that doesn't leak length.
+ * Hashes both inputs with SHA-256 before comparing, so timing
+ * reveals nothing about the token value or length.
+ */
+export async function tokenEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(a)),
+    crypto.subtle.digest('SHA-256', enc.encode(b)),
+  ]);
+  const ba = new Uint8Array(ha);
+  const bb = new Uint8Array(hb);
+  let result = 0;
+  for (let i = 0; i < ba.length; i++) {
+    result |= ba[i] ^ bb[i];
+  }
+  return result === 0;
+}
