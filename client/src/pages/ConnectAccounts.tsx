@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Building, CreditCard, DollarSign, BarChart4, CreditCard as CreditCardIcon } from "lucide-react";
-import { AuthContext } from "../App";
+import { AuthContext } from "@/contexts/AuthContext";
 
 // Service connection card component
 interface ServiceCardProps {
