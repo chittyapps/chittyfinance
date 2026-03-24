@@ -4,18 +4,12 @@ import type { HonoEnv } from '../env';
 import { createDb } from '../db/connection';
 import { SystemStorage } from '../storage/system';
 import { SESSION_COOKIE_NAME, SESSION_TTL, parseSession } from '../lib/session';
+import { verifyPassword } from '../lib/password';
 
 function generateSessionId(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export const sessionRoutes = new Hono<HonoEnv>();
@@ -79,8 +73,8 @@ sessionRoutes.post('/api/session', async (c) => {
     return c.json({ error: 'account_disabled' }, 403);
   }
 
-  const hash = await hashPassword(body.password);
-  if (hash !== user.passwordHash) {
+  const valid = await verifyPassword(body.password, user.passwordHash);
+  if (!valid) {
     return c.json({ error: 'invalid_credentials' }, 401);
   }
 
