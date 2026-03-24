@@ -145,7 +145,7 @@ chittyfinance/
 │   ├── worker.ts         # Cloudflare Workers entry point
 │   ├── index.ts          # Legacy Express entry (standalone dev)
 │   ├── routes.ts         # Legacy Express routes (reference only)
-│   ├── routes/            # Hono route modules (19 files)
+│   ├── routes/            # Hono route modules (20 files)
 │   │   ├── health.ts     # /health, /api/v1/status
 │   │   ├── docs.ts       # /api/v1/documentation (OpenAPI spec)
 │   │   ├── accounts.ts   # /api/accounts
@@ -163,6 +163,7 @@ chittyfinance/
 │   │   ├── charges.ts    # /api/charges (recurring)
 │   │   ├── forensics.ts  # /api/forensics (21 endpoints)
 │   │   ├── valuation.ts  # /api/properties/:id/valuation (multi-source AVM)
+│   │   ├── session.ts    # /api/session (KV-backed cookie auth)
 │   │   ├── import.ts     # /api/import (TurboTenant CSV + Wave sync)
 │   │   └── webhooks.ts   # Stripe/Mercury webhooks
 │   ├── middleware/        # auth, tenant, error middleware
@@ -321,19 +322,32 @@ const summary = await storage.getFinancialSummary(user.id);
 
 ## Key Features
 
-### 1. Demo Authentication
+### 1. Hybrid Authentication
 
-**Current implementation**: Auto-login as "demo" user (no real authentication).
+**Current implementation**: Dual-path auth via `hybridAuth` middleware (`server/middleware/auth.ts`).
 
-**Pattern** (`server/routes.ts:21-33`):
-```typescript
-api.get("/session", async (req: Request, res: Response) => {
-  const user = await storage.getUserByUsername("demo");
-  // Returns demo user for all requests
-});
-```
+**Path 1 — Service token** (service-to-service):
+- `Authorization: Bearer <CHITTY_AUTH_SERVICE_TOKEN>` header
+- Used by ChittyConnect, MCP, and other ChittyOS services
 
-**Note**: All API routes assume demo user. Real authentication needs to be implemented for production.
+**Path 2 — Session cookie** (browser clients):
+- `cf_session` cookie set by `POST /api/session` (login)
+- KV-backed (`FINANCE_KV`) with 7-day TTL
+- Session stores `{ userId }`, resolved to full user by `callerContext` middleware
+
+**Session routes** (`server/routes/session.ts` — public, no auth required):
+- `GET /api/session` — return current user from cookie
+- `POST /api/session` — login with `{ email, password }`
+- `DELETE /api/session` — logout (clear cookie + KV)
+
+**Password hashing**: SHA-256 (Web Crypto in Workers, Node crypto in seed script).
+
+**Frontend flow** (`client/src/App.tsx`):
+1. On load, fetches `GET /api/session` with `credentials: "include"`
+2. If 401, redirects to `/login`
+3. Login form POSTs credentials, cookie is set, page reloads
+
+**Note**: ChittyID integration is planned to replace email/password auth.
 
 ### 2. Financial Dashboard
 
@@ -493,8 +507,10 @@ import logo from "@assets/logo.png";
 
 ## API Endpoints
 
-### Authentication
-- `GET /api/session` - Get current demo user (no auth required)
+### Authentication (public — no auth required)
+- `GET /api/session` - Get current user from session cookie
+- `POST /api/session` - Login with email + password (sets `cf_session` cookie)
+- `DELETE /api/session` - Logout (clears cookie + KV entry)
 
 ### Financial Data
 - `GET /api/financial-summary` - Get cached financial summary
@@ -816,7 +832,7 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 
 ## Known Limitations
 
-1. **No Real Authentication**: Service token auth only — no end-user auth (ChittyID integration pending)
+1. **Session Auth (not ChittyID)**: Email/password with KV-backed cookies — ChittyID SSO integration pending
 2. **DoorLoop Still Mock**: DoorLoop integration returns hardcoded data (real API integration pending)
 3. **No Migrations**: Uses `drizzle-kit push` (destructive) instead of proper migrations
 4. **Forensic Tables Not in System Schema**: Forensic tables use integer IDs from `shared/schema.ts` and may not exist in the production database yet
