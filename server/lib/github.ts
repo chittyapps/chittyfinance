@@ -41,6 +41,15 @@ interface GitHubIssue {
   labels: string[];
 }
 
+/** Validate owner/repo format to prevent request forgery via path traversal. */
+function validateRepoName(repoFullName: string): string {
+  const match = repoFullName.match(/^([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)$/);
+  if (!match) {
+    throw new Error('Invalid repository name format (expected owner/repo)');
+  }
+  return `${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}`;
+}
+
 function getGithubToken(): string | undefined {
   return (
     process.env.GITHUB_TOKEN ||
@@ -100,7 +109,8 @@ export async function fetchRepositoryCommits(_integration: Integration, repoFull
       throw new Error("GitHub token not available");
     }
 
-    const response = await fetch(`https://api.github.com/repos/${repoFullName}/commits?per_page=5`, {
+    const safeName = validateRepoName(repoFullName);
+    const response = await fetch(`https://api.github.com/repos/${safeName}/commits?per_page=5`, {
       headers: githubHeaders(),
     });
 
@@ -111,7 +121,7 @@ export async function fetchRepositoryCommits(_integration: Integration, repoFull
     const commits = await response.json() as GitHubCommit[];
     return commits;
   } catch (error) {
-    console.error(`Error fetching commits for repository ${repoFullName}:`, error);
+    console.error('Error fetching commits for repository:', error);
     return [];
   }
 }
@@ -125,7 +135,8 @@ export async function fetchRepositoryPullRequests(_integration: Integration, rep
       throw new Error("GitHub token not available");
     }
 
-    const response = await fetch(`https://api.github.com/repos/${repoFullName}/pulls?state=all&per_page=5`, {
+    const safeName = validateRepoName(repoFullName);
+    const response = await fetch(`https://api.github.com/repos/${safeName}/pulls?state=all&per_page=5`, {
       headers: githubHeaders(),
     });
 
@@ -136,7 +147,7 @@ export async function fetchRepositoryPullRequests(_integration: Integration, rep
     const pulls = await response.json() as GitHubPullRequest[];
     return pulls;
   } catch (error) {
-    console.error(`Error fetching pull requests for repository ${repoFullName}:`, error);
+    console.error('Error fetching pull requests for repository:', error);
     return [];
   }
 }
@@ -150,7 +161,8 @@ export async function fetchRepositoryIssues(_integration: Integration, repoFullN
       throw new Error("GitHub token not available");
     }
 
-    const response = await fetch(`https://api.github.com/repos/${repoFullName}/issues?state=all&per_page=5`, {
+    const safeName = validateRepoName(repoFullName);
+    const response = await fetch(`https://api.github.com/repos/${safeName}/issues?state=all&per_page=5`, {
       headers: githubHeaders(),
     });
 
@@ -161,7 +173,7 @@ export async function fetchRepositoryIssues(_integration: Integration, repoFullN
     const issues = await response.json() as GitHubIssue[];
     return issues;
   } catch (error) {
-    console.error(`Error fetching issues for repository ${repoFullName}:`, error);
+    console.error('Error fetching issues for repository:', error);
     return [];
   }
 }

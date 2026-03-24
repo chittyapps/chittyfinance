@@ -3,6 +3,7 @@
 
 import { db } from '../../server/db';
 import * as schema from '../system.schema';
+import { hashPassword } from '../../server/lib/password';
 
 export async function seedItCanBeLLC() {
   console.log('🌱 Seeding IT CAN BE LLC entity structure...');
@@ -163,12 +164,15 @@ export async function seedItCanBeLLC() {
 
   console.log('✅ Created ChittyCorp LLC (pending)');
 
-  // Create users
+  // Create users with initial passwords (change on first login in production)
+  const defaultPassword = process.env.SEED_PASSWORD || 'chittyfinance2026';
+  const hashedPw = await hashPassword(defaultPassword);
+
   const [nicholasBianchi] = await db.insert(schema.users).values({
     email: 'nick@aribia.llc',
     name: 'Nicholas Bianchi',
     role: 'admin',
-    passwordHash: null, // Will be set on first login
+    passwordHash: hashedPw,
   }).returning();
 
   console.log('✅ Created user: Nicholas Bianchi');
@@ -177,7 +181,7 @@ export async function seedItCanBeLLC() {
     email: 'sharon@itcanbe.llc',
     name: 'Sharon E Jones',
     role: 'admin',
-    passwordHash: null,
+    passwordHash: hashedPw,
   }).returning();
 
   console.log('✅ Created user: Sharon E Jones');

@@ -1023,7 +1023,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
     } catch (error: any) {
-      console.error(`Error testing financial platform ${req.params.platformId}:`, error);
+      console.error('Error testing financial platform:', error);
       res.status(500).json({
         success: false,
         message: `Failed to test financial platform: ${error.message}`
@@ -1155,7 +1155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const commits = await fetchRepositoryCommits(githubIntegration, repoFullName);
       res.json(commits);
     } catch (error) {
-      console.error(`Error fetching commits for ${req.params.repoFullName}:`, error);
+      console.error('Error fetching commits for repository:', error);
       res.status(500).json({ message: "Failed to fetch repository commits" });
     }
   });
@@ -1184,7 +1184,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pullRequests = await fetchRepositoryPullRequests(githubIntegration, repoFullName);
       res.json(pullRequests);
     } catch (error) {
-      console.error(`Error fetching pull requests for ${req.params.repoFullName}:`, error);
+      console.error('Error fetching pull requests for repository:', error);
       res.status(500).json({ message: "Failed to fetch repository pull requests" });
     }
   });
@@ -1213,7 +1213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const issues = await fetchRepositoryIssues(githubIntegration, repoFullName);
       res.json(issues);
     } catch (error) {
-      console.error(`Error fetching issues for ${req.params.repoFullName}:`, error);
+      console.error('Error fetching issues for repository:', error);
       res.status(500).json({ message: "Failed to fetch repository issues" });
     }
   });
@@ -1881,7 +1881,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log orchestration summary
       if (orchestrationErrors.length > 0) {
-        console.warn(`[Mercury Webhook] Event ${eventId} acknowledged but ${orchestrationErrors.length} downstream errors:`, orchestrationErrors);
+        console.warn('[Mercury Webhook] Event acknowledged with', orchestrationErrors.length, 'downstream errors:', orchestrationErrors);
       }
 
       res.status(202).json({ received: true, orchestrationErrors: orchestrationErrors.length > 0 ? orchestrationErrors : undefined });

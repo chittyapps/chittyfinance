@@ -4,7 +4,8 @@ import { logger } from 'hono/logger';
 import type { HonoEnv } from './env';
 import type { MiddlewareHandler } from 'hono';
 import { errorHandler } from './middleware/error';
-import { serviceAuth } from './middleware/auth';
+import { hybridAuth } from './middleware/auth';
+import { sessionRoutes } from './routes/session';
 import { callerContext } from './middleware/caller';
 import { tenantMiddleware } from './middleware/tenant';
 import { healthRoutes } from './routes/health';
@@ -42,7 +43,7 @@ const storageMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
   await next();
 };
 
-const authAndContext: MiddlewareHandler<HonoEnv>[] = [serviceAuth, storageMiddleware, callerContext];
+const authAndContext: MiddlewareHandler<HonoEnv>[] = [hybridAuth, storageMiddleware, callerContext];
 const protectedRoute: MiddlewareHandler<HonoEnv>[] = [...authAndContext, tenantMiddleware];
 
 export function createApp() {
@@ -56,6 +57,7 @@ export function createApp() {
     origin: ['https://app.command.chitty.cc', 'https://command.chitty.cc', 'https://finance.chitty.cc', 'http://localhost:5000', 'http://localhost:3000'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Source-Service', 'X-Account-ID', 'Stripe-Signature'],
+    credentials: true,
   }));
 
   // Request logging
@@ -64,6 +66,7 @@ export function createApp() {
   // ── Public routes (no auth) ──
   app.route('/', healthRoutes);
   app.route('/', docRoutes);
+  app.route('/', sessionRoutes);
 
   // Redirects (public)
   app.get('/connect', (c) => {
