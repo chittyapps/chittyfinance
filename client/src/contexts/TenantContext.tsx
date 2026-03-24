@@ -8,6 +8,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { setActiveTenantId } from '@/lib/queryClient';
+import { AuthContext } from '@/contexts/AuthContext';
 
 export interface Tenant {
   id: string;
@@ -33,9 +34,10 @@ const TenantContext = createContext<TenantContextValue | undefined>(undefined);
 export function TenantProvider({ children }: { children: ReactNode }) {
   const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
   const [isSystemMode, setIsSystemMode] = useState(false);
+  const { isAuthenticated } = useContext(AuthContext);
   const qc = useQueryClient();
 
-  // Check mode from API status
+  // Check mode from API status (public endpoint, no auth needed)
   useEffect(() => {
     fetch('/api/v1/status')
       .then(res => res.json())
@@ -45,10 +47,10 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       .catch(console.error);
   }, []);
 
-  // Fetch user's tenants (only in system mode)
+  // Fetch user's tenants (only in system mode AND when authenticated)
   const { data: tenants = [], isLoading } = useQuery<Tenant[]>({
     queryKey: ['/api/tenants'],
-    enabled: isSystemMode,
+    enabled: isSystemMode && isAuthenticated,
     retry: false,
   });
 

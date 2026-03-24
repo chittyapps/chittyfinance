@@ -2,7 +2,7 @@ import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useContext, useEffect, useMemo, useState } from "react";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
 import Login from "@/pages/Login";
@@ -25,6 +25,8 @@ import { User } from "@shared/schema";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TenantProvider } from "@/contexts/TenantContext";
 import { RoleProvider } from "@/contexts/RoleContext";
+import { AuthContext } from "@/contexts/AuthContext";
+import type { AuthContextValue } from "@/contexts/AuthContext";
 
 function Router() {
   const [location, setLocation] = useLocation();
@@ -81,17 +83,6 @@ function Router() {
   );
 }
 
-export type AuthContextValue = {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-};
-
-export const AuthContext = createContext<AuthContextValue>({
-  user: null,
-  isAuthenticated: false,
-  isLoading: true,
-});
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -135,13 +126,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <TenantProvider>
-          <RoleProvider>
-            <AuthContext.Provider value={authContextValue}>
+        <AuthContext.Provider value={authContextValue}>
+          <TenantProvider>
+            <RoleProvider>
               <Router />
-            </AuthContext.Provider>
-          </RoleProvider>
-        </TenantProvider>
+            </RoleProvider>
+          </TenantProvider>
+        </AuthContext.Provider>
       </ThemeProvider>
     </QueryClientProvider>
   );
