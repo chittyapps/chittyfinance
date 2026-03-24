@@ -1,8 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
-import { getCookie } from 'hono/cookie';
+import { getCookie, deleteCookie } from 'hono/cookie';
 import type { HonoEnv } from '../env';
-
-const COOKIE_NAME = 'cf_session';
+import { SESSION_COOKIE_NAME, parseSession } from '../lib/session';
 
 /**
  * Service-to-service auth via Bearer token.
@@ -26,7 +25,7 @@ export const serviceAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
 
 /**
  * Hybrid auth: accepts either a service Bearer token OR a browser session cookie.
- * - Bearer token: sets userId from X-Chitty-User-Id header (service-to-service)
+ * - Bearer token: service-to-service (userId comes from X-Chitty-User-Id header)
  * - Session cookie: resolves userId from KV session (browser client)
  */
 export const hybridAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
@@ -39,13 +38,12 @@ export const hybridAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
     if (!expected || bearerToken !== expected) {
       return c.json({ error: 'unauthorized' }, 401);
     }
-    // Service callers provide userId via header
     await next();
     return;
   }
 
   // Path 2: Session cookie auth
-  const sessionId = getCookie(c, COOKIE_NAME);
+  const sessionId = getCookie(c, SESSION_COOKIE_NAME);
   if (!sessionId) {
     return c.json({ error: 'not_authenticated', message: 'Bearer token or session cookie required' }, 401);
   }
@@ -53,11 +51,18 @@ export const hybridAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
   const kv = c.env.FINANCE_KV;
   const raw = await kv.get(`session:${sessionId}`);
   if (!raw) {
+    deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
     return c.json({ error: 'session_expired' }, 401);
   }
 
-  const sessionData = JSON.parse(raw) as { userId: string };
-  // Set userId from session — callerContext will use this
+  const sessionData = parseSession(raw);
+  if (!sessionData) {
+    await kv.delete(`session:${sessionId}`);
+    deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
+    return c.json({ error: 'session_expired' }, 401);
+  }
+
+  // Inject userId header for callerContext middleware
   c.req.raw.headers.set('x-chitty-user-id', sessionData.userId);
   await next();
 };

@@ -3,9 +3,7 @@ import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 import type { HonoEnv } from '../env';
 import { createDb } from '../db/connection';
 import { SystemStorage } from '../storage/system';
-
-const SESSION_TTL = 60 * 60 * 24 * 7; // 7 days
-const COOKIE_NAME = 'cf_session';
+import { SESSION_COOKIE_NAME, SESSION_TTL, parseSession } from '../lib/session';
 
 function generateSessionId(): string {
   const bytes = new Uint8Array(32);
@@ -25,7 +23,7 @@ export const sessionRoutes = new Hono<HonoEnv>();
 // GET /api/session — return current user from session cookie
 sessionRoutes.get('/api/session', async (c) => {
   const kv = c.env.FINANCE_KV;
-  const sessionId = getCookie(c, COOKIE_NAME);
+  const sessionId = getCookie(c, SESSION_COOKIE_NAME);
 
   if (!sessionId) {
     return c.json({ error: 'not_authenticated' }, 401);
@@ -33,10 +31,16 @@ sessionRoutes.get('/api/session', async (c) => {
 
   const raw = await kv.get(`session:${sessionId}`);
   if (!raw) {
-    deleteCookie(c, COOKIE_NAME, { path: '/' });
+    deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
     return c.json({ error: 'session_expired' }, 401);
   }
-  const sessionData = JSON.parse(raw) as { userId: string };
+
+  const sessionData = parseSession(raw);
+  if (!sessionData) {
+    await kv.delete(`session:${sessionId}`);
+    deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
+    return c.json({ error: 'session_expired' }, 401);
+  }
 
   const db = createDb(c.env.DATABASE_URL);
   const storage = new SystemStorage(db);
@@ -44,7 +48,7 @@ sessionRoutes.get('/api/session', async (c) => {
 
   if (!user) {
     await kv.delete(`session:${sessionId}`);
-    deleteCookie(c, COOKIE_NAME, { path: '/' });
+    deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
     return c.json({ error: 'user_not_found' }, 401);
   }
 
@@ -65,10 +69,14 @@ sessionRoutes.post('/api/session', async (c) => {
 
   const db = createDb(c.env.DATABASE_URL);
   const storage = new SystemStorage(db);
-  const user = await storage.getUserByEmail(body.email);
+  const user = await storage.getUserByEmail(body.email.toLowerCase().trim());
 
   if (!user || !user.passwordHash) {
     return c.json({ error: 'invalid_credentials' }, 401);
+  }
+
+  if (!user.isActive) {
+    return c.json({ error: 'account_disabled' }, 403);
   }
 
   const hash = await hashPassword(body.password);
@@ -83,11 +91,10 @@ sessionRoutes.post('/api/session', async (c) => {
     expirationTtl: SESSION_TTL,
   });
 
-  const isProduction = c.env.NODE_ENV === 'production';
-  setCookie(c, COOKIE_NAME, sessionId, {
+  setCookie(c, SESSION_COOKIE_NAME, sessionId, {
     path: '/',
     httpOnly: true,
-    secure: isProduction,
+    secure: true,
     sameSite: 'Lax',
     maxAge: SESSION_TTL,
   });
@@ -103,11 +110,11 @@ sessionRoutes.post('/api/session', async (c) => {
 // DELETE /api/session — logout
 sessionRoutes.delete('/api/session', async (c) => {
   const kv = c.env.FINANCE_KV;
-  const sessionId = getCookie(c, COOKIE_NAME);
+  const sessionId = getCookie(c, SESSION_COOKIE_NAME);
 
   if (sessionId) {
     await kv.delete(`session:${sessionId}`);
-    deleteCookie(c, COOKIE_NAME, { path: '/' });
+    deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
   }
 
   return c.json({ ok: true });
