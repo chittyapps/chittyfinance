@@ -833,11 +833,10 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 ## Known Limitations
 
 1. **Session Auth (not ChittyID)**: Email/password with KV-backed cookies — ChittyID SSO integration pending
-2. **DoorLoop Still Mock**: DoorLoop integration returns hardcoded data (real API integration pending)
+2. **DoorLoop Sunset**: DoorLoop integration is mock-only — platform is sunset for us, mock code is cleanup candidate
 3. **No Migrations**: Uses `drizzle-kit push` (destructive) instead of proper migrations
 4. **Forensic Tables Not in System Schema**: Forensic tables use integer IDs from `shared/schema.ts` and may not exist in the production database yet
-5. **Frontend Not Updated**: React components need to support tenant switching
-6. **Legacy Express Code**: `server/routes.ts`, `server/storage.ts`, `server/db.ts` are legacy Express code kept for standalone dev reference
+5. **Legacy Express Code**: `server/routes.ts`, `server/storage.ts`, `server/db.ts` are legacy Express code kept for standalone dev reference
 
 ## Future Enhancements
 
@@ -849,7 +848,7 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ✅ SystemStorage with tenant-aware Drizzle queries (`server/storage/system.ts`)
 - ✅ Service token auth middleware (`server/middleware/auth.ts`)
 - ✅ Tenant-scoped middleware (`server/middleware/tenant.ts`)
-- ⏳ Update frontend with tenant switcher
+- ✅ Hierarchy-aware tenant switcher with consolidated portfolio view (PR #52)
 
 ### Phase 1.5: Hono Route Migration (COMPLETED)
 - ✅ All 17 route modules migrated from Express to Hono
@@ -860,7 +859,7 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 
 ### Phase 2: ChittyConnect Integration (Partially Completed)
 - ✅ Mercury Bank via ChittyConnect backend (multi-account support)
-- ⏳ Register with ChittyRegistry
+- ✅ Registered with ChittyRegistry (`did:chitty:REG-XE6835`, PR #49)
 - ⏳ Integrate with ChittyConnect MCP
 - ⏳ Log to ChittyChronicle
 - ⏳ Use ChittyAuth tokens
@@ -872,7 +871,7 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ✅ **OAuth Security** - CSRF-protected state tokens (`server/lib/oauth-state.ts`)
 - ✅ **Integration Monitoring** - Config validation endpoint (`/api/integrations/status`)
 - ✅ **Webhook Infrastructure** - Idempotent event processing (`webhook_events` table)
-- ⏳ **DoorLoop** - Real property management API (currently mock)
+- ~~DoorLoop~~ - Sunset (mock code is cleanup candidate, not roadmap)
 
 ### Phase 4: Property Financial API (Partially Completed)
 - ✅ `property_valuations` table in system schema
@@ -884,10 +883,8 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ✅ Valuation routes (current, refresh, history)
 - ✅ TurboTenant CSV import with deduplication
 - ✅ Wave sync import endpoint
-- ✅ Valuation Console (`client/src/pages/ValuationConsole.tsx`)
+- ✅ Valuation Tab component (`client/src/components/property/ValuationTab.tsx`) — generalized, takes `propertyId` prop
 - ✅ Deployed to Cloudflare Workers (35 tests passing)
-- ⏳ Generalize ValuationConsole to any property (currently hardcoded)
-- ⏳ Integrate ValuationConsole with dashboard
 - ⏳ Lease expiration notifications
 - ⏳ Frontend property management UI
 
@@ -898,13 +895,22 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ⏳ Issue ChittyCert certificates for secure connections
 
 ### Phase 6: Advanced Features
-- Consolidated reporting across all entities
+- ✅ Consolidated reporting across all entities (`server/lib/consolidated-reporting.ts`)
+- ✅ Multi-currency schema support (ISO 4217, PR #53)
 - Inter-company allocation automation
 - Tax optimization and reporting
 - Advanced AI forecasting (beyond GPT-4o)
 - Mobile app (React Native)
 - Export/import (CSV, QFX, OFX)
-- Multi-currency support
+
+### Phase 7: furnished-condos.com (Planned)
+- Cooperative marketplace for small furnished rental operators (under 10 units)
+- Own distribution (not dependent on Airbnb/VRBO APIs)
+- DRL (Distributed Reputation Ledger) for focal trust scoring
+- Channel manager integration via Hospitable or similar for optional cross-posting
+- Guest-facing search + booking frontend
+- Operator onboarding + SaaS billing
+- Local data partnerships with trust-scored vendors
 
 ## Related Documentation
 
