@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { getCookie, deleteCookie } from 'hono/cookie';
 import type { HonoEnv } from '../env';
 import { SESSION_COOKIE_NAME, parseSession } from '../lib/session';
+import { tokenEqual } from '../lib/password';
 
 /**
  * Service-to-service auth via Bearer token.
@@ -16,7 +17,7 @@ export const serviceAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
   const auth = c.req.header('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
 
-  if (!token || token !== expected) {
+  if (!token || !(await tokenEqual(token, expected))) {
     return c.json({ error: 'unauthorized' }, 401);
   }
 
@@ -32,10 +33,10 @@ export const hybridAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
   const auth = c.req.header('authorization') ?? '';
   const bearerToken = auth.startsWith('Bearer ') ? auth.slice(7) : '';
 
-  // Path 1: Service token auth
+  // Path 1: Service token auth (constant-time comparison)
   if (bearerToken) {
     const expected = c.env.CHITTY_AUTH_SERVICE_TOKEN;
-    if (!expected || bearerToken !== expected) {
+    if (!expected || !(await tokenEqual(bearerToken, expected))) {
       return c.json({ error: 'unauthorized' }, 401);
     }
     await next();
