@@ -1,40 +1,38 @@
 # Cloudflare Workers configuration for ChittyFinance (System Mode)
 # Deploys to Cloudflare Workers for ChittyOS ecosystem integration
+#
+# Canonical model: 3 explicit environments (dev, staging, production).
+# Bindings (KV, R2, DO, tail_consumers) do NOT inherit from top-level
+# into env blocks — each env must carry its own explicit bindings.
+#
+# Secrets (set per-env with: wrangler secret put SECRET_NAME --env <env>)
+# Required:
+#   DATABASE_URL              — Neon PostgreSQL connection string
+#   CHITTY_AUTH_SERVICE_TOKEN — ChittyAuth service token
+#   JWT_SECRET                — JWT signing secret
+#   OAUTH_STATE_SECRET        — HMAC secret for OAuth CSRF protection
+# Integrations (optional):
+#   OPENAI_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+#   WAVE_CLIENT_ID, WAVE_CLIENT_SECRET, CHITTYCONNECT_API_TOKEN
 
 name = "chittyfinance"
 main = "../server/worker.ts"
 compatibility_date = "2026-03-01"
+compatibility_flags = ["nodejs_compat"]
 
-# Account ID (from ChittyOS ecosystem)
 account_id = "0bc21e3a5a9de1a4cc843be9c3e98121"
 
-# Workers settings
 workers_dev = false
 
-# Routes (configure your custom domain)
 routes = [
   { pattern = "finance.chitty.cc/*", zone_name = "chitty.cc" }
 ]
 
-# Environment variables
 [vars]
 MODE = "system"
 NODE_ENV = "production"
 APP_VERSION = "2.0.0"
 CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
-
-# Secrets (set with: wrangler secret put SECRET_NAME)
-# Required:
-#   wrangler secret put DATABASE_URL            # Neon PostgreSQL connection string
-#   wrangler secret put CHITTY_AUTH_SERVICE_TOKEN # ChittyAuth service token (also used for ChittyConnect)
-#   wrangler secret put JWT_SECRET              # JWT signing secret
-#   wrangler secret put OAUTH_STATE_SECRET      # HMAC secret for OAuth CSRF protection (required for Wave/Google OAuth)
-# Integrations (optional):
-#   wrangler secret put OPENAI_API_KEY
-#   wrangler secret put STRIPE_SECRET_KEY
-#   wrangler secret put STRIPE_WEBHOOK_SECRET
-#   wrangler secret put WAVE_CLIENT_SECRET
-#   wrangler secret put CHITTYCONNECT_API_TOKEN  # If separate from CHITTY_AUTH_SERVICE_TOKEN
 
 [observability]
 enabled = true
@@ -42,7 +40,6 @@ enabled = true
 [[tail_consumers]]
 service = "chittytrack"
 
-# Build configuration
 [build]
 command = "npx vite build --outDir dist/public"
 
@@ -50,67 +47,111 @@ command = "npx vite build --outDir dist/public"
 directory = "../dist/public"
 binding = "ASSETS"
 
-# Limits
 [limits]
-cpu_ms = 50  # 50ms CPU time per request
+cpu_ms = 50
 
-# Triggers (Cron jobs for data sync, etc.)
-# [triggers]
-# crons = ["0 */6 * * *"]  # Every 6 hours
-
-# D1 Database binding (if using D1 instead of Neon)
-# Note: Currently using Neon PostgreSQL via DATABASE_URL
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "chittyfinance"
-# database_id = "your-d1-database-id"
-
-# KV Namespace for caching
 [[kv_namespaces]]
 binding = "FINANCE_KV"
 id = "517b63be4d7144c197b5bdf851f12041"
 preview_id = "89d0b3bc875e49c4a3a9091de6a080aa"
 
-# R2 Bucket for document storage
 [[r2_buckets]]
 binding = "FINANCE_R2"
 bucket_name = "chittyfinance-storage"
 preview_bucket_name = "chittyfinance-storage-preview"
 
-# Durable Objects (Agent)
 [[durable_objects.bindings]]
 name = "CF_AGENT"
 class_name = "ChittyAgent"
 
-# Migrations for Durable Object (SQLite storage)
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ChittyAgent"]
 
-# Analytics Engine for usage tracking
-# [[analytics_engine_datasets]]
-# binding = "ANALYTICS"
+# ─────────────────────────────────────────────────────────────────────
+# env.dev — local development via `wrangler dev --env dev`
+# ─────────────────────────────────────────────────────────────────────
+[env.dev]
+name = "chittyfinance-dev"
+workers_dev = true
 
-# Service bindings to other ChittyOS services
-# [[services]]
-# binding = "CHITTYID"
-# service = "chittyid"
-# environment = "production"
+[env.dev.vars]
+MODE = "system"
+NODE_ENV = "development"
+APP_VERSION = "2.0.0"
+CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
 
-# [[services]]
-# binding = "CHITTYAUTH"
-# service = "chittyauth"
-# environment = "production"
+[[env.dev.tail_consumers]]
+service = "chittytrack"
 
-# Development environment
+[[env.dev.kv_namespaces]]
+binding = "FINANCE_KV"
+id = "89d0b3bc875e49c4a3a9091de6a080aa"
+
+[[env.dev.r2_buckets]]
+binding = "FINANCE_R2"
+bucket_name = "chittyfinance-storage-preview"
+
+[[env.dev.durable_objects.bindings]]
+name = "CF_AGENT"
+class_name = "ChittyAgent"
+
+# ─────────────────────────────────────────────────────────────────────
+# env.staging — `wrangler deploy --env staging`
+# ─────────────────────────────────────────────────────────────────────
 [env.staging]
 name = "chittyfinance-staging"
-vars = { MODE = "system", NODE_ENV = "staging" }
+workers_dev = true
 
-# Production environment
+[env.staging.vars]
+MODE = "system"
+NODE_ENV = "staging"
+APP_VERSION = "2.0.0"
+CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
+
+[[env.staging.tail_consumers]]
+service = "chittytrack"
+
+[[env.staging.kv_namespaces]]
+binding = "FINANCE_KV"
+id = "517b63be4d7144c197b5bdf851f12041"
+
+[[env.staging.r2_buckets]]
+binding = "FINANCE_R2"
+bucket_name = "chittyfinance-storage"
+
+[[env.staging.durable_objects.bindings]]
+name = "CF_AGENT"
+class_name = "ChittyAgent"
+
+# ─────────────────────────────────────────────────────────────────────
+# env.production — `wrangler deploy --env production`
+# ─────────────────────────────────────────────────────────────────────
 [env.production]
 name = "chittyfinance"
-vars = { MODE = "system", NODE_ENV = "production" }
+workers_dev = false
 
-# Compatibility flags
-compatibility_flags = ["nodejs_compat"]
+routes = [
+  { pattern = "finance.chitty.cc/*", zone_name = "chitty.cc" }
+]
+
+[env.production.vars]
+MODE = "system"
+NODE_ENV = "production"
+APP_VERSION = "2.0.0"
+CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
+
+[[env.production.tail_consumers]]
+service = "chittytrack"
+
+[[env.production.kv_namespaces]]
+binding = "FINANCE_KV"
+id = "517b63be4d7144c197b5bdf851f12041"
+
+[[env.production.r2_buckets]]
+binding = "FINANCE_R2"
+bucket_name = "chittyfinance-storage"
+
+[[env.production.durable_objects.bindings]]
+name = "CF_AGENT"
+class_name = "ChittyAgent"
