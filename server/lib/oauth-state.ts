@@ -9,7 +9,10 @@
 
 import { createHmac, randomBytes } from 'crypto';
 
-const STATE_TOKEN_SECRET = process.env.OAUTH_STATE_SECRET || 'default-secret-change-in-production';
+const STATE_TOKEN_SECRET = process.env.OAUTH_STATE_SECRET;
+if (!STATE_TOKEN_SECRET) {
+  console.warn('OAUTH_STATE_SECRET not set — OAuth flows will fail');
+}
 const STATE_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export interface OAuthStateData {
@@ -22,6 +25,9 @@ export interface OAuthStateData {
  * Generate secure OAuth state token
  */
 export function generateOAuthState(userId: number | string): string {
+  if (!STATE_TOKEN_SECRET) {
+    throw new Error('OAUTH_STATE_SECRET is required for OAuth flows');
+  }
   const data: OAuthStateData = {
     userId,
     nonce: randomBytes(16).toString('hex'),
@@ -40,6 +46,10 @@ export function generateOAuthState(userId: number | string): string {
  * Validate and parse OAuth state token
  */
 export function validateOAuthState(state: string): OAuthStateData | null {
+  if (!STATE_TOKEN_SECRET) {
+    console.error('OAUTH_STATE_SECRET is required for OAuth validation');
+    return null;
+  }
   try {
     const [payload, signature] = state.split('.');
 

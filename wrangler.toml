@@ -31,6 +31,7 @@ command = "npx vite build --outDir dist/public"
 
 [assets]
 directory = "dist/public"
+binding = "ASSETS"
 
 [limits]
 cpu_ms = 50

@@ -28,6 +28,7 @@ CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
 #   wrangler secret put DATABASE_URL            # Neon PostgreSQL connection string
 #   wrangler secret put CHITTY_AUTH_SERVICE_TOKEN # ChittyAuth service token (also used for ChittyConnect)
 #   wrangler secret put JWT_SECRET              # JWT signing secret
+#   wrangler secret put OAUTH_STATE_SECRET      # HMAC secret for OAuth CSRF protection (required for Wave/Google OAuth)
 # Integrations (optional):
 #   wrangler secret put OPENAI_API_KEY
 #   wrangler secret put STRIPE_SECRET_KEY
@@ -47,6 +48,7 @@ command = "npx vite build --outDir dist/public"
 
 [assets]
 directory = "../dist/public"
+binding = "ASSETS"
 
 # Limits
 [limits]
