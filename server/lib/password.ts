@@ -97,11 +97,5 @@ export async function tokenEqual(a: string, b: string): Promise<boolean> {
     crypto.subtle.digest('SHA-256', enc.encode(a)),
     crypto.subtle.digest('SHA-256', enc.encode(b)),
   ]);
-  const ba = new Uint8Array(ha);
-  const bb = new Uint8Array(hb);
-  let result = 0;
-  for (let i = 0; i < ba.length; i++) {
-    result |= ba[i] ^ bb[i];
-  }
-  return result === 0;
+  return timingSafeEqual(toHex(new Uint8Array(ha)), toHex(new Uint8Array(hb)));
 }

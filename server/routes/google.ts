@@ -22,9 +22,11 @@ googleRoutes.get('/api/integrations/google/authorize', async (c) => {
     return c.json({ error: 'Google integration not configured' }, 503);
   }
 
-  const secret = c.env.OAUTH_STATE_SECRET || 'default-secret-change-in-production';
+  if (!c.env.OAUTH_STATE_SECRET) {
+    return c.json({ error: 'OAuth state secret not configured' }, 503);
+  }
   const tenantId = c.get('tenantId') || 'anonymous';
-  const state = await generateOAuthState(tenantId, secret);
+  const state = await generateOAuthState(tenantId, c.env.OAUTH_STATE_SECRET);
   const client = googleClient(c.env);
   const authUrl = client.getAuthorizationUrl(state);
 
@@ -58,8 +60,10 @@ googleCallbackRoute.get('/api/integrations/google/callback', async (c) => {
     return c.redirect(`${baseUrl}/connections?google=error&reason=missing_params`);
   }
 
-  const secret = c.env.OAUTH_STATE_SECRET || 'default-secret-change-in-production';
-  const stateData = await validateOAuthState(state, secret);
+  if (!c.env.OAUTH_STATE_SECRET) {
+    return c.redirect(`${baseUrl}/connections?google=error&reason=server_misconfigured`);
+  }
+  const stateData = await validateOAuthState(state, c.env.OAUTH_STATE_SECRET);
   if (!stateData) {
     return c.redirect(`${baseUrl}/connections?google=error&reason=invalid_state`);
   }

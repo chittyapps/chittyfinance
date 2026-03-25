@@ -5,6 +5,8 @@
  * Protects against CSRF (random nonce), replay (timestamp), and tampering (HMAC).
  */
 
+import { tokenEqual } from './password';
+
 const STATE_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export interface OAuthStateData {
@@ -49,7 +51,7 @@ export async function validateOAuthState(state: string, secret: string): Promise
     if (!payload || !signature) return null;
 
     const expected = await hmacSign(payload, secret);
-    if (signature !== expected) {
+    if (!(await tokenEqual(signature, expected))) {
       console.error('OAuth state: Invalid signature');
       return null;
     }
