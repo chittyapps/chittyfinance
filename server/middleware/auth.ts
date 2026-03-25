@@ -63,7 +63,7 @@ export const hybridAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
     return c.json({ error: 'session_expired' }, 401);
   }
 
-  // Inject userId header for callerContext middleware
-  c.req.raw.headers.set('x-chitty-user-id', sessionData.userId);
+  // Pass userId via Hono context (request headers are immutable in Workers)
+  c.set('userId', sessionData.userId);
   await next();
 };
