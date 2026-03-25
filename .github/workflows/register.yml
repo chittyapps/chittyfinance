@@ -8,6 +8,11 @@ on:
       - 'deploy/system-wrangler.toml'
       - '.github/workflows/register.yml'
   workflow_dispatch:
+    inputs:
+      skip_preflight:
+        description: 'Skip health/status preflight (use when CF WAF blocks GH runners)'
+        type: boolean
+        default: false
 
 concurrency:
   group: register-${{ github.ref }}
@@ -16,43 +21,53 @@ concurrency:
 jobs:
   preflight:
     name: Preflight Checks
+    if: ${{ github.event.inputs.skip_preflight != 'true' }}
     runs-on: ubuntu-latest
     outputs:
       health_ok: ${{ steps.health.outputs.ok }}
       status_ok: ${{ steps.status.outputs.ok }}
     steps:
-      - name: Health endpoint
+      - name: Health endpoint (with retry)
         id: health
         run: |
-          resp=$(curl -sf https://finance.chitty.cc/health 2>/dev/null || echo '{}')
-          status=$(echo "$resp" | jq -r '.status // empty')
-          if [ "$status" = "ok" ]; then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-            echo "Health check passed: $resp"
-          else
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::error::Health check failed: $resp"
-            exit 1
-          fi
+          for attempt in 1 2 3; do
+            resp=$(curl -sS --max-time 10 https://finance.chitty.cc/health 2>&1 || echo '{}')
+            status=$(echo "$resp" | jq -r '.status // empty' 2>/dev/null)
+            if [ "$status" = "ok" ]; then
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              echo "Health check passed (attempt $attempt): $resp"
+              exit 0
+            fi
+            echo "Attempt $attempt failed: $resp"
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+          done
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          echo "::error::Health check failed after 3 attempts (last response: $resp)"
+          exit 1
 
-      - name: Status endpoint
+      - name: Status endpoint (with retry)
         id: status
         run: |
-          resp=$(curl -sf https://finance.chitty.cc/api/v1/status 2>/dev/null || echo '{}')
-          version=$(echo "$resp" | jq -r '.version // empty')
-          mode=$(echo "$resp" | jq -r '.mode // empty')
-          if [ -n "$version" ] && [ "$mode" = "system" ]; then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-            echo "Status check passed: v${version} mode=${mode}"
-          else
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::error::Status check failed: $resp"
-            exit 1
-          fi
+          for attempt in 1 2 3; do
+            resp=$(curl -sS --max-time 10 https://finance.chitty.cc/api/v1/status 2>&1 || echo '{}')
+            version=$(echo "$resp" | jq -r '.version // empty' 2>/dev/null)
+            mode=$(echo "$resp" | jq -r '.mode // empty' 2>/dev/null)
+            if [ -n "$version" ] && [ "$mode" = "system" ]; then
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              echo "Status check passed (attempt $attempt): v${version} mode=${mode}"
+              exit 0
+            fi
+            echo "Attempt $attempt failed: $resp"
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+          done
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          echo "::error::Status check failed after 3 attempts (last response: $resp)"
+          exit 1
 
   register:
     name: Submit Registration
     needs: preflight
+    if: ${{ always() && (needs.preflight.result == 'success' || needs.preflight.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
