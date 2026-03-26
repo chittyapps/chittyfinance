@@ -18,6 +18,9 @@ import ValuationTab from '@/components/property/ValuationTab';
 import AddUnitDialog from '@/components/property/AddUnitDialog';
 import AddLeaseDialog from '@/components/property/AddLeaseDialog';
 import EditPropertyDialog from '@/components/property/EditPropertyDialog';
+import EditUnitDialog from '@/components/property/EditUnitDialog';
+import EditLeaseDialog from '@/components/property/EditLeaseDialog';
+import type { Unit, Lease } from '@/hooks/use-property';
 import WorkspaceTab from '@/components/property/WorkspaceTab';
 import CommsPanel from '@/components/property/CommsPanel';
 import WorkflowBoard from '@/components/property/WorkflowBoard';
@@ -30,6 +33,10 @@ export default function PropertyDetail() {
   const [addUnitOpen, setAddUnitOpen] = useState(false);
   const [addLeaseOpen, setAddLeaseOpen] = useState(false);
   const [editPropertyOpen, setEditPropertyOpen] = useState(false);
+  const [editUnitOpen, setEditUnitOpen] = useState(false);
+  const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
+  const [editLeaseOpen, setEditLeaseOpen] = useState(false);
+  const [selectedLease, setSelectedLease] = useState<Lease | null>(null);
 
   const { data: property, isLoading } = useProperty(id);
   const { data: units = [] } = usePropertyUnits(id);
@@ -90,6 +97,8 @@ export default function PropertyDetail() {
       {id && <AddUnitDialog propertyId={id} open={addUnitOpen} onOpenChange={setAddUnitOpen} />}
       {id && <AddLeaseDialog propertyId={id} open={addLeaseOpen} onOpenChange={setAddLeaseOpen} />}
       {property && <EditPropertyDialog property={property} open={editPropertyOpen} onOpenChange={setEditPropertyOpen} />}
+      {selectedUnit && id && <EditUnitDialog propertyId={id} unit={selectedUnit} open={editUnitOpen} onOpenChange={setEditUnitOpen} />}
+      {selectedLease && id && <EditLeaseDialog propertyId={id} lease={selectedLease} open={editLeaseOpen} onOpenChange={setEditLeaseOpen} />}
 
       <Tabs defaultValue="overview">
         <TabsList className="flex-wrap">
@@ -165,6 +174,7 @@ export default function PropertyDetail() {
                     <TableHead className="text-right">Rent</TableHead>
                     <TableHead>Tenant</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="w-[70px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -176,11 +186,26 @@ export default function PropertyDetail() {
                         <TableCell>{u.bedrooms}br / {u.bathrooms}ba</TableCell>
                         <TableCell className="text-right">{u.squareFeet?.toLocaleString()}</TableCell>
                         <TableCell className="text-right">{formatCurrency(parseFloat(u.monthlyRent || '0'))}</TableCell>
-                        <TableCell>{lease?.tenantName || '\u2014'}</TableCell>
+                        <TableCell>
+                          {lease ? (
+                            <button
+                              className="text-left hover:underline"
+                              onClick={() => { setSelectedLease(lease); setEditLeaseOpen(true); }}
+                            >
+                              {lease.tenantName}
+                            </button>
+                          ) : '\u2014'}
+                        </TableCell>
                         <TableCell>
                           <Badge variant={lease ? 'default' : 'secondary'}>
                             {lease ? 'Leased' : 'Vacant'}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" className="h-7 w-7"
+                            onClick={() => { setSelectedUnit(u); setEditUnitOpen(true); }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
