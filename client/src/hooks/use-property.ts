@@ -243,6 +243,32 @@ export function useCreateLease(propertyId: string) {
   });
 }
 
+export function useUpdateUnit(propertyId: string, unitId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<Unit>) =>
+      apiRequest('PATCH', `/api/properties/${propertyId}/units/${unitId}`, data).then(r => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/units`] });
+      qc.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/financials`] });
+      qc.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rent-roll`] });
+    },
+  });
+}
+
+export function useUpdateLease(propertyId: string, leaseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<Lease>) =>
+      apiRequest('PATCH', `/api/properties/${propertyId}/leases/${leaseId}`, data).then(r => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/leases`] });
+      qc.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/rent-roll`] });
+      qc.invalidateQueries({ queryKey: [`/api/properties/${propertyId}/financials`] });
+    },
+  });
+}
+
 export function useSendPropertyAdvice(propertyId: string) {
   return useMutation<AIAdviceResponse, Error, string>({
     mutationFn: (message: string) =>
