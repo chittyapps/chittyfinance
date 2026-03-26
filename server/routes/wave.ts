@@ -104,7 +104,7 @@ waveCallbackRoute.get('/api/integrations/wave/callback', async (c) => {
     return c.redirect(`${baseUrl}/connections?wave=connected`);
   } catch (err) {
     console.error('Wave callback error:', err);
-    return c.redirect(`${baseUrl}/connections?wave=error`);
+    return c.redirect(`${baseUrl}/connections?wave=error&reason=callback_failed`);
   }
 });
 
