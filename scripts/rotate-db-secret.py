@@ -20,6 +20,7 @@ Run:
 import argparse
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -54,7 +55,12 @@ def op_get(path):
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())
+            body = r.read()
+            try:
+                return json.loads(body)
+            except json.JSONDecodeError:
+                print(f"ERROR: 1Password Connect returned non-JSON: {body[:200]}", file=sys.stderr)
+                sys.exit(1)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:200]
         print(f"ERROR: 1Password Connect returned HTTP {e.code}: {body}", file=sys.stderr)
@@ -76,7 +82,12 @@ def neon_post(path, api_key):
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())
+            body = r.read()
+            try:
+                return json.loads(body)
+            except json.JSONDecodeError:
+                print(f"ERROR: Neon API returned non-JSON: {body[:200]}", file=sys.stderr)
+                sys.exit(1)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:200]
         print(f"ERROR: Neon API returned HTTP {e.code}: {body}", file=sys.stderr)
@@ -141,6 +152,13 @@ if not OP_HOST:
     sys.exit(1)
 if not OP_TOKEN:
     print("ERROR: OP_CONNECT_TOKEN environment variable is required", file=sys.stderr)
+    sys.exit(1)
+
+# Pre-flight: verify npx/wrangler available BEFORE rotating the password.
+# If wrangler is missing, rotating would leave a new password that can't be deployed.
+if not shutil.which("npx"):
+    print("ERROR: npx not found on PATH. Cannot deploy secrets to Cloudflare Workers.", file=sys.stderr)
+    print("ABORTING before password rotation to avoid partial failure.", file=sys.stderr)
     sys.exit(1)
 
 # ── Step 1: retrieve Neon API key from 1Password ──────────────────────────────
