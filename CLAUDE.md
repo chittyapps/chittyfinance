@@ -885,8 +885,8 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ✅ Wave sync import endpoint
 - ✅ Valuation Tab component (`client/src/components/property/ValuationTab.tsx`) — generalized, takes `propertyId` prop
 - ✅ Deployed to Cloudflare Workers (35 tests passing)
+- ✅ Frontend property management UI (Add/Edit property, Add unit/lease dialogs, detail panel with 5 tabs)
 - ⏳ Lease expiration notifications
-- ⏳ Frontend property management UI
 
 ### Phase 5: ChittyOS Ecosystem Integration
 - ⏳ Replace demo auth with ChittyID
