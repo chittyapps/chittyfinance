@@ -63,7 +63,9 @@ export function validateOAuthState(state: string): OAuthStateData | null {
       .update(payload)
       .digest('hex');
 
-    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    const sigBuf = Buffer.from(signature);
+    const expectedBuf = Buffer.from(expectedSignature);
+    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
       console.error('OAuth state: Invalid signature (possible tampering)');
       return null;
     }

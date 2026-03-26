@@ -7,9 +7,9 @@ rotate-db-secret.py
 3. Builds the pooled DATABASE_URL entirely in Python — the credential never
    touches a shell variable or a command-line argument. Password is
    URL-encoded to handle special characters.
-4. Writes the DATABASE_URL to a temp file (mode 0600, deleted after use),
-   then runs wrangler secret put with that file piped to stdin so the value
-   is never exposed in ps/env output. Deploys to all specified environments.
+4. For each target environment, writes the DATABASE_URL to a temp file
+   (mode 0600, deleted after use), then runs wrangler secret put with that
+   file piped to stdin so the value is never exposed in ps/env output.
 
 Run:
   python3 scripts/rotate-db-secret.py                    # default: top-level + production
@@ -44,15 +44,6 @@ NEON_DB         = "neondb"
 POOLER_HOST     = "ep-delicate-breeze-aj9gmu1i-pooler.c-3.us-east-2.aws.neon.tech"
 
 DEFAULT_ENVS    = [None, "production"]  # top-level (Workers Builds) + production
-
-# ── Validate required env vars ────────────────────────────────────────────────
-
-if not OP_HOST:
-    print("ERROR: OP_CONNECT_HOST environment variable is required", file=sys.stderr)
-    sys.exit(1)
-if not OP_TOKEN:
-    print("ERROR: OP_CONNECT_TOKEN environment variable is required", file=sys.stderr)
-    sys.exit(1)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -110,7 +101,11 @@ def deploy_secret(database_url, wrangler_config, env_name):
             cmd.extend(["--env", env_name])
 
         with open(tmp_path, "r") as stdin_fh:
-            result = subprocess.run(cmd, stdin=stdin_fh, capture_output=True, text=True)
+            try:
+                result = subprocess.run(cmd, stdin=stdin_fh, capture_output=True, text=True, timeout=60)
+            except subprocess.TimeoutExpired:
+                print(f"  [{label}] ERROR: wrangler timed out after 60s", file=sys.stderr)
+                return False
 
         if result.returncode == 0:
             print(f"  [{label}] wrangler secret put succeeded", file=sys.stderr)
@@ -138,6 +133,15 @@ parser.add_argument("--env", action="append", dest="envs",
                          "Pass multiple times for multiple envs. Use '' for top-level only.")
 args = parser.parse_args()
 target_envs = args.envs if args.envs else DEFAULT_ENVS
+
+# ── Validate required env vars (after argparse so --help works) ──────────────
+
+if not OP_HOST:
+    print("ERROR: OP_CONNECT_HOST environment variable is required", file=sys.stderr)
+    sys.exit(1)
+if not OP_TOKEN:
+    print("ERROR: OP_CONNECT_TOKEN environment variable is required", file=sys.stderr)
+    sys.exit(1)
 
 # ── Step 1: retrieve Neon API key from 1Password ──────────────────────────────
 
