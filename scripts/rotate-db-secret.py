@@ -5,15 +5,19 @@ rotate-db-secret.py
 2. Resets neondb_owner password on the ChittyRental Neon project via the
    Neon API.
 3. Builds the pooled DATABASE_URL entirely in Python — the credential never
-   touches a shell variable or a command-line argument.
+   touches a shell variable or a command-line argument. Password is
+   URL-encoded to handle special characters.
 4. Writes the DATABASE_URL to a temp file (mode 0600, deleted after use),
-   then execs wrangler secret put reading from that file via stdin so the
-   value is never exposed in ps/env output.
+   then runs wrangler secret put with that file piped to stdin so the value
+   is never exposed in ps/env output. Deploys to all specified environments.
 
 Run:
-  python3 scripts/rotate-db-secret.py
+  python3 scripts/rotate-db-secret.py                    # default: top-level + production
+  python3 scripts/rotate-db-secret.py --env production    # single env
+  python3 scripts/rotate-db-secret.py --env staging --env production  # multiple envs
 """
 
+import argparse
 import json
 import os
 import stat
@@ -21,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -38,6 +43,17 @@ NEON_ROLE       = "neondb_owner"
 NEON_DB         = "neondb"
 POOLER_HOST     = "ep-delicate-breeze-aj9gmu1i-pooler.c-3.us-east-2.aws.neon.tech"
 
+DEFAULT_ENVS    = [None, "production"]  # top-level (Workers Builds) + production
+
+# ── Validate required env vars ────────────────────────────────────────────────
+
+if not OP_HOST:
+    print("ERROR: OP_CONNECT_HOST environment variable is required", file=sys.stderr)
+    sys.exit(1)
+if not OP_TOKEN:
+    print("ERROR: OP_CONNECT_TOKEN environment variable is required", file=sys.stderr)
+    sys.exit(1)
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def op_get(path):
@@ -45,8 +61,16 @@ def op_get(path):
         f"{OP_HOST}{path}",
         headers={"Authorization": f"Bearer {OP_TOKEN}"},
     )
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:200]
+        print(f"ERROR: 1Password Connect returned HTTP {e.code}: {body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"ERROR: Cannot reach 1Password Connect at {OP_HOST}: {e.reason}", file=sys.stderr)
+        sys.exit(1)
 
 
 def neon_post(path, api_key):
@@ -59,9 +83,61 @@ def neon_post(path, api_key):
         },
         method="POST",
     )
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:200]
+        print(f"ERROR: Neon API returned HTTP {e.code}: {body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"ERROR: Cannot reach Neon API: {e.reason}", file=sys.stderr)
+        sys.exit(1)
 
+
+def deploy_secret(database_url, wrangler_config, env_name):
+    """Deploy DATABASE_URL to a specific wrangler environment via temp file."""
+    label = env_name or "top-level"
+    fd, tmp_path = tempfile.mkstemp(prefix="chittyfinance_db_", suffix=".tmp")
+    try:
+        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600
+        with os.fdopen(fd, "w") as fh:
+            fh.write(database_url)
+            fh.flush()
+
+        cmd = ["npx", "wrangler", "secret", "put", "DATABASE_URL", "--config", wrangler_config]
+        if env_name:
+            cmd.extend(["--env", env_name])
+
+        with open(tmp_path, "r") as stdin_fh:
+            result = subprocess.run(cmd, stdin=stdin_fh, capture_output=True, text=True)
+
+        if result.returncode == 0:
+            print(f"  [{label}] wrangler secret put succeeded", file=sys.stderr)
+        else:
+            print(f"  [{label}] ERROR: wrangler exited {result.returncode}", file=sys.stderr)
+            print(result.stdout, file=sys.stderr)
+            print(result.stderr, file=sys.stderr)
+            return False
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            print(f"  WARNING: Failed to delete temp file {tmp_path}: {e}", file=sys.stderr)
+            print("  SECURITY: Temp file may contain DATABASE_URL in plaintext", file=sys.stderr)
+    return True
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+parser = argparse.ArgumentParser(description="Rotate Neon DB password and deploy to Cloudflare Workers")
+parser.add_argument("--env", action="append", dest="envs",
+                    help="Wrangler environment(s) to deploy to (default: top-level + production). "
+                         "Pass multiple times for multiple envs. Use '' for top-level only.")
+args = parser.parse_args()
+target_envs = args.envs if args.envs else DEFAULT_ENVS
 
 # ── Step 1: retrieve Neon API key from 1Password ──────────────────────────────
 
@@ -91,52 +167,30 @@ print("[2] Password reset OK", file=sys.stderr)
 
 # ── Step 3: build DATABASE_URL entirely in Python ────────────────────────────
 
+encoded_password = urllib.parse.quote(new_password, safe="")
 database_url = (
-    f"postgresql://{NEON_ROLE}:{new_password}"
+    f"postgresql://{NEON_ROLE}:{encoded_password}"
     f"@{POOLER_HOST}/{NEON_DB}?sslmode=require"
 )
-print("[3] DATABASE_URL constructed", file=sys.stderr)
+print("[3] DATABASE_URL constructed (password URL-encoded)", file=sys.stderr)
 
-# ── Step 4: write DATABASE_URL to a 0600 temp file, pipe into wrangler ────────
-
-print("[4] Writing DATABASE_URL to secure temp file and calling wrangler...", file=sys.stderr)
+# ── Step 4: deploy to wrangler environments ──────────────────────────────────
 
 wrangler_config = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "deploy", "system-wrangler.toml",
 )
 
-fd, tmp_path = tempfile.mkstemp(prefix="chittyfinance_db_", suffix=".tmp")
-try:
-    os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600
-    with os.fdopen(fd, "w") as fh:
-        fh.write(database_url)
-        fh.flush()
+env_labels = [e or "top-level" for e in target_envs]
+print(f"[4] Deploying DATABASE_URL to: {', '.join(env_labels)}", file=sys.stderr)
 
-    with open(tmp_path, "r") as stdin_fh:
-        result = subprocess.run(
-            [
-                "npx", "wrangler", "secret", "put", "DATABASE_URL",
-                "--config", wrangler_config,
-            ],
-            stdin=stdin_fh,
-            capture_output=True,
-            text=True,
-        )
+failed = []
+for env_name in target_envs:
+    if not deploy_secret(database_url, wrangler_config, env_name):
+        failed.append(env_name or "top-level")
 
-    if result.returncode == 0:
-        print("[4] wrangler secret put succeeded", file=sys.stderr)
-        print(result.stdout, file=sys.stderr)
-    else:
-        print(f"ERROR: wrangler exited {result.returncode}", file=sys.stderr)
-        print(result.stdout, file=sys.stderr)
-        print(result.stderr, file=sys.stderr)
-        sys.exit(1)
-finally:
-    try:
-        os.unlink(tmp_path)
-        print("[4] Temp file deleted", file=sys.stderr)
-    except OSError:
-        pass
+if failed:
+    print(f"ERROR: Failed to deploy to: {', '.join(failed)}", file=sys.stderr)
+    sys.exit(1)
 
-print("[5] Done. DATABASE_URL secret updated on chittyfinance Worker.", file=sys.stderr)
+print("[4] Done. DATABASE_URL secret updated on all target environments.", file=sys.stderr)

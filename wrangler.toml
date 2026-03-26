@@ -119,7 +119,7 @@ class_name = "ChittyAgent"
 
 # ─────────────────────────────────────────────────────────────────────
 # env.production — `wrangler deploy --env production`
-# Custom domain routes, production KV/R2, full observability
+# Custom domain routes, production KV/R2
 # ─────────────────────────────────────────────────────────────────────
 [env.production]
 name = "chittyfinance"

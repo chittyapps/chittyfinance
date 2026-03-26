@@ -4,15 +4,15 @@
  * Protects against:
  * - CSRF attacks (random nonce)
  * - Replay attacks (timestamp expiration)
- * - Tampering (HMAC signature)
+ * - Tampering (HMAC signature, timing-safe comparison)
+ *
+ * Legacy Node.js version — used only in standalone dev mode.
+ * Production uses oauth-state-edge.ts (Web Crypto API).
  */
 
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 
 const STATE_TOKEN_SECRET = process.env.OAUTH_STATE_SECRET;
-if (!STATE_TOKEN_SECRET) {
-  console.warn('OAUTH_STATE_SECRET not set — OAuth flows will fail');
-}
 const STATE_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export interface OAuthStateData {
@@ -63,7 +63,7 @@ export function validateOAuthState(state: string): OAuthStateData | null {
       .update(payload)
       .digest('hex');
 
-    if (signature !== expectedSignature) {
+    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
       console.error('OAuth state: Invalid signature (possible tampering)');
       return null;
     }

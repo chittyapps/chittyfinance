@@ -48,7 +48,10 @@ export async function generateOAuthState(userId: number | string, secret: string
 export async function validateOAuthState(state: string, secret: string): Promise<OAuthStateData | null> {
   try {
     const [payload, signature] = state.split('.');
-    if (!payload || !signature) return null;
+    if (!payload || !signature) {
+      console.error('OAuth state: Invalid format (missing payload or signature)');
+      return null;
+    }
 
     const expected = await hmacSign(payload, secret);
     if (!(await tokenEqual(signature, expected))) {
