@@ -134,8 +134,7 @@
       "express-rate-limit": ">=8.2.2",
       "@hono/node-server": ">=1.19.10",
       "axios": ">=1.13.5",
-      "rollup": ">=4.59.0",
-      "picomatch": ">=2.3.2"
+      "rollup": ">=4.59.0"
     }
   },
   "description": "Multi-entity financial management with Plaid banking integration"
