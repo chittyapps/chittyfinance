@@ -26,6 +26,21 @@ import AddUnitDialog from '@/components/property/AddUnitDialog';
 import AddLeaseDialog from '@/components/property/AddLeaseDialog';
 import EditPropertyDialog from '@/components/property/EditPropertyDialog';
 
+const MS_PER_DAY = 86_400_000;
+const LEASE_DATE_FORMAT: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: '2-digit' };
+
+function LeaseEndBadge({ endDate }: { endDate: string }) {
+  const days = Math.ceil((new Date(endDate).getTime() - Date.now()) / MS_PER_DAY);
+  let variant: 'destructive' | 'default' | 'secondary' = 'secondary';
+  if (days <= 30) variant = 'destructive';
+  else if (days <= 60) variant = 'default';
+  return (
+    <Badge variant={variant}>
+      {new Date(endDate).toLocaleDateString('en-US', LEASE_DATE_FORMAT)}
+    </Badge>
+  );
+}
+
 interface PropertyDetailPanelProps {
   propertyId: string | null;
   onClose: () => void;
@@ -279,14 +294,7 @@ export default function PropertyDetailPanel({ propertyId, onClose }: PropertyDet
                                   </TableCell>
                                   <TableCell>{lease?.tenantName || '\u2014'}</TableCell>
                                   <TableCell className="hidden sm:table-cell">
-                                    {lease ? (() => {
-                                      const days = Math.ceil((new Date(lease.endDate).getTime() - Date.now()) / 86_400_000);
-                                      return (
-                                        <Badge variant={days <= 30 ? 'destructive' : days <= 60 ? 'default' : 'secondary'}>
-                                          {new Date(lease.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
-                                        </Badge>
-                                      );
-                                    })() : '\u2014'}
+                                    {lease ? <LeaseEndBadge endDate={lease.endDate} /> : '\u2014'}
                                   </TableCell>
                                   <TableCell>
                                     <Badge variant={lease ? 'default' : 'secondary'}>

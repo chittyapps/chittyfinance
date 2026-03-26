@@ -6,10 +6,20 @@ import { Clock } from 'lucide-react';
 import { useExpiringLeases } from '@/hooks/use-property';
 import { formatCurrency } from '@/lib/utils';
 
-function urgencyBadge(days: number) {
-  if (days <= 30) return <Badge variant="destructive">{days}d</Badge>;
-  if (days <= 60) return <Badge variant="default">{days}d</Badge>;
-  return <Badge variant="secondary">{days}d</Badge>;
+function urgencyVariant(days: number): 'destructive' | 'default' | 'secondary' {
+  if (days <= 30) return 'destructive';
+  if (days <= 60) return 'default';
+  return 'secondary';
+}
+
+function Header({ count }: { count?: number }) {
+  return (
+    <CardHeader>
+      <CardTitle className="text-base flex items-center gap-2">
+        <Clock className="h-4 w-4" /> Expiring Leases{count != null ? ` (${count})` : ''}
+      </CardTitle>
+    </CardHeader>
+  );
 }
 
 export default function ExpiringLeases() {
@@ -18,11 +28,7 @@ export default function ExpiringLeases() {
   if (isLoading) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-4 w-4" /> Expiring Leases
-          </CardTitle>
-        </CardHeader>
+        <Header />
         <CardContent>
           <Skeleton className="h-24" />
         </CardContent>
@@ -33,11 +39,7 @@ export default function ExpiringLeases() {
   if (!leases || leases.length === 0) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-4 w-4" /> Expiring Leases
-          </CardTitle>
-        </CardHeader>
+        <Header />
         <CardContent>
           <p className="text-sm text-muted-foreground">No leases expiring in the next 90 days.</p>
         </CardContent>
@@ -47,11 +49,7 @@ export default function ExpiringLeases() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <Clock className="h-4 w-4" /> Expiring Leases ({leases.length})
-        </CardTitle>
-      </CardHeader>
+      <Header count={leases.length} />
       <CardContent>
         <Table>
           <TableHeader>
@@ -72,7 +70,9 @@ export default function ExpiringLeases() {
                 <TableCell>{l.unitNumber || '\u2014'}</TableCell>
                 <TableCell className="text-right">{formatCurrency(parseFloat(l.monthlyRent))}</TableCell>
                 <TableCell>{new Date(l.endDate).toLocaleDateString()}</TableCell>
-                <TableCell className="text-right">{urgencyBadge(l.daysRemaining)}</TableCell>
+                <TableCell className="text-right">
+                  <Badge variant={urgencyVariant(l.daysRemaining)}>{l.daysRemaining}d</Badge>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

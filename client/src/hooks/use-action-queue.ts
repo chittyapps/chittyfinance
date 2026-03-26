@@ -180,29 +180,21 @@ export function useActionQueue() {
 
     // Expiring leases — grouped by urgency tier
     if (tenantId && expiringLeases && expiringLeases.length > 0) {
-      const critical = expiringLeases.filter((l) => l.daysRemaining <= 30);
-      const warning = expiringLeases.filter((l) => l.daysRemaining > 30 && l.daysRemaining <= 60);
-
-      if (critical.length > 0) {
+      const tiers: Array<{ id: string; severity: ActionSeverity; filter: (days: number) => boolean; title: string }> = [
+        { id: 'expiring-leases-critical', severity: 'critical', filter: (d) => d <= 30, title: 'expiring within 30 days' },
+        { id: 'expiring-leases-warning', severity: 'warning', filter: (d) => d > 30 && d <= 60, title: 'expiring in 31\u201360 days' },
+      ];
+      for (const tier of tiers) {
+        const matches = expiringLeases.filter((l) => tier.filter(l.daysRemaining));
+        if (matches.length === 0) continue;
+        const names = matches.slice(0, 2).map((l) => l.tenantName).join(', ');
         queue.push({
-          id: 'expiring-leases-critical',
+          id: tier.id,
           type: 'expiring_lease',
-          severity: 'critical',
-          title: `${critical.length} lease${critical.length !== 1 ? 's' : ''} expiring within 30 days`,
-          detail: critical.map((l) => l.tenantName).slice(0, 2).join(', ') + (critical.length > 2 ? ` +${critical.length - 2} more` : ''),
-          count: critical.length,
-          actionLabel: 'View',
-          actionHref: '/properties',
-        });
-      }
-      if (warning.length > 0) {
-        queue.push({
-          id: 'expiring-leases-warning',
-          type: 'expiring_lease',
-          severity: 'warning',
-          title: `${warning.length} lease${warning.length !== 1 ? 's' : ''} expiring in 31\u201360 days`,
-          detail: warning.map((l) => l.tenantName).slice(0, 2).join(', ') + (warning.length > 2 ? ` +${warning.length - 2} more` : ''),
-          count: warning.length,
+          severity: tier.severity,
+          title: `${matches.length} lease${matches.length !== 1 ? 's' : ''} ${tier.title}`,
+          detail: matches.length > 2 ? `${names} +${matches.length - 2} more` : names,
+          count: matches.length,
           actionLabel: 'View',
           actionHref: '/properties',
         });

@@ -272,8 +272,6 @@ export function useUpdateLease(propertyId: string, leaseId: string) {
 export interface ExpiringLease {
   leaseId: string;
   tenantName: string;
-  tenantEmail: string | null;
-  tenantPhone: string | null;
   endDate: string;
   monthlyRent: string;
   unitNumber: string | null;

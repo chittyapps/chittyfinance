@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 
+const MS_PER_DAY = 86_400_000;
+
 export const leaseRoutes = new Hono<HonoEnv>();
 
-// GET /api/leases/expiring — list leases expiring within N days (default 90)
 leaseRoutes.get('/api/leases/expiring', async (c) => {
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
@@ -13,23 +14,26 @@ leaseRoutes.get('/api/leases/expiring', async (c) => {
     return c.json({ error: 'days must be between 1 and 365' }, 400);
   }
 
-  const expiring = await storage.getExpiringLeases(days, tenantId);
+  try {
+    const expiring = await storage.getExpiringLeases(days, tenantId);
 
-  return c.json(
-    expiring.map(({ lease, unit, property }) => ({
-      leaseId: lease.id,
-      tenantName: lease.tenantName,
-      tenantEmail: lease.tenantEmail,
-      tenantPhone: lease.tenantPhone,
-      endDate: lease.endDate,
-      monthlyRent: lease.monthlyRent,
-      unitNumber: unit.unitNumber,
-      propertyId: property.id,
-      propertyName: property.name,
-      address: property.address,
-      daysRemaining: Math.ceil(
-        (new Date(lease.endDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000),
-      ),
-    })),
-  );
+    return c.json(
+      expiring.map(({ lease, unit, property }) => ({
+        leaseId: lease.id,
+        tenantName: lease.tenantName,
+        endDate: lease.endDate,
+        monthlyRent: lease.monthlyRent,
+        unitNumber: unit.unitNumber,
+        propertyId: property.id,
+        propertyName: property.name,
+        address: property.address,
+        daysRemaining: Math.ceil(
+          (new Date(lease.endDate).getTime() - Date.now()) / MS_PER_DAY,
+        ),
+      })),
+    );
+  } catch (err) {
+    console.error('[leases:expiring] Failed:', err);
+    return c.json({ error: 'Failed to retrieve expiring leases' }, 500);
+  }
 });

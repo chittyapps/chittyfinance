@@ -2,6 +2,8 @@ import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import type { Database } from '../db/connection';
 import * as schema from '../db/schema';
 
+const MS_PER_DAY = 86_400_000;
+
 export class SystemStorage {
   constructor(private db: Database) {}
 
@@ -351,12 +353,13 @@ export class SystemStorage {
       .where(and(inArray(schema.leases.unitId, unitIds), eq(schema.leases.status, 'active')));
   }
 
-  async getExpiringLeases(withinDays: number, tenantId?: string) {
+  async getExpiringLeases(withinDays: number, tenantId?: string, minDays?: number) {
     const now = new Date();
-    const cutoff = new Date(now.getTime() + withinDays * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(now.getTime() + withinDays * MS_PER_DAY);
+    const floor = minDays ? new Date(now.getTime() + minDays * MS_PER_DAY) : now;
     const conditions = [
       eq(schema.leases.status, 'active'),
-      sql`${schema.leases.endDate} >= ${now}`,
+      sql`${schema.leases.endDate} >= ${floor}`,
       sql`${schema.leases.endDate} <= ${cutoff}`,
     ];
     if (tenantId) {
