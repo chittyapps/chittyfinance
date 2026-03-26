@@ -6,13 +6,14 @@ export const leaseRoutes = new Hono<HonoEnv>();
 // GET /api/leases/expiring — list leases expiring within N days (default 90)
 leaseRoutes.get('/api/leases/expiring', async (c) => {
   const storage = c.get('storage');
+  const tenantId = c.get('tenantId');
   const days = parseInt(c.req.query('days') || '90', 10);
 
   if (isNaN(days) || days < 1 || days > 365) {
     return c.json({ error: 'days must be between 1 and 365' }, 400);
   }
 
-  const expiring = await storage.getExpiringLeases(days);
+  const expiring = await storage.getExpiringLeases(days, tenantId);
 
   return c.json(
     expiring.map(({ lease, unit, property }) => ({

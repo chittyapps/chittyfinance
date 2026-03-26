@@ -351,9 +351,17 @@ export class SystemStorage {
       .where(and(inArray(schema.leases.unitId, unitIds), eq(schema.leases.status, 'active')));
   }
 
-  async getExpiringLeases(withinDays: number) {
+  async getExpiringLeases(withinDays: number, tenantId?: string) {
     const now = new Date();
     const cutoff = new Date(now.getTime() + withinDays * 24 * 60 * 60 * 1000);
+    const conditions = [
+      eq(schema.leases.status, 'active'),
+      sql`${schema.leases.endDate} >= ${now}`,
+      sql`${schema.leases.endDate} <= ${cutoff}`,
+    ];
+    if (tenantId) {
+      conditions.push(eq(schema.properties.tenantId, tenantId));
+    }
     return this.db
       .select({
         lease: schema.leases,
@@ -363,13 +371,7 @@ export class SystemStorage {
       .from(schema.leases)
       .innerJoin(schema.units, eq(schema.leases.unitId, schema.units.id))
       .innerJoin(schema.properties, eq(schema.units.propertyId, schema.properties.id))
-      .where(
-        and(
-          eq(schema.leases.status, 'active'),
-          sql`${schema.leases.endDate} >= ${now}`,
-          sql`${schema.leases.endDate} <= ${cutoff}`,
-        ),
-      )
+      .where(and(...conditions))
       .orderBy(schema.leases.endDate);
   }
 

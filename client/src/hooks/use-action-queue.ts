@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTenantId } from '@/contexts/TenantContext';
-import { usePortfolioSummary } from './use-property';
+import { usePortfolioSummary, useExpiringLeases } from './use-property';
 import { useConsolidatedReport } from './use-reports';
 
 export type ActionSeverity = 'critical' | 'warning' | 'info';
@@ -38,6 +38,7 @@ export function useActionQueue() {
   const tenantId = useTenantId();
 
   const { data: portfolio, isError: portfolioError } = usePortfolioSummary();
+  const { data: expiringLeases } = useExpiringLeases(90);
 
   const { data: integrationStatus, isError: integrationError } = useQuery<Record<string, IntegrationStatus>>({
     queryKey: ['/api/integrations/status'],
@@ -177,6 +178,37 @@ export function useActionQueue() {
       }
     }
 
+    // Expiring leases — grouped by urgency tier
+    if (tenantId && expiringLeases && expiringLeases.length > 0) {
+      const critical = expiringLeases.filter((l) => l.daysRemaining <= 30);
+      const warning = expiringLeases.filter((l) => l.daysRemaining > 30 && l.daysRemaining <= 60);
+
+      if (critical.length > 0) {
+        queue.push({
+          id: 'expiring-leases-critical',
+          type: 'expiring_lease',
+          severity: 'critical',
+          title: `${critical.length} lease${critical.length !== 1 ? 's' : ''} expiring within 30 days`,
+          detail: critical.map((l) => l.tenantName).slice(0, 2).join(', ') + (critical.length > 2 ? ` +${critical.length - 2} more` : ''),
+          count: critical.length,
+          actionLabel: 'View',
+          actionHref: '/properties',
+        });
+      }
+      if (warning.length > 0) {
+        queue.push({
+          id: 'expiring-leases-warning',
+          type: 'expiring_lease',
+          severity: 'warning',
+          title: `${warning.length} lease${warning.length !== 1 ? 's' : ''} expiring in 31\u201360 days`,
+          detail: warning.map((l) => l.tenantName).slice(0, 2).join(', ') + (warning.length > 2 ? ` +${warning.length - 2} more` : ''),
+          count: warning.length,
+          actionLabel: 'View',
+          actionHref: '/properties',
+        });
+      }
+    }
+
     // Close readiness blockers
     if (reportData?.preflight && !reportData.preflight.readyToFileTaxes) {
       const failCount = reportData.preflight.checks.filter((c) => c.status === 'fail').length;
@@ -196,7 +228,7 @@ export function useActionQueue() {
 
     queue.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
     return queue;
-  }, [portfolio, integrationStatus, reportData, hasDataError]);
+  }, [portfolio, integrationStatus, reportData, expiringLeases, hasDataError, tenantId]);
 
   return {
     items,

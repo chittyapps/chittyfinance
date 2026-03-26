@@ -260,6 +260,7 @@ export default function PropertyDetailPanel({ propertyId, onClose }: PropertyDet
                               <TableHead className="text-right">Sq Ft</TableHead>
                               <TableHead className="text-right">Rent</TableHead>
                               <TableHead>Tenant</TableHead>
+                              <TableHead className="hidden sm:table-cell">Lease End</TableHead>
                               <TableHead>Status</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -277,6 +278,16 @@ export default function PropertyDetailPanel({ propertyId, onClose }: PropertyDet
                                     {formatCurrency(parseFloat(u.monthlyRent || '0'))}
                                   </TableCell>
                                   <TableCell>{lease?.tenantName || '\u2014'}</TableCell>
+                                  <TableCell className="hidden sm:table-cell">
+                                    {lease ? (() => {
+                                      const days = Math.ceil((new Date(lease.endDate).getTime() - Date.now()) / 86_400_000);
+                                      return (
+                                        <Badge variant={days <= 30 ? 'destructive' : days <= 60 ? 'default' : 'secondary'}>
+                                          {new Date(lease.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                                        </Badge>
+                                      );
+                                    })() : '\u2014'}
+                                  </TableCell>
                                   <TableCell>
                                     <Badge variant={lease ? 'default' : 'secondary'}>
                                       {lease ? 'Leased' : 'Vacant'}
