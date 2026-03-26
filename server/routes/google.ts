@@ -54,7 +54,7 @@ googleCallbackRoute.get('/api/integrations/google/callback', async (c) => {
   const error = c.req.query('error');
 
   if (error) {
-    return c.redirect(`${baseUrl}/connections?google=error&reason=${error}`);
+    return c.redirect(`${baseUrl}/connections?google=error&reason=${encodeURIComponent(error)}`);
   }
   if (!code || !state) {
     return c.redirect(`${baseUrl}/connections?google=error&reason=missing_params`);

@@ -45,7 +45,7 @@ waveCallbackRoute.get('/api/integrations/wave/callback', async (c) => {
   const error = c.req.query('error');
 
   if (error) {
-    return c.redirect(`${baseUrl}/connections?wave=error&reason=${error}`);
+    return c.redirect(`${baseUrl}/connections?wave=error&reason=${encodeURIComponent(error)}`);
   }
 
   if (!code || !state) {
