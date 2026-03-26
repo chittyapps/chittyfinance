@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { useTenant, useTenantId } from '@/contexts/TenantContext';
 import { formatCurrency } from '@/lib/utils';
-import { usePortfolioSummary } from '@/hooks/use-property';
+import { usePortfolioSummary, useExpiringLeases } from '@/hooks/use-property';
+import ExpiringLeases from '@/components/property/ExpiringLeases';
 import { useActionQueue, type ActionItem, type ActionSeverity } from '@/hooks/use-action-queue';
 import { useConnectionHealth } from '@/hooks/use-connection-health';
 import { useConsolidatedReport } from '@/hooks/use-reports';
@@ -593,9 +594,10 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Right column: health + connections + orbital */}
+        {/* Right column: health + leases + connections + orbital */}
         <div className="space-y-5">
           <DataHealth />
+          {tenantId && <ExpiringLeases />}
           <ConnectionPulse />
           <OrbitalPreview />
         </div>

@@ -351,6 +351,40 @@ export class SystemStorage {
       .where(and(inArray(schema.leases.unitId, unitIds), eq(schema.leases.status, 'active')));
   }
 
+  async getExpiringLeases(withinDays: number) {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() + withinDays * 24 * 60 * 60 * 1000);
+    return this.db
+      .select({
+        lease: schema.leases,
+        unit: schema.units,
+        property: schema.properties,
+      })
+      .from(schema.leases)
+      .innerJoin(schema.units, eq(schema.leases.unitId, schema.units.id))
+      .innerJoin(schema.properties, eq(schema.units.propertyId, schema.properties.id))
+      .where(
+        and(
+          eq(schema.leases.status, 'active'),
+          sql`${schema.leases.endDate} >= ${now}`,
+          sql`${schema.leases.endDate} <= ${cutoff}`,
+        ),
+      )
+      .orderBy(schema.leases.endDate);
+  }
+
+  async getTasksByRelation(relatedTo: string, relatedId: string) {
+    return this.db
+      .select()
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.relatedTo, relatedTo),
+          eq(schema.tasks.relatedId, relatedId),
+        ),
+      );
+  }
+
   // ── PROPERTY FINANCIALS ──
 
   async getPropertyTransactions(propertyId: string, tenantId: string, since?: string, until?: string) {
