@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTenantId } from '@/contexts/TenantContext';
-import { usePortfolioSummary } from './use-property';
+import { usePortfolioSummary, useExpiringLeases } from './use-property';
 import { useConsolidatedReport } from './use-reports';
 
 export type ActionSeverity = 'critical' | 'warning' | 'info';
@@ -38,6 +38,7 @@ export function useActionQueue() {
   const tenantId = useTenantId();
 
   const { data: portfolio, isError: portfolioError } = usePortfolioSummary();
+  const { data: expiringLeases } = useExpiringLeases(90);
 
   const { data: integrationStatus, isError: integrationError } = useQuery<Record<string, IntegrationStatus>>({
     queryKey: ['/api/integrations/status'],
@@ -177,6 +178,29 @@ export function useActionQueue() {
       }
     }
 
+    // Expiring leases — grouped by urgency tier
+    if (tenantId && expiringLeases && expiringLeases.length > 0) {
+      const tiers: Array<{ id: string; severity: ActionSeverity; filter: (days: number) => boolean; title: string }> = [
+        { id: 'expiring-leases-critical', severity: 'critical', filter: (d) => d <= 30, title: 'expiring within 30 days' },
+        { id: 'expiring-leases-warning', severity: 'warning', filter: (d) => d > 30 && d <= 60, title: 'expiring in 31\u201360 days' },
+      ];
+      for (const tier of tiers) {
+        const matches = expiringLeases.filter((l) => tier.filter(l.daysRemaining));
+        if (matches.length === 0) continue;
+        const names = matches.slice(0, 2).map((l) => l.tenantName).join(', ');
+        queue.push({
+          id: tier.id,
+          type: 'expiring_lease',
+          severity: tier.severity,
+          title: `${matches.length} lease${matches.length !== 1 ? 's' : ''} ${tier.title}`,
+          detail: matches.length > 2 ? `${names} +${matches.length - 2} more` : names,
+          count: matches.length,
+          actionLabel: 'View',
+          actionHref: '/properties',
+        });
+      }
+    }
+
     // Close readiness blockers
     if (reportData?.preflight && !reportData.preflight.readyToFileTaxes) {
       const failCount = reportData.preflight.checks.filter((c) => c.status === 'fail').length;
@@ -196,7 +220,7 @@ export function useActionQueue() {
 
     queue.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
     return queue;
-  }, [portfolio, integrationStatus, reportData, hasDataError]);
+  }, [portfolio, integrationStatus, reportData, expiringLeases, hasDataError, tenantId]);
 
   return {
     items,

@@ -2,6 +2,8 @@ import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import type { Database } from '../db/connection';
 import * as schema from '../db/schema';
 
+const MS_PER_DAY = 86_400_000;
+
 export class SystemStorage {
   constructor(private db: Database) {}
 
@@ -349,6 +351,43 @@ export class SystemStorage {
       .select()
       .from(schema.leases)
       .where(and(inArray(schema.leases.unitId, unitIds), eq(schema.leases.status, 'active')));
+  }
+
+  async getExpiringLeases(withinDays: number, tenantId?: string, minDays?: number) {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() + withinDays * MS_PER_DAY);
+    const floor = minDays ? new Date(now.getTime() + minDays * MS_PER_DAY) : now;
+    const conditions = [
+      eq(schema.leases.status, 'active'),
+      sql`${schema.leases.endDate} >= ${floor}`,
+      sql`${schema.leases.endDate} <= ${cutoff}`,
+    ];
+    if (tenantId) {
+      conditions.push(eq(schema.properties.tenantId, tenantId));
+    }
+    return this.db
+      .select({
+        lease: schema.leases,
+        unit: schema.units,
+        property: schema.properties,
+      })
+      .from(schema.leases)
+      .innerJoin(schema.units, eq(schema.leases.unitId, schema.units.id))
+      .innerJoin(schema.properties, eq(schema.units.propertyId, schema.properties.id))
+      .where(and(...conditions))
+      .orderBy(schema.leases.endDate);
+  }
+
+  async getTasksByRelation(relatedTo: string, relatedId: string) {
+    return this.db
+      .select()
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.relatedTo, relatedTo),
+          eq(schema.tasks.relatedId, relatedId),
+        ),
+      );
   }
 
   // ── PROPERTY FINANCIALS ──

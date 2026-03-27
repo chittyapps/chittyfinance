@@ -47,6 +47,9 @@ command = "npx vite build --outDir dist/public"
 directory = "../dist/public"
 binding = "ASSETS"
 
+[triggers]
+crons = ["0 9 * * *"]  # Daily at 9:00 AM UTC — lease expiration check
+
 [limits]
 cpu_ms = 50
 
@@ -81,6 +84,9 @@ NODE_ENV = "development"
 APP_VERSION = "2.0.0"
 CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
 
+[env.dev.triggers]
+crons = ["0 9 * * *"]
+
 [[env.dev.tail_consumers]]
 service = "chittytrack"
 
@@ -108,6 +114,9 @@ MODE = "system"
 NODE_ENV = "staging"
 APP_VERSION = "2.0.0"
 CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
+
+[env.staging.triggers]
+crons = ["0 9 * * *"]
 
 [[env.staging.tail_consumers]]
 service = "chittytrack"
@@ -140,6 +149,9 @@ MODE = "system"
 NODE_ENV = "production"
 APP_VERSION = "2.0.0"
 CHITTYCONNECT_API_BASE = "https://connect.chitty.cc"
+
+[env.production.triggers]
+crons = ["0 9 * * *"]
 
 [[env.production.tail_consumers]]
 service = "chittytrack"

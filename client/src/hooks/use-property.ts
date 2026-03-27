@@ -269,6 +269,27 @@ export function useUpdateLease(propertyId: string, leaseId: string) {
   });
 }
 
+export interface ExpiringLease {
+  leaseId: string;
+  tenantName: string;
+  endDate: string;
+  monthlyRent: string;
+  unitNumber: string | null;
+  propertyId: string;
+  propertyName: string;
+  address: string;
+  daysRemaining: number;
+}
+
+export function useExpiringLeases(days = 90) {
+  const tenantId = useTenantId();
+  return useQuery<ExpiringLease[]>({
+    queryKey: [`/api/leases/expiring?days=${days}`, tenantId],
+    enabled: !!tenantId,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
 export function useSendPropertyAdvice(propertyId: string) {
   return useMutation<AIAdviceResponse, Error, string>({
     mutationFn: (message: string) =>
