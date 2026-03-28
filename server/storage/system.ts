@@ -187,6 +187,19 @@ export class SystemStorage {
     return row;
   }
 
+  async getUserByChittyId(chittyId: string) {
+    const [row] = await this.db.select().from(schema.users).where(eq(schema.users.chittyId, chittyId));
+    return row;
+  }
+
+  async linkChittyId(userId: string, chittyId: string) {
+    const [row] = await this.db.update(schema.users)
+      .set({ chittyId })
+      .where(eq(schema.users.id, userId))
+      .returning();
+    return row;
+  }
+
   // ── INTEGRATIONS ──
 
   async getIntegrations(tenantId: string) {

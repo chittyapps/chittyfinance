@@ -34,6 +34,7 @@ import { googleRoutes, googleCallbackRoute } from './routes/google';
 import { commsRoutes } from './routes/comms';
 import { workflowRoutes } from './routes/workflows';
 import { leaseRoutes } from './routes/leases';
+import { chittyIdAuthRoutes } from './routes/chittyid-auth';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -68,6 +69,7 @@ export function createApp() {
   app.route('/', healthRoutes);
   app.route('/', docRoutes);
   app.route('/', sessionRoutes);
+  app.route('/', chittyIdAuthRoutes);
 
   // Redirects (public)
   app.get('/connect', (c) => {

@@ -51,6 +51,7 @@ sessionRoutes.get('/api/session', async (c) => {
     email: user.email,
     name: user.name,
     role: user.role,
+    chittyId: user.chittyId || null,
   });
 });
 
@@ -98,6 +99,7 @@ sessionRoutes.post('/api/session', async (c) => {
     email: user.email,
     name: user.name,
     role: user.role,
+    chittyId: user.chittyId || null,
   });
 });
 

@@ -32,6 +32,9 @@ export interface Env {
   // SendGrid email
   SENDGRID_API_KEY?: string;
   SENDGRID_FROM_EMAIL?: string;
+  // ChittyID OAuth
+  CHITTYAUTH_CLIENT_ID?: string;
+  CHITTYAUTH_CLIENT_SECRET?: string;
   MODE?: string;
   NODE_ENV?: string;
   APP_VERSION?: string;
