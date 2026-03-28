@@ -584,6 +584,9 @@ import logo from "@assets/logo.png";
 - `PATCH /api/tasks/:id` - Update task
 - `DELETE /api/tasks/:id` - Delete task
 
+### Lease Notifications (Phase 4)
+- `GET /api/leases/expiring?days=N` - List leases expiring within N days (default 90, tenant-scoped)
+
 ### Property CRUD (Phase 4)
 - `POST /api/properties` - Create property
 - `PATCH /api/properties/:id` - Update property
@@ -886,7 +889,7 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ✅ Valuation Tab component (`client/src/components/property/ValuationTab.tsx`) — generalized, takes `propertyId` prop
 - ✅ Deployed to Cloudflare Workers (35 tests passing)
 - ✅ Frontend property management UI (Add/Edit property, Add unit/lease dialogs, detail panel with 5 tabs)
-- ⏳ Lease expiration notifications
+- ✅ Lease expiration notifications (cron trigger + API endpoint + action queue + dashboard widget)
 
 ### Phase 5: ChittyOS Ecosystem Integration
 - ⏳ Replace demo auth with ChittyID
