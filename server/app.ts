@@ -30,6 +30,7 @@ import { portfolioRoutes } from './routes/portfolio';
 import { importRoutes } from './routes/import';
 import { mcpRoutes } from './routes/mcp';
 import { reportRoutes } from './routes/reports';
+import { taxRoutes } from './routes/tax';
 import { googleRoutes, googleCallbackRoute } from './routes/google';
 import { commsRoutes } from './routes/comms';
 import { workflowRoutes } from './routes/workflows';
@@ -124,6 +125,7 @@ export function createApp() {
   app.route('/', portfolioRoutes);
   app.route('/', importRoutes);
   app.route('/', reportRoutes);
+  app.route('/', taxRoutes);
   app.route('/', googleRoutes);
   app.route('/', commsRoutes);
   app.route('/', workflowRoutes);

@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { useTenantId } from '@/contexts/TenantContext';
-import { useConsolidatedReport, useRunTaxAutomation, type ReportParams } from '@/hooks/use-reports';
+import {
+  useConsolidatedReport, useRunTaxAutomation,
+  useScheduleEReport, useForm1065Report, useExportTaxPackage,
+  type ReportParams, type TaxReportParams,
+  type ScheduleEPropertyColumn, type ScheduleELineItem,
+  type Form1065Report as Form1065ReportType, type K1MemberAllocation,
+} from '@/hooks/use-reports';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -10,7 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import {
   BarChart3, Download, Play, CheckCircle2, AlertTriangle, XCircle,
-  TrendingUp, TrendingDown, Building2, MapPin, Shield
+  TrendingUp, TrendingDown, Building2, MapPin, Shield, FileText, Users
 } from 'lucide-react';
 
 function pct(value: number, total: number) {
@@ -28,18 +34,275 @@ const STATUS_ICON = {
   fail: <XCircle className="w-3.5 h-3.5 text-rose-400" />,
 };
 
+type ReportTab = 'consolidated' | 'schedule-e' | 'form-1065';
+
+const TAB_CONFIG: Array<{ key: ReportTab; label: string; icon: typeof BarChart3 }> = [
+  { key: 'consolidated', label: 'Consolidated', icon: BarChart3 },
+  { key: 'schedule-e', label: 'Schedule E', icon: FileText },
+  { key: 'form-1065', label: 'Form 1065 / K-1', icon: Users },
+];
+
+function ScheduleETab({ taxYear }: { taxYear: number }) {
+  const params: TaxReportParams = { taxYear, includeDescendants: true };
+  const { data, isLoading, error } = useScheduleEReport(params);
+
+  if (isLoading) return <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">Loading Schedule E...</div>;
+  if (error) return <div className="cf-card p-4 text-sm text-rose-400">Failed to load Schedule E report.</div>;
+  if (!data) return null;
+
+  return (
+    <div className="space-y-4">
+      {/* Warnings */}
+      {data.uncategorizedCount > 0 && (
+        <div className="cf-card p-3 border-l-2 border-l-amber-400">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-xs text-amber-400">{data.uncategorizedCount} transactions ({formatCurrency(data.uncategorizedAmount)}) unmapped to Schedule E lines</span>
+          </div>
+          {data.unmappedCategories.length > 0 && (
+            <p className="text-[10px] text-[hsl(var(--cf-text-muted))] mt-1">Categories: {data.unmappedCategories.join(', ')}</p>
+          )}
+        </div>
+      )}
+
+      {/* Per-property cards */}
+      {data.properties.map((prop: ScheduleEPropertyColumn) => (
+        <div key={prop.propertyId} className="cf-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-[hsl(var(--cf-border-subtle))] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-3.5 h-3.5 text-[hsl(var(--cf-text-muted))]" />
+              <div>
+                <h4 className="text-sm font-medium text-[hsl(var(--cf-text))]">{prop.propertyName}</h4>
+                <p className="text-[10px] text-[hsl(var(--cf-text-muted))]">{prop.address} | {prop.state}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="text-[10px]">{prop.filingType === 'schedule-e-personal' ? 'Personal (Sched E)' : 'Partnership (1065)'}</Badge>
+              <span className={`text-sm font-mono font-bold ${prop.netIncome >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {formatCurrency(prop.netIncome)}
+              </span>
+            </div>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text-muted))]">
+                <th className="text-left px-3 py-2 font-medium w-24">Line</th>
+                <th className="text-left px-3 py-2 font-medium">Description</th>
+                <th className="text-right px-3 py-2 font-medium w-28">Amount</th>
+                <th className="text-right px-3 py-2 font-medium w-16">Txns</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prop.lines.map((line: ScheduleELineItem) => (
+                <tr key={line.lineNumber} className="border-b border-[hsl(var(--cf-border-subtle))] hover:bg-[hsl(var(--cf-raised))]">
+                  <td className="px-3 py-1.5 text-[hsl(var(--cf-text-muted))] font-mono">{line.lineNumber}</td>
+                  <td className="px-3 py-1.5 text-[hsl(var(--cf-text))]">{line.lineLabel}</td>
+                  <td className={`px-3 py-1.5 text-right font-mono ${line.lineNumber === 'Line 3' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {formatCurrency(line.amount)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-[hsl(var(--cf-text-muted))]">{line.transactionCount}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-[hsl(var(--cf-raised))]">
+                <td colSpan={2} className="px-3 py-2 text-[hsl(var(--cf-text))] font-medium">Net Income</td>
+                <td className={`px-3 py-2 text-right font-mono font-bold ${prop.netIncome >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {formatCurrency(prop.netIncome)}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ))}
+
+      {/* Entity-level items */}
+      {data.entityLevelItems.length > 0 && (
+        <div className="cf-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-[hsl(var(--cf-border-subtle))]">
+            <h4 className="text-sm font-medium text-[hsl(var(--cf-text))]">Entity-Level Items</h4>
+            <p className="text-[10px] text-[hsl(var(--cf-text-muted))]">Not attributed to a specific property</p>
+          </div>
+          <table className="w-full text-xs">
+            <tbody>
+              {data.entityLevelItems.map((line: ScheduleELineItem) => (
+                <tr key={line.lineNumber} className="border-b border-[hsl(var(--cf-border-subtle))]">
+                  <td className="px-3 py-1.5 text-[hsl(var(--cf-text-muted))] font-mono w-24">{line.lineNumber}</td>
+                  <td className="px-3 py-1.5 text-[hsl(var(--cf-text))]">{line.lineLabel}</td>
+                  <td className="px-3 py-1.5 text-right font-mono w-28">{formatCurrency(line.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {data.properties.length === 0 && (
+        <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">No property transactions found for {taxYear}.</div>
+      )}
+    </div>
+  );
+}
+
+function Form1065Tab({ taxYear }: { taxYear: number }) {
+  const params: TaxReportParams = { taxYear, includeDescendants: true };
+  const { data: reports, isLoading, error } = useForm1065Report(params);
+
+  if (isLoading) return <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">Loading Form 1065...</div>;
+  if (error) return <div className="cf-card p-4 text-sm text-rose-400">Failed to load Form 1065 report.</div>;
+  if (!reports || reports.length === 0) return <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">No partnership entities found for {taxYear}.</div>;
+
+  return (
+    <div className="space-y-4">
+      {reports.map((report: Form1065ReportType) => (
+        <div key={report.entityId} className="space-y-3">
+          {/* Entity header */}
+          <div className="cf-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="text-sm font-medium text-[hsl(var(--cf-text))]">{report.entityName}</h4>
+                <p className="text-[10px] text-[hsl(var(--cf-text-muted))]">Form 1065 — {report.entityType} — Tax Year {report.taxYear}</p>
+              </div>
+              <span className={`text-lg font-mono font-bold ${report.netIncome >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {formatCurrency(report.netIncome)}
+              </span>
+            </div>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-[hsl(var(--cf-raised))] rounded p-3">
+                <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">Gross Income</p>
+                <p className="text-sm font-mono font-bold text-emerald-400">{formatCurrency(report.ordinaryIncome)}</p>
+              </div>
+              <div className="bg-[hsl(var(--cf-raised))] rounded p-3">
+                <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">Deductions</p>
+                <p className="text-sm font-mono font-bold text-rose-400">{formatCurrency(report.totalDeductions)}</p>
+              </div>
+              <div className="bg-[hsl(var(--cf-raised))] rounded p-3">
+                <p className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">Net Income</p>
+                <p className={`text-sm font-mono font-bold ${report.netIncome >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(report.netIncome)}</p>
+              </div>
+            </div>
+
+            {/* Warnings */}
+            {report.warnings.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {report.warnings.map((w: string, i: number) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span className="text-[10px] text-amber-400">{w}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Income breakdown */}
+          {report.incomeByCategory.length > 0 && (
+            <div className="cf-card overflow-hidden">
+              <div className="px-4 py-2 border-b border-[hsl(var(--cf-border-subtle))]">
+                <h5 className="text-xs font-medium text-[hsl(var(--cf-text))]">Income</h5>
+              </div>
+              <table className="w-full text-xs">
+                <tbody>
+                  {report.incomeByCategory.map((item: { category: string; coaCode: string; amount: number }, i: number) => (
+                    <tr key={i} className="border-b border-[hsl(var(--cf-border-subtle))]">
+                      <td className="px-3 py-1.5 text-[hsl(var(--cf-text))]">{item.category}</td>
+                      <td className="px-3 py-1.5 text-[hsl(var(--cf-text-muted))] font-mono w-16">{item.coaCode}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-emerald-400 w-28">{formatCurrency(item.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Deductions breakdown */}
+          {report.deductionsByCategory.length > 0 && (
+            <div className="cf-card overflow-hidden">
+              <div className="px-4 py-2 border-b border-[hsl(var(--cf-border-subtle))]">
+                <h5 className="text-xs font-medium text-[hsl(var(--cf-text))]">Deductions</h5>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text-muted))]">
+                    <th className="text-left px-3 py-1.5 font-medium">Category</th>
+                    <th className="text-left px-3 py-1.5 font-medium w-16">Code</th>
+                    <th className="text-left px-3 py-1.5 font-medium w-20">Sched E</th>
+                    <th className="text-right px-3 py-1.5 font-medium w-28">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.deductionsByCategory.map((item: { category: string; coaCode: string; scheduleELine?: string; amount: number }, i: number) => (
+                    <tr key={i} className="border-b border-[hsl(var(--cf-border-subtle))]">
+                      <td className="px-3 py-1.5 text-[hsl(var(--cf-text))]">{item.category}</td>
+                      <td className="px-3 py-1.5 text-[hsl(var(--cf-text-muted))] font-mono">{item.coaCode}</td>
+                      <td className="px-3 py-1.5 text-[hsl(var(--cf-text-muted))] font-mono text-[10px]">{item.scheduleELine || '—'}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-rose-400">{formatCurrency(item.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* K-1 Member Allocations */}
+          {report.memberAllocations.length > 0 && (
+            <div className="cf-card overflow-hidden">
+              <div className="px-4 py-3 border-b border-[hsl(var(--cf-border-subtle))] flex items-center gap-2">
+                <Users className="w-3.5 h-3.5 text-[hsl(var(--cf-text-muted))]" />
+                <h5 className="text-xs font-medium text-[hsl(var(--cf-text))]">K-1 Member Allocations</h5>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text-muted))]">
+                    <th className="text-left px-3 py-2 font-medium">Member</th>
+                    <th className="text-right px-3 py-2 font-medium w-20">Eff. %</th>
+                    <th className="text-right px-3 py-2 font-medium w-28">Allocated</th>
+                    <th className="text-left px-3 py-2 font-medium">Periods</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.memberAllocations.map((m: K1MemberAllocation, i: number) => (
+                    <tr key={i} className="border-b border-[hsl(var(--cf-border-subtle))] hover:bg-[hsl(var(--cf-raised))]">
+                      <td className="px-3 py-2 text-[hsl(var(--cf-text))] font-medium">{m.memberName}</td>
+                      <td className="px-3 py-2 text-right font-mono">{m.pct.toFixed(1)}%</td>
+                      <td className={`px-3 py-2 text-right font-mono font-medium ${m.totalAllocated >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {formatCurrency(m.totalAllocated)}
+                      </td>
+                      <td className="px-3 py-2 text-[10px] text-[hsl(var(--cf-text-muted))]">
+                        {m.periods.length > 0
+                          ? m.periods.map(p => `${p.startDate}–${p.endDate} (${p.pct}%)`).join('; ')
+                          : 'Full year'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Reports() {
   const tenantId = useTenantId();
   const { toast } = useToast();
 
+  const [activeTab, setActiveTab] = useState<ReportTab>('consolidated');
   const [startDate, setStartDate] = useState(defaultStart);
   const [endDate, setEndDate] = useState(defaultEnd);
   const [includeDescendants, setIncludeDescendants] = useState(true);
   const [includeIntercompany, setIncludeIntercompany] = useState(false);
+  const [taxYear, setTaxYear] = useState(currentYear);
 
   const params: ReportParams | null = tenantId ? { startDate, endDate, includeDescendants, includeIntercompany } : null;
-  const { data, isLoading, error } = useConsolidatedReport(params);
+  const { data, isLoading, error } = useConsolidatedReport(activeTab === 'consolidated' ? params : null);
   const taxAutomation = useRunTaxAutomation();
+  const exportTaxPkg = useExportTaxPackage();
 
   if (!tenantId) {
     return <div className="p-6 text-[hsl(var(--cf-text-muted))]">Select a tenant to view reports.</div>;
@@ -85,6 +348,13 @@ export default function Reports() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportTaxPackage = (format: 'csv' | 'json') => {
+    exportTaxPkg.mutate({ taxYear, format }, {
+      onSuccess: () => toast({ title: `Tax package exported (${format.toUpperCase()})` }),
+      onError: () => toast({ title: 'Export failed', variant: 'destructive' }),
+    });
+  };
+
   return (
     <div className="p-6 space-y-4 animate-slide-up">
       {/* Header */}
@@ -94,39 +364,96 @@ export default function Reports() {
           <p className="text-xs text-[hsl(var(--cf-text-muted))]">Consolidated financial reporting & tax readiness</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={!report} className="gap-1.5">
-            <Download className="w-3.5 h-3.5" /> Export
-          </Button>
-          <Button size="sm" onClick={handleRunTax} disabled={taxAutomation.isPending} className="gap-1.5 bg-lime-500 hover:bg-lime-600 text-black">
-            <Play className="w-3.5 h-3.5" /> {taxAutomation.isPending ? 'Running...' : 'Run Tax Automation'}
-          </Button>
+          {activeTab === 'consolidated' ? (
+            <>
+              <Button variant="outline" size="sm" onClick={exportCsv} disabled={!report} className="gap-1.5">
+                <Download className="w-3.5 h-3.5" /> Export
+              </Button>
+              <Button size="sm" onClick={handleRunTax} disabled={taxAutomation.isPending} className="gap-1.5 bg-lime-500 hover:bg-lime-600 text-black">
+                <Play className="w-3.5 h-3.5" /> {taxAutomation.isPending ? 'Running...' : 'Run Tax Automation'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={() => handleExportTaxPackage('csv')} disabled={exportTaxPkg.isPending} className="gap-1.5">
+                <Download className="w-3.5 h-3.5" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleExportTaxPackage('json')} disabled={exportTaxPkg.isPending} className="gap-1.5">
+                <Download className="w-3.5 h-3.5" /> JSON
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="cf-card p-4 flex flex-wrap gap-4 items-end">
-        <div>
-          <Label className="text-xs text-[hsl(var(--cf-text-muted))]">Start Date</Label>
-          <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-[150px] h-8 text-xs" />
-        </div>
-        <div>
-          <Label className="text-xs text-[hsl(var(--cf-text-muted))]">End Date</Label>
-          <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-[150px] h-8 text-xs" />
-        </div>
-        <div className="flex items-center gap-2">
-          <Switch checked={includeDescendants} onCheckedChange={setIncludeDescendants} />
-          <Label className="text-xs">Include subsidiaries</Label>
-        </div>
-        <div className="flex items-center gap-2">
-          <Switch checked={includeIntercompany} onCheckedChange={setIncludeIntercompany} />
-          <Label className="text-xs">Include intercompany</Label>
-        </div>
+      {/* Tab Switcher */}
+      <div className="flex gap-1 p-1 bg-[hsl(var(--cf-raised))] rounded-lg w-fit">
+        {TAB_CONFIG.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              activeTab === tab.key
+                ? 'bg-[hsl(var(--cf-surface))] text-[hsl(var(--cf-text))] shadow-sm'
+                : 'text-[hsl(var(--cf-text-muted))] hover:text-[hsl(var(--cf-text))]'
+            }`}
+          >
+            <tab.icon className="w-3.5 h-3.5" />
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {isLoading && <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">Generating report...</div>}
-      {error && <div className="cf-card p-4 text-sm text-rose-400">Failed to load report. Check date range.</div>}
+      {/* Controls — consolidated tab */}
+      {activeTab === 'consolidated' && (
+        <div className="cf-card p-4 flex flex-wrap gap-4 items-end">
+          <div>
+            <Label className="text-xs text-[hsl(var(--cf-text-muted))]">Start Date</Label>
+            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-[150px] h-8 text-xs" />
+          </div>
+          <div>
+            <Label className="text-xs text-[hsl(var(--cf-text-muted))]">End Date</Label>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-[150px] h-8 text-xs" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={includeDescendants} onCheckedChange={setIncludeDescendants} />
+            <Label className="text-xs">Include subsidiaries</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={includeIntercompany} onCheckedChange={setIncludeIntercompany} />
+            <Label className="text-xs">Include intercompany</Label>
+          </div>
+        </div>
+      )}
 
-      {report && (
+      {/* Controls — tax tabs */}
+      {activeTab !== 'consolidated' && (
+        <div className="cf-card p-4 flex gap-4 items-end">
+          <div>
+            <Label className="text-xs text-[hsl(var(--cf-text-muted))]">Tax Year</Label>
+            <select
+              value={taxYear}
+              onChange={e => setTaxYear(Number(e.target.value))}
+              className="block w-[120px] h-8 text-xs rounded border border-[hsl(var(--cf-border-subtle))] bg-[hsl(var(--cf-surface))] text-[hsl(var(--cf-text))] px-2"
+            >
+              <option value={2024}>2024</option>
+              <option value={2025}>2025</option>
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule E Tab */}
+      {activeTab === 'schedule-e' && <ScheduleETab taxYear={taxYear} />}
+
+      {/* Form 1065 / K-1 Tab */}
+      {activeTab === 'form-1065' && <Form1065Tab taxYear={taxYear} />}
+
+      {/* Consolidated Tab */}
+      {activeTab === 'consolidated' && isLoading && <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">Generating report...</div>}
+      {activeTab === 'consolidated' && error && <div className="cf-card p-4 text-sm text-rose-400">Failed to load report. Check date range.</div>}
+
+      {activeTab === 'consolidated' && report && (
         <>
           {/* P&L Summary */}
           <div className="grid grid-cols-4 gap-3">

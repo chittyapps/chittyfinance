@@ -649,6 +649,24 @@ export class SystemStorage {
       .where(inArray(schema.accounts.tenantId, tenantIds));
   }
 
+  async getPropertiesForTenants(tenantIds: string[]) {
+    if (tenantIds.length === 0) return [];
+    return this.db
+      .select({
+        id: schema.properties.id,
+        tenantId: schema.properties.tenantId,
+        name: schema.properties.name,
+        address: schema.properties.address,
+        city: schema.properties.city,
+        state: schema.properties.state,
+      })
+      .from(schema.properties)
+      .where(and(
+        inArray(schema.properties.tenantId, tenantIds),
+        eq(schema.properties.isActive, true),
+      ));
+  }
+
   async getInternalIntercompanyLinkedTransactionIds(
     tenantIds: string[],
     startDateIso: string,
