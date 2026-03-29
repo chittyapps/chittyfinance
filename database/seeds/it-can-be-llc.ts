@@ -16,8 +16,20 @@ export async function seedItCanBeLLC() {
     taxId: null, // Add actual EIN when ready
     metadata: {
       jurisdiction: 'Wyoming',
-      formation_date: '2025-01-01', // Update with actual date
-      description: 'Wyoming Closely Held LLC - Parent holding company',
+      formation_date: '2024-10-29',
+      description: 'Wyoming Series and Close LLC - Parent holding company',
+      // IT CAN BE LLC members (verified from ITCB Operating Agreement 2024-10-29):
+      //   Oct 29 – Dec 15, 2024: Nicholas Bianchi 85%, Sharon Jones 15% (individual)
+      //   Dec 16, 2024 – present: JAV LLC 85%, Sharon Jones 15% (Nick assigned to JAV)
+      members: [
+        { name: 'JEAN ARLENE VENTURING LLC', pct: 85 },
+        { name: 'Sharon E Jones', pct: 15 },
+      ],
+      members_2024: [
+        { name: 'Nicholas Bianchi', pct: 85, endDate: '2024-12-15' },
+        { name: 'JEAN ARLENE VENTURING LLC', pct: 85, startDate: '2024-12-16' },
+        { name: 'Sharon E Jones', pct: 15 },
+      ],
     },
   }).returning();
 
@@ -30,7 +42,12 @@ export async function seedItCanBeLLC() {
     type: 'personal',
     parentId: itCanBeLLC.id,
     metadata: {
-      description: 'Personal Income Funnel',
+      description: 'Personal Income Funnel — pass-through to Nick Bianchi 1040',
+      jurisdiction: 'Florida',
+      formation_date: '2024-12-13',
+      filing_number: '500439906755', // FL DOS
+      registered_agent: 'Florida Registered Agent LLC',
+      // FL Annual Report due May 1, 2026 (auto-pay failed per 2026-02-10 email)
       ownership_percentage: 85,
       properties: [
         '541 W Addison St #3S, Chicago IL 60613',
@@ -52,6 +69,25 @@ export async function seedItCanBeLLC() {
       jurisdiction: 'Illinois',
       description: 'Illinois Series LLC - Property Investment, Improvement, and Management',
       ownership: '100% owned by IT CAN BE LLC',
+      // ARIBIA LLC member timeline (verified from ChittyEvidence):
+      //   Jul 2022 – Mar 14, 2024: Nick 90%, Luisa 10% (individual members)
+      //   Mar 15 – Oct 14, 2024: Nick 85%, Luisa 10%, Sharon 5% (individual members)
+      //   Oct 15 – Oct 28, 2024: Nick 85%, Sharon 5% (Luisa removed Oct 14)
+      //   Oct 29, 2024 – present: IT CAN BE LLC 100% (Amendment B, sole member)
+      // Sources: Member List (2024-03-01), Unanimous Consent Removal (2024-10-14),
+      //          Amendment B (2024-10-29), Amendment C (2025-03-08)
+      // NOTE: members_2024 is for 2024 K-1 generation (mixed individual + entity periods)
+      //        members is current state (2025+)
+      members: [
+        { name: 'IT CAN BE LLC', pct: 100 },
+      ],
+      members_2024: [
+        { name: 'Nicholas Bianchi', pct: 90, endDate: '2024-03-14' },
+        { name: 'Nicholas Bianchi', pct: 85, startDate: '2024-03-15', endDate: '2024-10-28' },
+        { name: 'Luisa Arias', pct: 10, endDate: '2024-10-14' },
+        { name: 'Sharon E Jones', pct: 5, startDate: '2024-03-15', endDate: '2024-10-28' },
+        { name: 'IT CAN BE LLC', pct: 100, startDate: '2024-10-29' },
+      ],
     },
   }).returning();
 
@@ -124,6 +160,10 @@ export async function seedItCanBeLLC() {
         'ARIBIA LLC': '85%',
         'Sharon E Jones': '15%',
       },
+      members: [
+        { name: 'ARIBIA LLC', pct: 85 },
+        { name: 'Sharon E Jones', pct: 15 },
+      ],
     },
   }).returning();
 
