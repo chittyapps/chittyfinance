@@ -227,6 +227,10 @@ export function buildScheduleEReport(params: {
   let uncategorizedCount = 0;
   const unmappedSet = new Set<string>();
 
+  // Partnership entity types are reported on Form 1065, not Schedule E entity-level.
+  // Only property-attributed transactions and non-partnership entity-level items belong here.
+  const partnershipTypes = new Set(['holding', 'series', 'management']);
+
   for (const tx of transactions) {
     const rawAmount = amount(tx.amount);
     const absAmount = Math.abs(rawAmount);
@@ -242,6 +246,7 @@ export function buildScheduleEReport(params: {
     const propId = (tx as any).propertyId as string | null;
 
     if (propId && propertyMap.has(propId)) {
+      // Property-attributed transaction → Schedule E property column
       if (!propertyLines.has(propId)) {
         propertyLines.set(propId, new Map());
       }
@@ -252,7 +257,12 @@ export function buildScheduleEReport(params: {
       existing.count += 1;
       lines.set(key, existing);
     } else {
-      // Entity-level expense (no property attribution)
+      // No property attribution — only include in Schedule E entity-level
+      // if the transaction's tenant is NOT a partnership type (those go to Form 1065)
+      const txTenantType = tenantTypeMap.get(tx.tenantId) || '';
+      if (partnershipTypes.has(txTenantType)) {
+        continue; // Skip — will be reported on Form 1065 instead
+      }
       const key = tx.type === 'income' ? 'Line 3' : lineNumber;
       const existing = entityLines.get(key) || { amount: 0, count: 0 };
       existing.amount += tx.type === 'income' ? rawAmount : absAmount;
@@ -432,17 +442,26 @@ export function buildMemberAllocations(
     }];
   }
 
+  // Deduplicate members by name — the same person may appear multiple times
+  // with different percentages for different date ranges (e.g., Nick at 90%
+  // until Mar 14, then 85% from Mar 15). IRS expects one K-1 per SSN/EIN.
+  const uniqueNames = Array.from(new Set(members.map((m) => m.name)));
+
   // Check if any member has date ranges (time-weighted mode)
   const hasDateRanges = members.some((m) => m.startDate || m.endDate);
 
   if (!hasDateRanges) {
-    // Simple static allocation
-    const totalPct = members.reduce((sum, m) => sum + m.pct, 0);
-    return members.map((m) => {
-      const effectivePct = totalPct > 0 ? (m.pct / totalPct) * 100 : 0;
+    // Simple static allocation — deduplicate by summing percentages
+    const merged = new Map<string, number>();
+    for (const m of members) {
+      merged.set(m.name, (merged.get(m.name) || 0) + m.pct);
+    }
+    const totalPct = Array.from(merged.values()).reduce((sum, p) => sum + p, 0);
+    return Array.from(merged.entries()).map(([name, pct]) => {
+      const effectivePct = totalPct > 0 ? (pct / totalPct) * 100 : 0;
       const allocated = round2(netIncome * effectivePct / 100);
       return {
-        memberName: m.name,
+        memberName: name,
         pct: round2(effectivePct),
         ordinaryIncome: allocated,
         rentalIncome: 0,
@@ -460,15 +479,15 @@ export function buildMemberAllocations(
   const yearEnd = `${taxYear}-12-31`;
   const totalDays = daysBetween(yearStart, yearEnd);
 
-  // Per-member accumulator
+  // Per-member accumulator — keyed by unique name (one K-1 per person)
   const memberTotals = new Map<string, {
     allocatedIncome: number;
     weightedPct: number;
     periods: K1MemberAllocation['periods'];
   }>();
 
-  for (const m of members) {
-    memberTotals.set(m.name, { allocatedIncome: 0, weightedPct: 0, periods: [] });
+  for (const name of uniqueNames) {
+    memberTotals.set(name, { allocatedIncome: 0, weightedPct: 0, periods: [] });
   }
 
   for (const period of periods) {
@@ -492,10 +511,11 @@ export function buildMemberAllocations(
     }
   }
 
-  return members.map((m) => {
-    const entry = memberTotals.get(m.name)!;
+  // Emit one K-1 per unique member name
+  return uniqueNames.map((name) => {
+    const entry = memberTotals.get(name)!;
     return {
-      memberName: m.name,
+      memberName: name,
       pct: round2(entry.weightedPct),
       ordinaryIncome: round2(entry.allocatedIncome),
       rentalIncome: 0,

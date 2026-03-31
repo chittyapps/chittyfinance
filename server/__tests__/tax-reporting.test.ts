@@ -218,6 +218,32 @@ describe('buildMemberAllocations', () => {
     expect(result[0].totalAllocated).toBe(-4250);
     expect(result[1].totalAllocated).toBe(-750);
   });
+
+  it('merges same-person entries into one K-1 (ARIBIA 2024 timeline)', () => {
+    // Real scenario: Nick appears twice with different pcts for different date ranges
+    const members: MemberOwnership[] = [
+      { name: 'Nicholas Bianchi', pct: 90, endDate: '2024-03-14' },
+      { name: 'Nicholas Bianchi', pct: 85, startDate: '2024-03-15', endDate: '2024-10-28' },
+      { name: 'Luisa Arias', pct: 10, endDate: '2024-10-14' },
+      { name: 'Sharon E Jones', pct: 5, startDate: '2024-03-15', endDate: '2024-10-28' },
+      { name: 'IT CAN BE LLC', pct: 100, startDate: '2024-10-29' },
+    ];
+
+    const result = buildMemberAllocations(2024, 36600, members);
+
+    // One K-1 per unique name (IRS requires one K-1 per SSN/EIN)
+    const names = result.map(m => m.memberName);
+    expect(new Set(names).size).toBe(names.length);
+    expect(result.filter(m => m.memberName === 'Nicholas Bianchi')).toHaveLength(1);
+
+    // Total must equal net income
+    const total = result.reduce((sum, m) => sum + m.totalAllocated, 0);
+    expect(Math.abs(total - 36600)).toBeLessThan(0.02);
+
+    // Nick's merged K-1 should have multiple periods
+    const nick = result.find(m => m.memberName === 'Nicholas Bianchi')!;
+    expect(nick.periods.length).toBe(3);
+  });
 });
 
 describe('buildForm1065Report', () => {
@@ -243,6 +269,39 @@ describe('buildForm1065Report', () => {
     expect(reports[0].netIncome).toBe(3500);
     expect(reports[0].memberAllocations[0].memberName).toBe('ITCB');
     expect(reports[0].memberAllocations[0].totalAllocated).toBe(3500);
+  });
+
+  it('does not double-count with Schedule E', () => {
+    // Partnership entity transactions (no propertyId) should appear in Form 1065
+    // but NOT in Schedule E entity-level section
+    const transactions: any[] = [
+      { id: 'tx1', tenantId: 't-prop', tenantName: 'City Studio', tenantType: 'property', tenantMetadata: {}, amount: '2500', type: 'income', category: 'Rent', date: '2024-06-15', reconciled: true, metadata: {}, propertyState: 'IL', propertyId: 'p1' },
+      { id: 'tx2', tenantId: 't-mgmt', tenantName: 'MGMT', tenantType: 'management', tenantMetadata: {}, amount: '250', type: 'income', category: 'Management Fees', date: '2024-06-15', reconciled: true, metadata: {}, propertyState: 'IL' },
+      { id: 'tx3', tenantId: 't-series', tenantName: 'ARIBIA', tenantType: 'series', tenantMetadata: {}, amount: '-500', type: 'expense', category: 'Legal', date: '2024-06-20', reconciled: true, metadata: {}, propertyState: 'IL' },
+      { id: 'tx4', tenantId: 't-personal', tenantName: 'JAV', tenantType: 'personal', tenantMetadata: {}, amount: '-150', type: 'expense', category: 'Legal', date: '2024-07-01', reconciled: true, metadata: {}, propertyState: 'FL' },
+    ];
+
+    const tenants = [
+      { id: 't-prop', name: 'City Studio', type: 'property', metadata: {} },
+      { id: 't-mgmt', name: 'MGMT', type: 'management', metadata: { members: [{ name: 'ARIBIA', pct: 100 }] } },
+      { id: 't-series', name: 'ARIBIA', type: 'series', metadata: { members: [{ name: 'ITCB', pct: 100 }] } },
+      { id: 't-personal', name: 'JAV', type: 'personal', metadata: {} },
+    ];
+
+    const properties = [{ id: 'p1', tenantId: 't-prop', name: 'City Studio', address: '550 W Surf', state: 'IL' }];
+
+    const schedE = buildScheduleEReport({ taxYear: 2024, transactions, properties, tenants });
+    const form1065 = buildForm1065Report({ taxYear: 2024, entityTenants: tenants, transactions });
+
+    const schedENet = schedE.properties.reduce((s, p) => s + p.netIncome, 0) + schedE.entityLevelTotal;
+    const form1065Net = form1065.reduce((s, r) => s + r.netIncome, 0);
+    const combined = schedENet + form1065Net;
+    const expected = 2500 + 250 - 500 - 150; // All unique transactions
+
+    expect(Math.abs(combined - expected)).toBeLessThan(0.01);
+
+    // Schedule E entity-level should only have JAV's expense, not MGMT/ARIBIA
+    expect(schedE.entityLevelItems.length).toBe(1);
   });
 
   it('warns when no members are defined', () => {
