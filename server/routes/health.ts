@@ -1,9 +1,20 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { discoveryRegister } from '../lib/discovery-client';
 
 export const healthRoutes = new Hono<HonoEnv>();
 
+let discoveryRegistered = false;
+
 healthRoutes.get('/health', (c) => {
+  if (!discoveryRegistered) {
+    discoveryRegistered = true;
+    try {
+      discoveryRegister(c.executionCtx, c.env);
+    } catch {
+      // No executionCtx in test/standalone — skip
+    }
+  }
   return c.json({ status: 'ok', service: 'chittyfinance' });
 });
 
