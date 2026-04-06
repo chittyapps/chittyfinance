@@ -1,5 +1,15 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import {
+  serializeCsv,
+  serializeOfx,
+  buildAccountMap,
+  contentTypeForFormat,
+  fileExtension,
+  type ExportFormat,
+  type ExportTransaction,
+  type ExportAccount,
+} from '../lib/transaction-export';
 
 export const transactionRoutes = new Hono<HonoEnv>();
 
@@ -57,6 +67,102 @@ transactionRoutes.post('/api/transactions', async (c) => {
   });
 
   return c.json(formatTransaction(created), 201);
+});
+
+// GET /api/transactions/export — export transactions as CSV, OFX, or QFX
+transactionRoutes.get('/api/transactions/export', async (c) => {
+  const storage = c.get('storage') as any;
+  const tenantId = c.get('tenantId');
+
+  const format = (c.req.query('format') || 'csv').toLowerCase() as ExportFormat;
+  if (!['csv', 'ofx', 'qfx'].includes(format)) {
+    return c.json({ error: 'format must be csv, ofx, or qfx' }, 400);
+  }
+
+  const accountId = c.req.query('accountId');
+  const since = c.req.query('since');
+  const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : undefined;
+
+  let transactions: any[];
+  if (accountId) {
+    transactions = await storage.getTransactionsByAccount(accountId, tenantId, since);
+  } else {
+    transactions = await storage.getTransactions(tenantId, limit);
+  }
+
+  if (since && !accountId) {
+    const sinceDate = new Date(since);
+    transactions = transactions.filter((tx: any) => new Date(tx.date) >= sinceDate);
+  }
+
+  const accounts = await storage.getAccounts(tenantId);
+  const accountMap = buildAccountMap(
+    accounts.map((a: any): ExportAccount => ({
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      institution: a.institution,
+      accountNumber: a.accountNumber,
+      currency: a.currency || 'USD',
+    })),
+  );
+
+  const exportTxns: ExportTransaction[] = transactions.map((tx: any) => ({
+    id: tx.id,
+    accountId: tx.accountId,
+    amount: tx.amount,
+    type: tx.type,
+    category: tx.category,
+    description: tx.description,
+    date: tx.date,
+    payee: tx.payee,
+    reconciled: tx.reconciled,
+    currency: tx.currency,
+  }));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const filename = `chittyfinance-transactions-${today}.${fileExtension(format)}`;
+
+  if (format === 'csv') {
+    const csv = serializeCsv(exportTxns, accountMap);
+    return new Response(csv, {
+      headers: {
+        'Content-Type': contentTypeForFormat(format),
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
+  }
+
+  // OFX/QFX require a specific account
+  if (!accountId) {
+    return c.json({ error: 'accountId is required for OFX/QFX export' }, 400);
+  }
+
+  const account = accountMap.get(accountId);
+  if (!account) {
+    return c.json({ error: 'Account not found' }, 404);
+  }
+
+  const dates = exportTxns.map((tx) =>
+    typeof tx.date === 'string' ? tx.date : tx.date.toISOString(),
+  );
+  const startDate = dates.length > 0 ? dates.reduce((a, b) => (a < b ? a : b)) : today;
+  const endDate = dates.length > 0 ? dates.reduce((a, b) => (a > b ? a : b)) : today;
+
+  const ofx = serializeOfx({
+    format,
+    account,
+    transactions: exportTxns,
+    startDate,
+    endDate,
+  });
+
+  return new Response(ofx, {
+    headers: {
+      'Content-Type': contentTypeForFormat(format),
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
 });
 
 // PATCH /api/transactions/:id — update a transaction
