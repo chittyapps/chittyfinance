@@ -10,6 +10,7 @@ import {
   type ExportTransaction,
   type ExportAccount,
 } from '../lib/transaction-export';
+import { ledgerLog } from '../lib/ledger-client';
 
 export const transactionRoutes = new Hono<HonoEnv>();
 
@@ -65,6 +66,13 @@ transactionRoutes.post('/api/transactions', async (c) => {
     reconciled: body.reconciled ?? false,
     metadata: body.metadata || null,
   });
+
+  ledgerLog(c, {
+    entityType: 'transaction',
+    entityId: created.id,
+    action: 'transaction.created',
+    metadata: { tenantId, amount: body.amount, type: body.type, category: body.category },
+  }, c.env);
 
   return c.json(formatTransaction(created), 201);
 });
@@ -122,6 +130,12 @@ transactionRoutes.get('/api/transactions/export', async (c) => {
 
   const today = new Date().toISOString().slice(0, 10);
   const filename = `chittyfinance-transactions-${today}.${fileExtension(format)}`;
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'transaction.export',
+    metadata: { tenantId, format, count: exportTxns.length, accountId: accountId || 'all' },
+  }, c.env);
 
   if (format === 'csv') {
     const csv = serializeCsv(exportTxns, accountMap);
@@ -185,6 +199,13 @@ transactionRoutes.patch('/api/transactions/:id', async (c) => {
 
   const updated = await storage.updateTransaction(id, tenantId, updates);
   if (!updated) return c.json({ error: 'Transaction not found' }, 404);
+
+  ledgerLog(c, {
+    entityType: 'transaction',
+    entityId: id,
+    action: 'transaction.updated',
+    metadata: { tenantId, fields: Object.keys(updates) },
+  }, c.env);
 
   return c.json(formatTransaction(updated));
 });

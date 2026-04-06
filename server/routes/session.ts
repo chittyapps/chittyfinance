@@ -5,6 +5,7 @@ import { createDb } from '../db/connection';
 import { SystemStorage } from '../storage/system';
 import { SESSION_COOKIE_NAME, SESSION_TTL, parseSession } from '../lib/session';
 import { verifyPassword } from '../lib/password';
+import { ledgerLog } from '../lib/ledger-client';
 
 function generateSessionId(): string {
   const bytes = new Uint8Array(32);
@@ -94,6 +95,13 @@ sessionRoutes.post('/api/session', async (c) => {
     maxAge: SESSION_TTL,
   });
 
+  ledgerLog(c, {
+    entityType: 'audit',
+    entityId: user.id,
+    action: 'session.login',
+    metadata: { email: user.email, role: user.role },
+  }, c.env);
+
   return c.json({
     id: user.id,
     email: user.email,
@@ -112,6 +120,11 @@ sessionRoutes.delete('/api/session', async (c) => {
     await kv.delete(`session:${sessionId}`);
     deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
   }
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'session.logout',
+  }, c.env);
 
   return c.json({ ok: true });
 });
