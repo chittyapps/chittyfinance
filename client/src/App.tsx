@@ -18,6 +18,7 @@ import Transactions from "@/pages/Transactions";
 import Accounts from "@/pages/Accounts";
 import Reports from "@/pages/Reports";
 import Integrations from "@/pages/Integrations";
+import Allocations from "@/pages/Allocations";
 
 // Lazy-load the Orbital Console (57KB + physics sim + canvas rendering)
 const OrbitalConsole = lazy(() => import("@/pages/OrbitalConsole"));
@@ -57,6 +58,7 @@ function Router() {
             <Route path="/reports" component={Reports} />
             <Route path="/integrations" component={Integrations} />
             <Route path="/properties/:id" component={PropertyDetail} />
+            <Route path="/allocations" component={Allocations} />
             <Route path="/connections" component={Connections} />
             <Route path="/admin" component={Admin} />
             <Route path="/orbital">
