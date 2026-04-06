@@ -750,4 +750,124 @@ export class SystemStorage {
       .returning();
     return row;
   }
+
+  // ── ALLOCATION RULES ──
+
+  async getAllocationRules(tenantId: string) {
+    return this.db
+      .select()
+      .from(schema.allocationRules)
+      .where(
+        and(
+          eq(schema.allocationRules.sourceTenantId, tenantId),
+          eq(schema.allocationRules.isActive, true),
+        ),
+      )
+      .orderBy(desc(schema.allocationRules.createdAt));
+  }
+
+  async getAllocationRulesForTenants(tenantIds: string[]) {
+    if (tenantIds.length === 0) return [];
+    return this.db
+      .select()
+      .from(schema.allocationRules)
+      .where(
+        and(
+          inArray(schema.allocationRules.sourceTenantId, tenantIds),
+          eq(schema.allocationRules.isActive, true),
+        ),
+      )
+      .orderBy(schema.allocationRules.ruleType);
+  }
+
+  async getAllocationRule(id: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.allocationRules)
+      .where(eq(schema.allocationRules.id, id));
+    return row;
+  }
+
+  async createAllocationRule(data: typeof schema.allocationRules.$inferInsert) {
+    const [row] = await this.db
+      .insert(schema.allocationRules)
+      .values(data)
+      .returning();
+    return row;
+  }
+
+  async updateAllocationRule(id: string, data: Partial<typeof schema.allocationRules.$inferInsert>) {
+    const [row] = await this.db
+      .update(schema.allocationRules)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.allocationRules.id, id))
+      .returning();
+    return row;
+  }
+
+  async deleteAllocationRule(id: string) {
+    const [row] = await this.db
+      .update(schema.allocationRules)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(schema.allocationRules.id, id))
+      .returning();
+    return row;
+  }
+
+  // ── ALLOCATION RUNS ──
+
+  async createAllocationRun(data: typeof schema.allocationRuns.$inferInsert) {
+    const [row] = await this.db
+      .insert(schema.allocationRuns)
+      .values(data)
+      .returning();
+    return row;
+  }
+
+  async getAllocationRuns(ruleId: string) {
+    return this.db
+      .select()
+      .from(schema.allocationRuns)
+      .where(eq(schema.allocationRuns.ruleId, ruleId))
+      .orderBy(desc(schema.allocationRuns.createdAt));
+  }
+
+  async getAllocationRunsForPeriod(tenantIds: string[], periodStart: string, periodEnd: string) {
+    if (tenantIds.length === 0) return [];
+    const ruleIds = await this.db
+      .select({ id: schema.allocationRules.id })
+      .from(schema.allocationRules)
+      .where(inArray(schema.allocationRules.sourceTenantId, tenantIds));
+
+    if (ruleIds.length === 0) return [];
+
+    return this.db
+      .select()
+      .from(schema.allocationRuns)
+      .where(
+        and(
+          inArray(schema.allocationRuns.ruleId, ruleIds.map((r) => r.id)),
+          sql`${schema.allocationRuns.periodStart} >= ${periodStart}`,
+          sql`${schema.allocationRuns.periodEnd} <= ${periodEnd}`,
+        ),
+      )
+      .orderBy(desc(schema.allocationRuns.createdAt));
+  }
+
+  async updateAllocationRunStatus(id: string, status: string) {
+    const [row] = await this.db
+      .update(schema.allocationRuns)
+      .set({ status })
+      .where(eq(schema.allocationRuns.id, id))
+      .returning();
+    return row;
+  }
+
+  async createIntercompanyTransaction(data: typeof schema.intercompanyTransactions.$inferInsert) {
+    const [row] = await this.db
+      .insert(schema.intercompanyTransactions)
+      .values(data)
+      .returning();
+    return row;
+  }
 }

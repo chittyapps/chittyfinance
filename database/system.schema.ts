@@ -145,6 +145,57 @@ export const insertIntercompanyTransactionSchema = createInsertSchema(intercompa
 export type IntercompanyTransaction = typeof intercompanyTransactions.$inferSelect;
 export type InsertIntercompanyTransaction = z.infer<typeof insertIntercompanyTransactionSchema>;
 
+// Allocation rules (automated inter-company allocation configuration)
+export const allocationRules = pgTable('allocation_rules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  description: text('description'),
+  ruleType: text('rule_type').notNull(), // 'management_fee', 'cost_sharing', 'rent_passthrough', 'custom_pct'
+  sourceTenantId: uuid('source_tenant_id').notNull().references(() => tenants.id),
+  targetTenantId: uuid('target_tenant_id').notNull().references(() => tenants.id),
+  percentage: decimal('percentage', { precision: 5, scale: 2 }), // e.g. 10.00 for 10% management fee
+  fixedAmount: decimal('fixed_amount', { precision: 12, scale: 2 }), // flat fee alternative
+  frequency: text('frequency').notNull().default('monthly'), // 'monthly', 'quarterly', 'annually', 'per_transaction'
+  sourceCategory: text('source_category'), // filter: only allocate from this tx category
+  allocationMethod: text('allocation_method').notNull().default('percentage'), // 'percentage', 'fixed', 'remainder'
+  isActive: boolean('is_active').notNull().default(true),
+  metadata: jsonb('metadata'), // additional config (e.g. cap amounts, minimum thresholds)
+  lastRunAt: timestamp('last_run_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  sourceTenantIdx: index('allocation_rules_source_tenant_idx').on(table.sourceTenantId),
+  targetTenantIdx: index('allocation_rules_target_tenant_idx').on(table.targetTenantId),
+  ruleTypeIdx: index('allocation_rules_type_idx').on(table.ruleType),
+}));
+
+export const insertAllocationRuleSchema = createInsertSchema(allocationRules);
+export type AllocationRule = typeof allocationRules.$inferSelect;
+export type InsertAllocationRule = z.infer<typeof insertAllocationRuleSchema>;
+
+// Allocation run log (audit trail for each allocation execution)
+export const allocationRuns = pgTable('allocation_runs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ruleId: uuid('rule_id').notNull().references(() => allocationRules.id),
+  periodStart: timestamp('period_start').notNull(),
+  periodEnd: timestamp('period_end').notNull(),
+  sourceAmount: decimal('source_amount', { precision: 12, scale: 2 }).notNull(),
+  allocatedAmount: decimal('allocated_amount', { precision: 12, scale: 2 }).notNull(),
+  transactionCount: integer('transaction_count').notNull().default(0),
+  intercompanyTransactionId: uuid('intercompany_transaction_id').references(() => intercompanyTransactions.id),
+  status: text('status').notNull().default('pending'), // 'pending', 'approved', 'posted', 'reversed'
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  ruleIdx: index('allocation_runs_rule_idx').on(table.ruleId),
+  periodIdx: index('allocation_runs_period_idx').on(table.periodStart, table.periodEnd),
+  statusIdx: index('allocation_runs_status_idx').on(table.status),
+}));
+
+export const insertAllocationRunSchema = createInsertSchema(allocationRuns);
+export type AllocationRun = typeof allocationRuns.$inferSelect;
+export type InsertAllocationRun = z.infer<typeof insertAllocationRunSchema>;
+
 // Properties (real estate assets)
 export const properties = pgTable('properties', {
   id: uuid('id').primaryKey().defaultRandom(),
