@@ -36,6 +36,7 @@ import { commsRoutes } from './routes/comms';
 import { workflowRoutes } from './routes/workflows';
 import { leaseRoutes } from './routes/leases';
 import { chittyIdAuthRoutes } from './routes/chittyid-auth';
+import { allocationRoutes } from './routes/allocations';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -126,6 +127,7 @@ export function createApp() {
   app.route('/', importRoutes);
   app.route('/', reportRoutes);
   app.route('/', taxRoutes);
+  app.route('/', allocationRoutes);
   app.route('/', googleRoutes);
   app.route('/', commsRoutes);
   app.route('/', workflowRoutes);
