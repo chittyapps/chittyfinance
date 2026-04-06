@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { ledgerLog } from '../lib/ledger-client';
 
 export const accountRoutes = new Hono<HonoEnv>();
 
@@ -52,6 +53,13 @@ accountRoutes.post('/api/accounts', async (c) => {
     liabilityDetails: body.liabilityDetails || null,
     metadata: body.metadata || null,
   });
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    entityId: created.id,
+    action: 'account.created',
+    metadata: { tenantId, name: body.name, type: body.type },
+  }, c.env);
 
   return c.json({
     id: created.id,
@@ -138,6 +146,14 @@ accountRoutes.post('/api/accounts/:id/sync', async (c) => {
   }
 
   const synced = await storage.syncAccount(accountId, updates);
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    entityId: accountId,
+    action: 'account.synced',
+    metadata: { tenantId, fields: Object.keys(updates) },
+  }, c.env);
+
   return c.json(synced);
 });
 

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { ledgerLog } from '../lib/ledger-client';
 
 export const importRoutes = new Hono<HonoEnv>();
 
@@ -146,6 +147,12 @@ importRoutes.post('/api/import/turbotenant', async (c) => {
       errors.push(`Row ${row.date} ${row.description}: ${(err as Error).message}`);
     }
   }
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'import.turbotenant',
+    metadata: { tenantId, accountId, parsed: parsed.length, imported, skipped, errorCount: errors.length },
+  }, c.env);
 
   const status = imported > 0 ? 200 : 422;
   return c.json({ parsed: parsed.length, imported, skipped, errors }, status);
