@@ -8,7 +8,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { startChittyConnectKeepAlive } from './lib/tokenKeepAlive';
+// tokenKeepAlive removed — was legacy module
 
 const app = express();
 app.use(express.json());
@@ -45,8 +45,6 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
-  // Start background keep-alive for ChittyConnect tokens (if configured)
-  startChittyConnectKeepAlive();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
