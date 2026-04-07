@@ -4,9 +4,10 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "start": "NODE_ENV=production node dist/index.js",
+    "dev": "NODE_ENV=development tsx server/dev.ts",
+    "dev:legacy": "NODE_ENV=development tsx server/index.ts",
+    "build": "vite build && esbuild server/dev.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "start": "NODE_ENV=production node dist/dev.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "test": "vitest",

@@ -1,4 +1,8 @@
-import { shouldBlockPredicted, recordUsage, getBudgetStatus, approximateTokens } from "./openaiBudget";
+// Budget tracking stubs (openaiBudget removed — was legacy Express-only module)
+async function shouldBlockPredicted(_tokens: number, _userId?: number | string): Promise<boolean> { return false; }
+async function recordUsage(_tokens: number, _model: string, _userId?: number | string): Promise<void> {}
+async function getBudgetStatus(_userId?: number | string): Promise<{ remaining: number; limit: number; used: number; budget: number }> { return { remaining: Infinity, limit: Infinity, used: 0, budget: Infinity }; }
+function approximateTokens(msgs: unknown[]): number { return JSON.stringify(msgs).length / 4; }
 import { openaiClient as openai } from "./openai-client";
 
 // Configurable knobs (env overrides)
