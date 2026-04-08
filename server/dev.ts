@@ -55,6 +55,10 @@ const stubAssets = {
     ? async (req: Request) => {
         const url = new URL(req.url);
         const filePath = resolve(publicDir, url.pathname.replace(/^\//, ''));
+        // Prevent path traversal — resolved path must stay inside publicDir
+        if (!filePath.startsWith(publicDir + '/') && filePath !== publicDir) {
+          return new Response('Forbidden', { status: 403 });
+        }
         try {
           if (statSync(filePath).isFile()) {
             const body = readFileSync(filePath);
@@ -62,8 +66,10 @@ const stubAssets = {
             return new Response(body, { headers: { 'content-type': mime } });
           }
         } catch {}
-        // SPA fallback: return index.html for non-file routes
-        if (indexHtml) return new Response(indexHtml, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+        // SPA fallback: return index.html only for GET requests
+        if (req.method === 'GET' && indexHtml) {
+          return new Response(indexHtml, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+        }
         return new Response('Not found', { status: 404 });
       }
     : async () => new Response('Not found', { status: 404 }),
