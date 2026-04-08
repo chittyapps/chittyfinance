@@ -191,12 +191,15 @@ function daysBetween(start: string, end: string): number {
 /**
  * Resolve a transaction's free-text category to a Schedule E line.
  * Returns the line number string ('Line 3', etc.) and the COA code.
+ * If preClassifiedCoaCode is provided (from transaction.coa_code), uses it directly
+ * instead of running fuzzy match — this is the trust-path governed classification.
  */
 export function resolveScheduleELine(
   category: string | null,
   description?: string,
+  preClassifiedCoaCode?: string | null,
 ): { lineNumber: string; lineLabel: string; coaCode: string } {
-  const coaCode = findAccountCode(description || '', category || undefined);
+  const coaCode = preClassifiedCoaCode || findAccountCode(description || '', category || undefined);
   const scheduleLine = getScheduleELine(coaCode);
   const lineNumber = scheduleLine || 'Line 19';
   const lineLabel = SCHEDULE_E_LINES[lineNumber] || 'Other';
@@ -234,7 +237,7 @@ export function buildScheduleEReport(params: {
   for (const tx of transactions) {
     const rawAmount = amount(tx.amount);
     const absAmount = Math.abs(rawAmount);
-    const { lineNumber, coaCode } = resolveScheduleELine(tx.category, (tx as any).description);
+    const { lineNumber, coaCode } = resolveScheduleELine(tx.category, tx.description, tx.coaCode);
 
     // Track unmapped categories (hit suspense 9010)
     if (coaCode === '9010' && tx.category) {
@@ -556,7 +559,7 @@ export function buildForm1065Report(params: {
     for (const tx of entityTxs) {
       const rawAmount = amount(tx.amount);
       const absAmount = Math.abs(rawAmount);
-      const { coaCode, lineNumber } = resolveScheduleELine(tx.category, (tx as any).description);
+      const { coaCode, lineNumber } = resolveScheduleELine(tx.category, tx.description, tx.coaCode);
       const acctDef = getAccountByCode(coaCode);
       const label = acctDef?.name || tx.category || 'Uncategorized';
 
