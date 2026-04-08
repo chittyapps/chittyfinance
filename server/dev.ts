@@ -10,6 +10,9 @@
  */
 import { serve } from '@hono/node-server';
 import { config } from 'dotenv';
+import { readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { getMimeType } from 'hono/utils/mime';
 import { Hono } from 'hono';
 import { createApp } from './app';
 import type { Env } from './env';
@@ -35,9 +38,36 @@ const stubKV = {
   getWithMetadata: async () => ({ value: null, metadata: null, cacheStatus: null }),
 } as unknown as KVNamespace;
 
-// ── Stub R2 + ASSETS (dev only) ──
+// ── Stub R2 (dev only) ──
 const stubR2 = { get: async () => null, put: async () => null, delete: async () => {}, list: async () => ({ objects: [], truncated: false }), head: async () => null } as unknown as R2Bucket;
-const stubAssets = { fetch: async () => new Response('Not found', { status: 404 }) } as unknown as Fetcher;
+
+// ── ASSETS: serve dist/public in production, 404 stub in dev ──
+const isProduction = process.env.NODE_ENV === 'production';
+const publicDir = isProduction ? resolve(import.meta.dirname ?? '.', 'public') : '';
+let indexHtml: string | null = null;
+if (isProduction && publicDir) {
+  try { indexHtml = readFileSync(resolve(publicDir, 'index.html'), 'utf-8'); } catch {}
+}
+
+// In production, ASSETS.fetch serves files from dist/public/ with SPA fallback
+const stubAssets = {
+  fetch: isProduction
+    ? async (req: Request) => {
+        const url = new URL(req.url);
+        const filePath = resolve(publicDir, url.pathname.replace(/^\//, ''));
+        try {
+          if (statSync(filePath).isFile()) {
+            const body = readFileSync(filePath);
+            const mime = getMimeType(filePath) || 'application/octet-stream';
+            return new Response(body, { headers: { 'content-type': mime } });
+          }
+        } catch {}
+        // SPA fallback: return index.html for non-file routes
+        if (indexHtml) return new Response(indexHtml, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+        return new Response('Not found', { status: 404 });
+      }
+    : async () => new Response('Not found', { status: 404 }),
+} as unknown as Fetcher;
 
 function buildEnv(): Env {
   const e = process.env;
@@ -94,6 +124,7 @@ devApp.use('*', async (c, next) => {
   }
   await next();
 });
+
 devApp.route('/', app);
 
 console.log(`\n  ChittyFinance Dev Server (Hono)`);
