@@ -63,6 +63,40 @@ export const insertTenantUserSchema = createInsertSchema(tenantUsers);
 export type TenantUser = typeof tenantUsers.$inferSelect;
 export type InsertTenantUser = z.infer<typeof insertTenantUserSchema>;
 
+// Chart of Accounts (database-backed, tenant-customizable)
+// Global accounts have NULL tenant_id; tenant-specific accounts override or extend
+export const chartOfAccounts = pgTable('chart_of_accounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').references(() => tenants.id), // NULL = global default
+  code: text('code').notNull(), // e.g. '5070'
+  name: text('name').notNull(), // e.g. 'Repairs'
+  type: text('type').notNull(), // 'asset', 'liability', 'equity', 'income', 'expense'
+  subtype: text('subtype'), // 'cash', 'receivable', 'fixed', 'contra', 'current', 'long-term', 'capital', 'suspense', 'non-deductible'
+  description: text('description'),
+  scheduleELine: text('schedule_e_line'), // IRS Schedule E line reference
+  taxDeductible: boolean('tax_deductible').notNull().default(false),
+  parentCode: text('parent_code'), // for hierarchical grouping (e.g. '5100' parent of '5110')
+  isActive: boolean('is_active').notNull().default(true),
+  effectiveDate: timestamp('effective_date'), // when this account definition became active
+  modifiedBy: text('modified_by'), // L4 auditor who last changed this (user ID or agent session ID)
+  metadata: jsonb('metadata'), // additional config (keywords, aliases, etc.)
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  tenantIdx: index('coa_tenant_idx').on(table.tenantId),
+  codeIdx: index('coa_code_idx').on(table.code),
+  typeIdx: index('coa_type_idx').on(table.type),
+  // Unique code per tenant (tenant-specific accounts)
+  tenantCodeIdx: uniqueIndex('coa_tenant_code_idx').on(table.tenantId, table.code),
+  // Unique code for global accounts (WHERE tenant_id IS NULL)
+  // Drizzle doesn't support partial indexes directly, so we use the composite above
+  // and enforce global uniqueness via application logic + seed script
+}));
+
+export const insertChartOfAccountsSchema = createInsertSchema(chartOfAccounts);
+export type ChartOfAccount = typeof chartOfAccounts.$inferSelect;
+export type InsertChartOfAccount = z.infer<typeof insertChartOfAccountsSchema>;
+
 // Financial accounts (bank accounts, credit cards, etc.)
 export const accounts = pgTable('accounts', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -107,7 +141,15 @@ export const transactions = pgTable('transactions', {
   propertyId: uuid('property_id').references(() => properties.id), // Links to properties table
   unitId: uuid('unit_id').references(() => units.id), // Links to units table
   externalId: text('external_id'), // For bank/Wave API sync
+  // COA classification (trust-path governed)
+  coaCode: text('coa_code'), // authoritative classification (L2+ can write)
+  suggestedCoaCode: text('suggested_coa_code'), // AI/keyword proposal (L1 writes, L3 reviews)
+  classificationConfidence: decimal('classification_confidence', { precision: 4, scale: 3 }), // 0.000-1.000
+  classifiedBy: text('classified_by'), // who/what set coa_code: user UUID, agent session ID, or 'auto'
+  classifiedAt: timestamp('classified_at'), // when coa_code was set
   reconciled: boolean('reconciled').notNull().default(false),
+  reconciledBy: text('reconciled_by'), // L3 auditor who locked this transaction
+  reconciledAt: timestamp('reconciled_at'), // when reconciliation happened
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -116,6 +158,8 @@ export const transactions = pgTable('transactions', {
   accountIdx: index('transactions_account_idx').on(table.accountId),
   dateIdx: index('transactions_date_idx').on(table.date),
   propertyIdx: index('transactions_property_idx').on(table.propertyId),
+  coaIdx: index('transactions_coa_idx').on(table.tenantId, table.coaCode),
+  unclassifiedIdx: index('transactions_unclassified_idx').on(table.tenantId, table.coaCode),
 }));
 
 export const insertTransactionSchema = createInsertSchema(transactions);
@@ -409,3 +453,30 @@ export const workflows = pgTable('workflows', {
 export const insertWorkflowSchema = createInsertSchema(workflows);
 export type Workflow = typeof workflows.$inferSelect;
 export type InsertWorkflow = z.infer<typeof insertWorkflowSchema>;
+
+// Classification audit trail (tracks every COA code change on a transaction)
+// Enforces maker/checker: L2 classifies, L3 reconciles — same session can't do both
+export const classificationAudit = pgTable('classification_audit', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  transactionId: uuid('transaction_id').notNull().references(() => transactions.id),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id), // denormalized for tenant-scoped queries
+  previousCoaCode: text('previous_coa_code'), // NULL on first classification
+  newCoaCode: text('new_coa_code').notNull(),
+  action: text('action').notNull(), // 'classify', 'reclassify', 'reconcile', 'override'
+  trustLevel: text('trust_level').notNull(), // 'L0', 'L1', 'L2', 'L3', 'L4'
+  actorId: text('actor_id').notNull(), // user UUID, agent session ID, or 'auto'
+  actorType: text('actor_type').notNull(), // 'user', 'agent', 'system'
+  confidence: decimal('confidence', { precision: 4, scale: 3 }), // 0.000-1.000 at time of action
+  reason: text('reason'), // why the change was made (correction reason, AI explanation, etc.)
+  metadata: jsonb('metadata'), // session context, model used, etc.
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  transactionIdx: index('classification_audit_transaction_idx').on(table.transactionId),
+  tenantIdx: index('classification_audit_tenant_idx').on(table.tenantId),
+  actorIdx: index('classification_audit_actor_idx').on(table.actorId),
+  trustLevelIdx: index('classification_audit_trust_level_idx').on(table.trustLevel),
+}));
+
+export const insertClassificationAuditSchema = createInsertSchema(classificationAudit);
+export type ClassificationAudit = typeof classificationAudit.$inferSelect;
+export type InsertClassificationAudit = z.infer<typeof insertClassificationAuditSchema>;

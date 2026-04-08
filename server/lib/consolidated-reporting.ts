@@ -24,6 +24,8 @@ export interface ReportingTransactionRow {
   amount: string;
   type: string;
   category: string | null;
+  description?: string;
+  coaCode?: string | null; // pre-classified COA code (preferred over fuzzy match)
   date: Date | string;
   reconciled: boolean;
   metadata: unknown;

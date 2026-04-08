@@ -211,6 +211,26 @@ chittyfinance/
 - `leases` - Tenant leases with rent and dates
 - `property_valuations` - Cached AVM estimates from external providers (Zillow, Redfin, HouseCanary, ATTOM, County)
 
+**Chart of Accounts & Classification Tables**:
+- `chart_of_accounts` - Database-backed COA with tenant customization (NULL tenant_id = global defaults, 60 REI accounts seeded)
+- `classification_audit` - Audit trail for every COA code change on a transaction (trust level L0-L4, actor attribution)
+
+**Classification columns on `transactions`**:
+- `coa_code` - Authoritative COA classification (L2+ executor writes)
+- `suggested_coa_code` - AI/keyword proposal (L1 writes, L3 auditor reviews)
+- `classification_confidence` - 0.000-1.000 score
+- `classified_by` / `classified_at` - Who set coa_code and when
+- `reconciled_by` / `reconciled_at` - L3 auditor who locked the transaction
+
+**Trust Path for Classification** (executor/auditor segregation):
+| Level | Role | COA Permissions |
+|-------|------|----------------|
+| L0 Ingest | Executor | Write to 9010 (suspense) only |
+| L1 Suggest | Executor | Write `suggested_coa_code`, not `coa_code` |
+| L2 Classify | Executor | Set `coa_code` on unreconciled transactions |
+| L3 Reconcile | Auditor | Lock transactions, review L2 classifications |
+| L4 Govern | Auditor | Modify the COA itself (add/rename/retire accounts) |
+
 **Supporting Tables**:
 - `integrations` - Mercury/Wave/Stripe API connections
 - `tasks` - Financial tasks
