@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { ledgerLog } from '../lib/ledger-client';
+import { findAccountCode } from '../../database/chart-of-accounts';
 
 export const importRoutes = new Hono<HonoEnv>();
 
@@ -129,6 +130,10 @@ importRoutes.post('/api/import/turbotenant', async (c) => {
     );
 
     try {
+      // L0 ingest: auto-suggest COA code via keyword matching
+      const suggestedCode = findAccountCode(row.description, row.category);
+      const isSuspense = suggestedCode === '9010';
+
       await storage.createTransaction({
         tenantId,
         accountId,
@@ -140,6 +145,8 @@ importRoutes.post('/api/import/turbotenant', async (c) => {
         payee: row.tenantName || null,
         propertyId: matchedProperty?.id || null,
         externalId,
+        suggestedCoaCode: suggestedCode,
+        classificationConfidence: isSuspense ? '0.100' : '0.700',
         metadata: { source: 'turbotenant', reference: row.reference },
       });
       imported++;

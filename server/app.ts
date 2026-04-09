@@ -37,6 +37,7 @@ import { workflowRoutes } from './routes/workflows';
 import { leaseRoutes } from './routes/leases';
 import { chittyIdAuthRoutes } from './routes/chittyid-auth';
 import { allocationRoutes } from './routes/allocations';
+import { classificationRoutes } from './routes/classification';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -98,7 +99,7 @@ export function createApp() {
     '/api/accounts', '/api/transactions', '/api/properties',
     '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/ai', '/api/summary',
     '/api/mercury', '/api/github', '/api/charges', '/api/forensics', '/api/portfolio', '/api/import', '/api/reports',
-    '/api/google', '/api/comms', '/api/workflows', '/api/leases', '/mcp',
+    '/api/google', '/api/comms', '/api/workflows', '/api/leases', '/api/coa', '/api/classification', '/mcp',
   ];
   app.use('/api/tenants', ...authAndContext);
   app.use('/api/tenants/*', ...authAndContext);
@@ -128,6 +129,7 @@ export function createApp() {
   app.route('/', reportRoutes);
   app.route('/', taxRoutes);
   app.route('/', allocationRoutes);
+  app.route('/', classificationRoutes);
   app.route('/', googleRoutes);
   app.route('/', commsRoutes);
   app.route('/', workflowRoutes);
