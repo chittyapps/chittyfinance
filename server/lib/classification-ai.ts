@@ -1,8 +1,9 @@
 /**
  * AI-assisted COA classification.
  *
- * Uses GPT-4o with structured JSON output to suggest COA codes for
- * transactions that keyword matching can't confidently classify.
+ * Uses gpt-4o-mini by default (overridable via opts.model) with structured
+ * JSON output to suggest COA codes for transactions that keyword matching
+ * can't confidently classify.
  *
  * Design notes:
  *   - Instantiates OpenAI client per-request from c.env (Workers-safe)
@@ -20,7 +21,6 @@ export interface ClassifiableTransaction {
   description: string;
   amount: string;
   category?: string | null;
-  date: Date | string;
 }
 
 export interface CoaOption {

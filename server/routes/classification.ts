@@ -342,19 +342,22 @@ classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
     return c.json({ error: 'invalid_limit', message: 'limit must be 1-25 (batch constraint)' }, 400);
   }
 
+  const apiKey = c.env.OPENAI_API_KEY ?? '';
   const txns = await storage.getUnclassifiedTransactions(tenantId, limitParsed.data);
+
+  // `processed` means "fetched and considered" — stays consistent across all branches.
+  // `suggested` means "actually wrote a new suggestion to the database".
   if (txns.length === 0) {
-    return c.json({ processed: 0, suggested: 0, aiCount: 0, keywordCount: 0 });
+    return c.json({ processed: 0, suggested: 0, aiCount: 0, keywordCount: 0, aiAvailable: Boolean(apiKey) });
   }
 
   // Only send to AI what doesn't already have a suggestion — cheaper and respects prior human input
   const needSuggestion = txns.filter((tx) => !tx.suggestedCoaCode);
   if (needSuggestion.length === 0) {
-    return c.json({ processed: txns.length, suggested: 0, aiCount: 0, keywordCount: 0 });
+    return c.json({ processed: txns.length, suggested: 0, aiCount: 0, keywordCount: 0, aiAvailable: Boolean(apiKey) });
   }
 
   const coa = await storage.getChartOfAccounts(tenantId);
-  const apiKey = c.env.OPENAI_API_KEY ?? '';
 
   const suggestions = await classifyBatchWithAI(
     needSuggestion.map((tx) => ({
@@ -362,7 +365,6 @@ classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
       description: tx.description,
       amount: tx.amount,
       category: tx.category,
-      date: tx.date,
     })),
     coa.map((a: any) => ({ code: a.code, name: a.name, type: a.type, description: a.description })),
     apiKey,
@@ -386,19 +388,24 @@ classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
       suggested++;
       if (s.source === 'ai') aiCount++;
       else keywordCount++;
-    } catch {
-      continue;
+    } catch (err) {
+      // Skip reconciled rows only — other errors should propagate so we
+      // don't silently hide DB/runtime failures behind a batch endpoint.
+      if (err instanceof ClassificationError && err.code === 'reconciled_locked') {
+        continue;
+      }
+      throw err;
     }
   }
 
   ledgerLog(c, {
     entityType: 'audit',
     action: 'classification.ai-suggest',
-    metadata: { tenantId, processed: suggestions.length, aiCount, keywordCount },
+    metadata: { tenantId, processed: txns.length, aiCount, keywordCount },
   }, c.env);
 
   return c.json({
-    processed: suggestions.length,
+    processed: txns.length,
     suggested,
     aiCount,
     keywordCount,
