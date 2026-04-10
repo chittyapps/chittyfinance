@@ -4,6 +4,24 @@ import * as schema from '../db/schema';
 
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * Sentinel error thrown when a trust-path operation is rejected.
+ * Routes can catch this and map the `code` to a stable HTTP response
+ * without leaking raw exception messages for unexpected failures.
+ */
+export class ClassificationError extends Error {
+  constructor(
+    public readonly code:
+      | 'reconciled_locked'
+      | 'not_classified'
+      | 'transaction_not_found',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ClassificationError';
+  }
+}
+
 export class SystemStorage {
   constructor(private db: Database) {}
 
@@ -953,15 +971,11 @@ export class SystemStorage {
     const tx = await this.getTransaction(txId, tenantId);
     if (!tx) return undefined;
 
-    // Reconciled transactions cannot be reclassified (only L3+ can unlock)
-    if (tx.reconciled && opts.trustLevel !== 'L3' && opts.trustLevel !== 'L4') {
-      throw new Error('Transaction is reconciled — only L3/L4 can modify');
-    }
-
     const previousCoaCode = tx.coaCode;
+    const previousSuggested = tx.suggestedCoaCode;
     const now = new Date();
 
-    // Batch update + audit insert atomically (neon-http transaction pipelines both statements)
+    // Decide which fields to update
     const updateSet = opts.isSuggestion
       ? {
           // L1: write to suggested_coa_code only
@@ -978,18 +992,58 @@ export class SystemStorage {
           updatedAt: now,
         };
 
+    // Reconciled lock: L0/L1/L2 writes must reject rows that were reconciled
+    // between the initial SELECT and this UPDATE. We enforce this inside the
+    // WHERE clause of the UPDATE itself (conditional update) so concurrent
+    // reconciliations can't race us.
+    const canWriteReconciled = opts.trustLevel === 'L3' || opts.trustLevel === 'L4';
+    const whereConditions = canWriteReconciled
+      ? and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId))
+      : and(
+          eq(schema.transactions.id, txId),
+          eq(schema.transactions.tenantId, tenantId),
+          eq(schema.transactions.reconciled, false),
+        );
+
+    // Action label distinguishes suggestion vs authoritative writes
+    // so the audit trail accurately reflects the L1 path.
+    const action = opts.isSuggestion
+      ? previousSuggested
+        ? 're-suggest'
+        : 'suggest'
+      : previousCoaCode
+        ? 'reclassify'
+        : 'classify';
+
     await this.db.transaction(async (trx) => {
-      await trx
+      // Conditional update — returns the row only if the WHERE matched.
+      // If the row was already reconciled (and caller is L0/L1/L2), this
+      // returns [], letting us throw a ClassificationError and roll back
+      // the audit insert via the transaction boundary.
+      const updated = await trx
         .update(schema.transactions)
         .set(updateSet)
-        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
+        .where(whereConditions)
+        .returning({ id: schema.transactions.id });
+
+      if (updated.length === 0) {
+        // Distinguish "reconciled lock triggered" vs "row vanished"
+        const current = await trx
+          .select({ id: schema.transactions.id, reconciled: schema.transactions.reconciled })
+          .from(schema.transactions)
+          .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
+        if (current[0]?.reconciled) {
+          throw new ClassificationError('reconciled_locked', 'Transaction is reconciled — only L3/L4 can modify');
+        }
+        throw new ClassificationError('transaction_not_found', 'Transaction not found');
+      }
 
       await trx.insert(schema.classificationAudit).values({
         transactionId: txId,
         tenantId,
-        previousCoaCode,
+        previousCoaCode: opts.isSuggestion ? (previousSuggested ?? null) : previousCoaCode,
         newCoaCode: coaCode,
-        action: previousCoaCode ? 'reclassify' : 'classify',
+        action,
         trustLevel: opts.trustLevel,
         actorId: opts.actorId,
         actorType: opts.actorType,
@@ -1009,7 +1063,9 @@ export class SystemStorage {
     const tx = await this.getTransaction(txId, tenantId);
     if (!tx) return undefined;
     const coaCode = tx.coaCode;
-    if (!coaCode) throw new Error('Cannot reconcile — transaction has no COA classification');
+    if (!coaCode) {
+      throw new ClassificationError('not_classified', 'Cannot reconcile — transaction has no COA classification');
+    }
 
     const now = new Date();
 

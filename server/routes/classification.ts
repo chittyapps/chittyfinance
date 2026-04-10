@@ -3,8 +3,27 @@ import { z } from 'zod';
 import type { HonoEnv } from '../env';
 import { ledgerLog } from '../lib/ledger-client';
 import { findAccountCode } from '../../database/chart-of-accounts';
+import { ClassificationError } from '../storage/system';
 
 export const classificationRoutes = new Hono<HonoEnv>();
+
+/**
+ * Map a ClassificationError to a stable HTTP response.
+ * Unknown errors are re-thrown to hit the shared error handler (500).
+ */
+function mapClassificationError(err: unknown, c: any): Response {
+  if (err instanceof ClassificationError) {
+    switch (err.code) {
+      case 'reconciled_locked':
+        return c.json({ error: 'reconciled_locked', message: err.message }, 403);
+      case 'not_classified':
+        return c.json({ error: 'not_classified', message: err.message }, 400);
+      case 'transaction_not_found':
+        return c.json({ error: 'not_found', message: err.message }, 404);
+    }
+  }
+  throw err;
+}
 
 // Roles permitted to modify the Chart of Accounts (L4 Govern).
 // Only tenant owners and admins can add/edit/retire COA accounts.
@@ -178,6 +197,12 @@ classificationRoutes.post('/api/classification/suggest', async (c) => {
   }
   const { transactionId, coaCode, confidence, reason } = parsed.data;
 
+  // Validate COA code exists — prevents dangling suggestions that can never be resolved
+  const account = await storage.getChartOfAccountByCode(coaCode, tenantId);
+  if (!account) {
+    return c.json({ error: `COA code ${coaCode} not found` }, 400);
+  }
+
   try {
     const result = await storage.classifyTransaction(transactionId, tenantId, coaCode, {
       actorId: userId,
@@ -191,7 +216,7 @@ classificationRoutes.post('/api/classification/suggest', async (c) => {
     if (!result) return c.json({ error: 'Transaction not found' }, 404);
     return c.json(result);
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 403);
+    return mapClassificationError(err, c);
   }
 });
 
@@ -231,7 +256,7 @@ classificationRoutes.post('/api/classification/classify', async (c) => {
 
     return c.json(result);
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 403);
+    return mapClassificationError(err, c);
   }
 });
 
@@ -259,7 +284,7 @@ classificationRoutes.post('/api/classification/reconcile', async (c) => {
 
     return c.json(result);
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 403);
+    return mapClassificationError(err, c);
   }
 });
 
@@ -291,9 +316,13 @@ classificationRoutes.post('/api/classification/batch-suggest', async (c) => {
         isSuggestion: true,
       });
       suggested++;
-    } catch {
-      // Skip locked/reconciled rows; continue with the rest
-      continue;
+    } catch (err) {
+      // Skip reconciled rows only — other errors should propagate so we
+      // don't silently hide bugs like DB outages behind a batch endpoint.
+      if (err instanceof ClassificationError && err.code === 'reconciled_locked') {
+        continue;
+      }
+      throw err;
     }
   }
 
