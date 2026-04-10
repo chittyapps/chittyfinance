@@ -4,7 +4,7 @@ import {
   Settings, Plug, Building2, Shield,
   ChevronDown, ChevronRight, ChevronsUpDown,
   Menu, X, Activity, LayoutDashboard,
-  ArrowLeftRight, Wallet, BarChart3, Cable, Orbit, GitBranch, Tags
+  ArrowLeftRight, Wallet, BarChart3, Cable, Orbit, GitBranch, Tags, BookOpen
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useRole, type UserRole } from "@/contexts/RoleContext";
@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/orbital", label: "Orbital", icon: Orbit, roles: ["cfo", "accountant", "bookkeeper", "user"], badge: "NEW" },
   { href: "/allocations", label: "Allocations", icon: GitBranch, roles: ["cfo", "accountant"] },
   { href: "/classification", label: "Classification", icon: Tags, roles: ["cfo", "accountant", "bookkeeper"] },
+  { href: "/coa", label: "Chart of Accounts", icon: BookOpen, roles: ["cfo", "accountant"] },
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["cfo", "accountant"] },
   { href: "/integrations", label: "Integrations", icon: Cable, roles: ["cfo", "accountant"] },
   { href: "/connections", label: "Connections", icon: Plug, roles: ["cfo", "accountant"] },

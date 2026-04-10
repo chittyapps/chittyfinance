@@ -142,6 +142,40 @@ export function useBatchSuggest() {
   });
 }
 
+/** L4 — create a tenant-specific COA account */
+export function useCreateCoaAccount() {
+  const qc = useQueryClient();
+  const tenantId = useTenantId();
+  return useMutation({
+    mutationFn: (data: {
+      code: string;
+      name: string;
+      type: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+      subtype?: string | null;
+      description?: string | null;
+      scheduleELine?: string | null;
+      taxDeductible?: boolean;
+      parentCode?: string | null;
+    }) => apiRequest('POST', '/api/coa', data).then((r) => r.json()) as Promise<ChartOfAccount>,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/api/coa', tenantId] });
+    },
+  });
+}
+
+/** L4 — update a tenant-specific COA account */
+export function useUpdateCoaAccount() {
+  const qc = useQueryClient();
+  const tenantId = useTenantId();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Partial<ChartOfAccount>) =>
+      apiRequest('PATCH', `/api/coa/${id}`, data).then((r) => r.json()) as Promise<ChartOfAccount>,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/api/coa', tenantId] });
+    },
+  });
+}
+
 /** L1 — run GPT-4o-mini AI batch over unclassified queue */
 export function useAiSuggest() {
   const qc = useQueryClient();
