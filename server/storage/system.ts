@@ -913,13 +913,33 @@ export class SystemStorage {
     return row;
   }
 
-  async updateChartOfAccount(id: string, data: Partial<typeof schema.chartOfAccounts.$inferInsert>) {
+  async updateChartOfAccount(
+    id: string,
+    tenantId: string,
+    data: Partial<typeof schema.chartOfAccounts.$inferInsert>,
+  ) {
+    // Tenant-scoped: only allow updating accounts belonging to this tenant.
+    // Global accounts (tenant_id IS NULL) cannot be edited via this path.
     const [row] = await this.db
       .update(schema.chartOfAccounts)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(schema.chartOfAccounts.id, id))
+      .where(and(
+        eq(schema.chartOfAccounts.id, id),
+        eq(schema.chartOfAccounts.tenantId, tenantId),
+      ))
       .returning();
     return row;
+  }
+
+  async getUserRoleForTenant(userId: string, tenantId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ role: schema.tenantUsers.role })
+      .from(schema.tenantUsers)
+      .where(and(
+        eq(schema.tenantUsers.userId, userId),
+        eq(schema.tenantUsers.tenantId, tenantId),
+      ));
+    return row?.role ?? null;
   }
 
   // ── CLASSIFICATION (trust-path operations) ──
@@ -941,42 +961,41 @@ export class SystemStorage {
     const previousCoaCode = tx.coaCode;
     const now = new Date();
 
-    if (opts.isSuggestion) {
-      // L1: write to suggested_coa_code only
-      await this.db
-        .update(schema.transactions)
-        .set({
+    // Batch update + audit insert atomically (neon-http transaction pipelines both statements)
+    const updateSet = opts.isSuggestion
+      ? {
+          // L1: write to suggested_coa_code only
           suggestedCoaCode: coaCode,
           classificationConfidence: opts.confidence ?? null,
           updatedAt: now,
-        })
-        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
-    } else {
-      // L2+: write to authoritative coa_code
-      await this.db
-        .update(schema.transactions)
-        .set({
+        }
+      : {
+          // L2+: write to authoritative coa_code
           coaCode,
           classifiedBy: opts.actorId,
           classifiedAt: now,
           classificationConfidence: opts.confidence ?? null,
           updatedAt: now,
-        })
-        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
-    }
+        };
 
-    // Audit trail
-    await this.db.insert(schema.classificationAudit).values({
-      transactionId: txId,
-      tenantId,
-      previousCoaCode,
-      newCoaCode: coaCode,
-      action: previousCoaCode ? 'reclassify' : 'classify',
-      trustLevel: opts.trustLevel,
-      actorId: opts.actorId,
-      actorType: opts.actorType,
-      confidence: opts.confidence ?? null,
-      reason: opts.reason ?? null,
+    await this.db.transaction(async (trx) => {
+      await trx
+        .update(schema.transactions)
+        .set(updateSet)
+        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
+
+      await trx.insert(schema.classificationAudit).values({
+        transactionId: txId,
+        tenantId,
+        previousCoaCode,
+        newCoaCode: coaCode,
+        action: previousCoaCode ? 'reclassify' : 'classify',
+        trustLevel: opts.trustLevel,
+        actorId: opts.actorId,
+        actorType: opts.actorType,
+        confidence: opts.confidence ?? null,
+        reason: opts.reason ?? null,
+      });
     });
 
     return this.getTransaction(txId, tenantId);
@@ -989,23 +1008,27 @@ export class SystemStorage {
   ) {
     const tx = await this.getTransaction(txId, tenantId);
     if (!tx) return undefined;
-    if (!tx.coaCode) throw new Error('Cannot reconcile — transaction has no COA classification');
+    const coaCode = tx.coaCode;
+    if (!coaCode) throw new Error('Cannot reconcile — transaction has no COA classification');
 
     const now = new Date();
-    await this.db
-      .update(schema.transactions)
-      .set({ reconciled: true, reconciledBy: actorId, reconciledAt: now, updatedAt: now })
-      .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
 
-    await this.db.insert(schema.classificationAudit).values({
-      transactionId: txId,
-      tenantId,
-      previousCoaCode: tx.coaCode,
-      newCoaCode: tx.coaCode,
-      action: 'reconcile',
-      trustLevel: 'L3',
-      actorId,
-      actorType: 'user',
+    await this.db.transaction(async (trx) => {
+      await trx
+        .update(schema.transactions)
+        .set({ reconciled: true, reconciledBy: actorId, reconciledAt: now, updatedAt: now })
+        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
+
+      await trx.insert(schema.classificationAudit).values({
+        transactionId: txId,
+        tenantId,
+        previousCoaCode: coaCode,
+        newCoaCode: coaCode,
+        action: 'reconcile',
+        trustLevel: 'L3',
+        actorId,
+        actorType: 'user',
+      });
     });
 
     return this.getTransaction(txId, tenantId);
@@ -1028,11 +1051,14 @@ export class SystemStorage {
       .limit(limit);
   }
 
-  async getClassificationAudit(transactionId: string) {
+  async getClassificationAudit(transactionId: string, tenantId: string) {
     return this.db
       .select()
       .from(schema.classificationAudit)
-      .where(eq(schema.classificationAudit.transactionId, transactionId))
+      .where(and(
+        eq(schema.classificationAudit.transactionId, transactionId),
+        eq(schema.classificationAudit.tenantId, tenantId),
+      ))
       .orderBy(desc(schema.classificationAudit.createdAt));
   }
 
