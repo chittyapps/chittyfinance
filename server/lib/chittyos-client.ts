@@ -257,36 +257,10 @@ export class ChittyConnectClient extends ChittyOSClient {
   }
 }
 
-/**
- * ChittySchema Client
- */
-export class ChittySchemaClient extends ChittyOSClient {
-  constructor(config?: Partial<ChittyOSClientConfig>) {
-    super({
-      baseUrl: config?.baseUrl || process.env.CHITTYSCHEMA_URL || 'https://schema.chitty.cc',
-      ...config,
-    });
-  }
-
-  async validate(type: string, data: Record<string, any>): Promise<{
-    valid: boolean;
-    errors?: Array<{ path: string; message: string; code: string }>;
-  }> {
-    return this.post('/api/v1/validate', { type, data });
-  }
-
-  async getEntityTypes(): Promise<Array<{
-    type: string;
-    description: string;
-  }>> {
-    const response = await this.get<{ types: any[] }>('/api/v1/entity-types');
-    return response.types;
-  }
-
-  async getSchema(type: string): Promise<Record<string, any>> {
-    return this.get(`/api/v1/schema/${type}`);
-  }
-}
+// NOTE: ChittySchemaClient removed — it used the wrong API paths (/api/v1/*)
+// and process.env which doesn't work in Cloudflare Workers at module load.
+// Use `server/lib/chittyschema.ts` instead — it's Workers-native and speaks
+// the real ChittySchema API (/api/health, /api/validate, /api/tables).
 
 /**
  * ChittyChronicle Client
@@ -414,12 +388,9 @@ export class ChittyOSClientFactory {
     return this.instances.get('chittyconnect');
   }
 
-  static getChittySchema(config?: Partial<ChittyOSClientConfig>): ChittySchemaClient {
-    if (!this.instances.has('chittyschema') || config) {
-      this.instances.set('chittyschema', new ChittySchemaClient(config));
-    }
-    return this.instances.get('chittyschema');
-  }
+  // getChittySchema removed — use `server/lib/chittyschema.ts` functions
+  // (validateRow, listTables, checkHealth) which are Workers-native and
+  // speak the real ChittySchema API.
 
   static getChittyChronicle(config?: Partial<ChittyOSClientConfig>): ChittyChronicleClient {
     if (!this.instances.has('chittychronicle') || config) {
@@ -460,7 +431,6 @@ export class ChittyOSClientFactory {
       chittyid: this.getChittyID(),
       chittyauth: this.getChittyAuth(),
       chittyconnect: this.getChittyConnect(),
-      chittyschema: this.getChittySchema(),
       chittychronicle: this.getChittyChronicle(),
       chittyregistry: this.getChittyRegistry(),
       chittyrental: this.getChittyRental(),
@@ -494,7 +464,6 @@ export class ChittyOSClientFactory {
 export const chittyID = () => ChittyOSClientFactory.getChittyID();
 export const chittyAuth = () => ChittyOSClientFactory.getChittyAuth();
 export const chittyConnect = () => ChittyOSClientFactory.getChittyConnect();
-export const chittySchema = () => ChittyOSClientFactory.getChittySchema();
 export const chittyChronicle = () => ChittyOSClientFactory.getChittyChronicle();
 export const chittyRegistry = () => ChittyOSClientFactory.getChittyRegistry();
 export const chittyRental = () => ChittyOSClientFactory.getChittyRental();
