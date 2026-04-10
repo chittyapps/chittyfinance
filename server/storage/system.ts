@@ -1,8 +1,26 @@
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, isNull, asc } from 'drizzle-orm';
 import type { Database } from '../db/connection';
 import * as schema from '../db/schema';
 
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * Sentinel error thrown when a trust-path operation is rejected.
+ * Routes can catch this and map the `code` to a stable HTTP response
+ * without leaking raw exception messages for unexpected failures.
+ */
+export class ClassificationError extends Error {
+  constructor(
+    public readonly code:
+      | 'reconciled_locked'
+      | 'not_classified'
+      | 'transaction_not_found',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ClassificationError';
+  }
+}
 
 export class SystemStorage {
   constructor(private db: Database) {}
@@ -870,5 +888,246 @@ export class SystemStorage {
       .values(data)
       .returning();
     return row;
+  }
+
+  // ── CHART OF ACCOUNTS ──
+
+  async getChartOfAccounts(tenantId: string) {
+    // Return tenant-specific overrides + global defaults (tenant_id IS NULL)
+    return this.db
+      .select()
+      .from(schema.chartOfAccounts)
+      .where(
+        sql`${schema.chartOfAccounts.tenantId} = ${tenantId} OR ${schema.chartOfAccounts.tenantId} IS NULL`,
+      )
+      .orderBy(asc(schema.chartOfAccounts.code));
+  }
+
+  async getGlobalChartOfAccounts() {
+    return this.db
+      .select()
+      .from(schema.chartOfAccounts)
+      .where(isNull(schema.chartOfAccounts.tenantId))
+      .orderBy(asc(schema.chartOfAccounts.code));
+  }
+
+  async getChartOfAccountByCode(code: string, tenantId: string) {
+    // Prefer tenant-specific, fall back to global
+    const [tenantAcct] = await this.db
+      .select()
+      .from(schema.chartOfAccounts)
+      .where(and(eq(schema.chartOfAccounts.code, code), eq(schema.chartOfAccounts.tenantId, tenantId)));
+    if (tenantAcct) return tenantAcct;
+
+    const [globalAcct] = await this.db
+      .select()
+      .from(schema.chartOfAccounts)
+      .where(and(eq(schema.chartOfAccounts.code, code), isNull(schema.chartOfAccounts.tenantId)));
+    return globalAcct;
+  }
+
+  async createChartOfAccount(data: typeof schema.chartOfAccounts.$inferInsert) {
+    const [row] = await this.db.insert(schema.chartOfAccounts).values(data).returning();
+    return row;
+  }
+
+  async updateChartOfAccount(
+    id: string,
+    tenantId: string,
+    data: Partial<typeof schema.chartOfAccounts.$inferInsert>,
+  ) {
+    // Tenant-scoped: only allow updating accounts belonging to this tenant.
+    // Global accounts (tenant_id IS NULL) cannot be edited via this path.
+    const [row] = await this.db
+      .update(schema.chartOfAccounts)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(
+        eq(schema.chartOfAccounts.id, id),
+        eq(schema.chartOfAccounts.tenantId, tenantId),
+      ))
+      .returning();
+    return row;
+  }
+
+  async getUserRoleForTenant(userId: string, tenantId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ role: schema.tenantUsers.role })
+      .from(schema.tenantUsers)
+      .where(and(
+        eq(schema.tenantUsers.userId, userId),
+        eq(schema.tenantUsers.tenantId, tenantId),
+      ));
+    return row?.role ?? null;
+  }
+
+  // ── CLASSIFICATION (trust-path operations) ──
+
+  async classifyTransaction(
+    txId: string,
+    tenantId: string,
+    coaCode: string,
+    opts: { actorId: string; actorType: 'user' | 'agent' | 'system'; trustLevel: string; confidence?: string; reason?: string; isSuggestion?: boolean },
+  ) {
+    const tx = await this.getTransaction(txId, tenantId);
+    if (!tx) return undefined;
+
+    const previousCoaCode = tx.coaCode;
+    const previousSuggested = tx.suggestedCoaCode;
+    const now = new Date();
+
+    // Decide which fields to update
+    const updateSet = opts.isSuggestion
+      ? {
+          // L1: write to suggested_coa_code only
+          suggestedCoaCode: coaCode,
+          classificationConfidence: opts.confidence ?? null,
+          updatedAt: now,
+        }
+      : {
+          // L2+: write to authoritative coa_code
+          coaCode,
+          classifiedBy: opts.actorId,
+          classifiedAt: now,
+          classificationConfidence: opts.confidence ?? null,
+          updatedAt: now,
+        };
+
+    // Reconciled lock: L0/L1/L2 writes must reject rows that were reconciled
+    // between the initial SELECT and this UPDATE. We enforce this inside the
+    // WHERE clause of the UPDATE itself (conditional update) so concurrent
+    // reconciliations can't race us.
+    const canWriteReconciled = opts.trustLevel === 'L3' || opts.trustLevel === 'L4';
+    const whereConditions = canWriteReconciled
+      ? and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId))
+      : and(
+          eq(schema.transactions.id, txId),
+          eq(schema.transactions.tenantId, tenantId),
+          eq(schema.transactions.reconciled, false),
+        );
+
+    // Action label distinguishes suggestion vs authoritative writes
+    // so the audit trail accurately reflects the L1 path.
+    const action = opts.isSuggestion
+      ? previousSuggested
+        ? 're-suggest'
+        : 'suggest'
+      : previousCoaCode
+        ? 'reclassify'
+        : 'classify';
+
+    await this.db.transaction(async (trx) => {
+      // Conditional update — returns the row only if the WHERE matched.
+      // If the row was already reconciled (and caller is L0/L1/L2), this
+      // returns [], letting us throw a ClassificationError and roll back
+      // the audit insert via the transaction boundary.
+      const updated = await trx
+        .update(schema.transactions)
+        .set(updateSet)
+        .where(whereConditions)
+        .returning({ id: schema.transactions.id });
+
+      if (updated.length === 0) {
+        // Distinguish "reconciled lock triggered" vs "row vanished"
+        const current = await trx
+          .select({ id: schema.transactions.id, reconciled: schema.transactions.reconciled })
+          .from(schema.transactions)
+          .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
+        if (current[0]?.reconciled) {
+          throw new ClassificationError('reconciled_locked', 'Transaction is reconciled — only L3/L4 can modify');
+        }
+        throw new ClassificationError('transaction_not_found', 'Transaction not found');
+      }
+
+      await trx.insert(schema.classificationAudit).values({
+        transactionId: txId,
+        tenantId,
+        previousCoaCode: opts.isSuggestion ? (previousSuggested ?? null) : previousCoaCode,
+        newCoaCode: coaCode,
+        action,
+        trustLevel: opts.trustLevel,
+        actorId: opts.actorId,
+        actorType: opts.actorType,
+        confidence: opts.confidence ?? null,
+        reason: opts.reason ?? null,
+      });
+    });
+
+    return this.getTransaction(txId, tenantId);
+  }
+
+  async reconcileTransaction(
+    txId: string,
+    tenantId: string,
+    actorId: string,
+  ) {
+    const tx = await this.getTransaction(txId, tenantId);
+    if (!tx) return undefined;
+    const coaCode = tx.coaCode;
+    if (!coaCode) {
+      throw new ClassificationError('not_classified', 'Cannot reconcile — transaction has no COA classification');
+    }
+
+    const now = new Date();
+
+    await this.db.transaction(async (trx) => {
+      await trx
+        .update(schema.transactions)
+        .set({ reconciled: true, reconciledBy: actorId, reconciledAt: now, updatedAt: now })
+        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
+
+      await trx.insert(schema.classificationAudit).values({
+        transactionId: txId,
+        tenantId,
+        previousCoaCode: coaCode,
+        newCoaCode: coaCode,
+        action: 'reconcile',
+        trustLevel: 'L3',
+        actorId,
+        actorType: 'user',
+      });
+    });
+
+    return this.getTransaction(txId, tenantId);
+  }
+
+  async getTransaction(txId: string, tenantId: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.transactions)
+      .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
+    return row;
+  }
+
+  async getUnclassifiedTransactions(tenantId: string, limit = 50) {
+    return this.db
+      .select()
+      .from(schema.transactions)
+      .where(and(eq(schema.transactions.tenantId, tenantId), isNull(schema.transactions.coaCode)))
+      .orderBy(desc(schema.transactions.date))
+      .limit(limit);
+  }
+
+  async getClassificationAudit(transactionId: string, tenantId: string) {
+    return this.db
+      .select()
+      .from(schema.classificationAudit)
+      .where(and(
+        eq(schema.classificationAudit.transactionId, transactionId),
+        eq(schema.classificationAudit.tenantId, tenantId),
+      ))
+      .orderBy(desc(schema.classificationAudit.createdAt));
+  }
+
+  async getClassificationStats(tenantId: string) {
+    const [stats] = await this.db
+      .select({
+        total: sql<number>`count(*)`,
+        classified: sql<number>`count(${schema.transactions.coaCode})`,
+        reconciled: sql<number>`count(CASE WHEN ${schema.transactions.reconciled} = true THEN 1 END)`,
+        suggested: sql<number>`count(CASE WHEN ${schema.transactions.suggestedCoaCode} IS NOT NULL AND ${schema.transactions.coaCode} IS NULL THEN 1 END)`,
+      })
+      .from(schema.transactions)
+      .where(eq(schema.transactions.tenantId, tenantId));
+    return stats;
   }
 }
