@@ -133,6 +133,29 @@ export interface ScheduleEPropertyColumn {
   netIncome: number;
 }
 
+export interface ScheduleELineSummaryItem {
+  lineNumber: string;
+  lineLabel: string;
+  amount: number;
+  transactionCount: number;
+  coaBreakdown: Array<{
+    coaCode: string;
+    coaName: string;
+    amount: number;
+    transactionCount: number;
+  }>;
+}
+
+export interface ClassificationQuality {
+  totalTransactions: number;
+  l2ClassifiedCount: number;
+  l1SuggestedOnlyCount: number;
+  unclassifiedCount: number;
+  l1SuggestedOnlyAmount: number;
+  confirmedPct: number;
+  readyToFile: boolean;
+}
+
 export interface ScheduleEReport {
   taxYear: number;
   properties: ScheduleEPropertyColumn[];
@@ -141,6 +164,8 @@ export interface ScheduleEReport {
   uncategorizedAmount: number;
   uncategorizedCount: number;
   unmappedCategories: string[];
+  lineSummary: ScheduleELineSummaryItem[];
+  classificationQuality: ClassificationQuality;
 }
 
 export interface K1MemberAllocation {

@@ -26,6 +26,7 @@ export interface ReportingTransactionRow {
   category: string | null;
   description?: string;
   coaCode?: string | null; // pre-classified COA code (preferred over fuzzy match)
+  suggestedCoaCode?: string | null; // L1 suggestion — used only to count classification quality, never as authoritative
   date: Date | string;
   reconciled: boolean;
   metadata: unknown;

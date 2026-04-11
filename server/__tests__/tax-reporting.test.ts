@@ -114,6 +114,191 @@ describe('buildScheduleEReport', () => {
   });
 });
 
+describe('buildScheduleEReport — line summary', () => {
+  const baseTx = {
+    tenantName: 'T',
+    tenantType: 'property',
+    tenantMetadata: {},
+    reconciled: true,
+    metadata: {},
+    propertyState: 'IL',
+  };
+
+  const tenants = [
+    { id: 't-a', name: 'Tenant A', type: 'property', metadata: {} },
+    { id: 't-b', name: 'Tenant B', type: 'property', metadata: {} },
+  ];
+  const properties = [
+    { id: 'p-a', tenantId: 't-a', name: 'Property A', address: 'A', state: 'IL' },
+    { id: 'p-b', tenantId: 't-b', name: 'Property B', address: 'B', state: 'IL' },
+  ];
+
+  it('aggregates Line 14 (Repairs + Cleaning) across multiple properties with per-COA breakdown', () => {
+    // Note: per database/chart-of-accounts.ts, both 5070 (Repairs) and
+    // 5020 (Cleaning & Maintenance) map to Schedule E Line 14, so they
+    // should aggregate under the same summary row with a 2-entry breakdown.
+    const transactions: ReportingTransactionRow[] = [
+      { ...baseTx, id: 'r1', tenantId: 't-a', amount: '-150.00', type: 'expense', category: 'Repairs', date: '2024-03-01', propertyId: 'p-a' } as any,
+      { ...baseTx, id: 'r2', tenantId: 't-b', amount: '-250.00', type: 'expense', category: 'Repairs', date: '2024-04-01', propertyId: 'p-b' } as any,
+      { ...baseTx, id: 'r3', tenantId: 't-a', amount: '-100.00', type: 'expense', category: 'Cleaning', date: '2024-05-01', propertyId: 'p-a' } as any,
+    ];
+
+    const report = buildScheduleEReport({ taxYear: 2024, transactions, properties, tenants });
+
+    const line14 = report.lineSummary.find((l) => l.lineNumber === 'Line 14');
+    expect(line14).toBeDefined();
+    expect(line14!.amount).toBe(500); // 150 + 250 + 100
+    expect(line14!.transactionCount).toBe(3);
+    expect(line14!.coaBreakdown).toHaveLength(2);
+
+    // Breakdown sorted by amount descending — Repairs (400) > Cleaning (100)
+    expect(line14!.coaBreakdown[0].coaCode).toBe('5070');
+    expect(line14!.coaBreakdown[0].coaName).toBe('Repairs');
+    expect(line14!.coaBreakdown[0].amount).toBe(400);
+    expect(line14!.coaBreakdown[0].transactionCount).toBe(2);
+
+    expect(line14!.coaBreakdown[1].coaCode).toBe('5020');
+    expect(line14!.coaBreakdown[1].amount).toBe(100);
+    expect(line14!.coaBreakdown[1].transactionCount).toBe(1);
+  });
+
+  it('groups multiple COA codes under the same Schedule E line (Line 17 utilities)', () => {
+    const transactions: ReportingTransactionRow[] = [
+      { ...baseTx, id: 'u1', tenantId: 't-a', amount: '-80.00', type: 'expense', category: 'Electric', date: '2024-03-01', propertyId: 'p-a' } as any,
+      { ...baseTx, id: 'u2', tenantId: 't-a', amount: '-60.00', type: 'expense', category: 'Gas', date: '2024-04-01', propertyId: 'p-a' } as any,
+      { ...baseTx, id: 'u3', tenantId: 't-b', amount: '-40.00', type: 'expense', category: 'Water', date: '2024-05-01', propertyId: 'p-b' } as any,
+    ];
+
+    const report = buildScheduleEReport({ taxYear: 2024, transactions, properties, tenants });
+
+    const line17 = report.lineSummary.find((l) => l.lineNumber === 'Line 17');
+    expect(line17).toBeDefined();
+    expect(line17!.amount).toBe(180);
+    expect(line17!.coaBreakdown).toHaveLength(3); // 5100 (Electric), 5110 (Gas), 5120 (Water/Sewer)
+    // Breakdown sorted by amount descending — Electric (80) > Gas (60) > Water (40)
+    expect(line17!.coaBreakdown[0].coaCode).toBe('5100');
+    expect(line17!.coaBreakdown[0].amount).toBe(80);
+    expect(line17!.coaBreakdown[1].coaCode).toBe('5110');
+    expect(line17!.coaBreakdown[2].coaCode).toBe('5120');
+  });
+
+  it('preserves Schedule E line order in lineSummary', () => {
+    const transactions: ReportingTransactionRow[] = [
+      { ...baseTx, id: 't1', tenantId: 't-a', amount: '-100.00', type: 'expense', category: 'Insurance', date: '2024-03-01', propertyId: 'p-a' } as any,
+      { ...baseTx, id: 't2', tenantId: 't-a', amount: '1000.00', type: 'income', category: 'Rent', date: '2024-03-01', propertyId: 'p-a' } as any,
+      { ...baseTx, id: 't3', tenantId: 't-a', amount: '-50.00', type: 'expense', category: 'Advertising', date: '2024-03-01', propertyId: 'p-a' } as any,
+    ];
+    const report = buildScheduleEReport({ taxYear: 2024, transactions, properties, tenants });
+
+    const lineNumbers = report.lineSummary.map((l) => l.lineNumber);
+    const line3Idx = lineNumbers.indexOf('Line 3');
+    const line5Idx = lineNumbers.indexOf('Line 5');
+    const line9Idx = lineNumbers.indexOf('Line 9');
+
+    expect(line3Idx).toBeLessThan(line5Idx); // Rent before Advertising
+    expect(line5Idx).toBeLessThan(line9Idx); // Advertising before Insurance
+  });
+});
+
+describe('buildScheduleEReport — classification quality', () => {
+  const baseTx = {
+    tenantId: 't-a',
+    tenantName: 'T',
+    tenantType: 'property',
+    tenantMetadata: {},
+    reconciled: false,
+    metadata: {},
+    propertyState: 'IL',
+  };
+  const tenants = [{ id: 't-a', name: 'Tenant A', type: 'property', metadata: {} }];
+  const properties = [{ id: 'p-a', tenantId: 't-a', name: 'Prop A', address: 'A', state: 'IL' }];
+
+  it('counts L2-classified rows separately from L1 suggestions and unclassified', () => {
+    const transactions: ReportingTransactionRow[] = [
+      // L2 — has coaCode set
+      { ...baseTx, id: 'a', amount: '-100.00', type: 'expense', category: null, description: 'a', coaCode: '5070', date: '2024-03-01', propertyId: 'p-a' } as any,
+      { ...baseTx, id: 'b', amount: '-200.00', type: 'expense', category: null, description: 'b', coaCode: '5040', date: '2024-03-02', propertyId: 'p-a' } as any,
+      // L1 — only suggested_coa_code
+      { ...baseTx, id: 'c', amount: '-300.00', type: 'expense', category: null, description: 'c', suggestedCoaCode: '5070', date: '2024-03-03', propertyId: 'p-a' } as any,
+      // Unclassified — neither set
+      { ...baseTx, id: 'd', amount: '-50.00', type: 'expense', category: null, description: 'd', date: '2024-03-04', propertyId: 'p-a' } as any,
+    ];
+
+    const report = buildScheduleEReport({ taxYear: 2024, transactions, properties, tenants });
+    const q = report.classificationQuality;
+
+    expect(q.totalTransactions).toBe(4);
+    expect(q.l2ClassifiedCount).toBe(2);
+    expect(q.l1SuggestedOnlyCount).toBe(1);
+    expect(q.unclassifiedCount).toBe(1);
+    expect(q.l1SuggestedOnlyAmount).toBe(300);
+    expect(q.confirmedPct).toBe(50); // 2/4
+    expect(q.readyToFile).toBe(false); // below 95% threshold
+  });
+
+  it('marks readyToFile=true when 100% L2-classified', () => {
+    const transactions: ReportingTransactionRow[] = [
+      { ...baseTx, id: 'a', amount: '-100.00', type: 'expense', category: null, description: 'a', coaCode: '5070', date: '2024-03-01', propertyId: 'p-a' } as any,
+      { ...baseTx, id: 'b', amount: '-200.00', type: 'expense', category: null, description: 'b', coaCode: '5040', date: '2024-03-02', propertyId: 'p-a' } as any,
+    ];
+    const report = buildScheduleEReport({ taxYear: 2024, transactions, properties, tenants });
+    const q = report.classificationQuality;
+
+    expect(q.totalTransactions).toBe(2);
+    expect(q.l2ClassifiedCount).toBe(2);
+    expect(q.confirmedPct).toBe(100);
+    expect(q.readyToFile).toBe(true);
+  });
+
+  it('marks readyToFile=true when there are zero contributing transactions (empty report)', () => {
+    const report = buildScheduleEReport({ taxYear: 2024, transactions: [], properties, tenants });
+    expect(report.classificationQuality.totalTransactions).toBe(0);
+    expect(report.classificationQuality.readyToFile).toBe(true);
+  });
+
+  it('marks readyToFile=false just below the 95% threshold', () => {
+    // 19 L2 + 1 L1 = 95% — should be READY (>= 95)
+    const txs19: ReportingTransactionRow[] = Array.from({ length: 19 }, (_, i) => ({
+      ...baseTx,
+      id: `ok-${i}`,
+      amount: '-10.00',
+      type: 'expense',
+      category: null,
+      description: 'x',
+      coaCode: '5070',
+      date: '2024-03-01',
+      propertyId: 'p-a',
+    })) as any;
+    const txs1: ReportingTransactionRow[] = [
+      { ...baseTx, id: 'risk', amount: '-10.00', type: 'expense', category: null, description: 'x', suggestedCoaCode: '5070', date: '2024-03-01', propertyId: 'p-a' } as any,
+    ];
+
+    const report = buildScheduleEReport({
+      taxYear: 2024,
+      transactions: [...txs19, ...txs1],
+      properties,
+      tenants,
+    });
+    expect(report.classificationQuality.confirmedPct).toBe(95);
+    expect(report.classificationQuality.readyToFile).toBe(true);
+
+    // 18 L2 + 2 L1 = 90% → not ready
+    const txs18 = txs19.slice(0, 18);
+    const txs2 = [
+      ...txs1,
+      { ...baseTx, id: 'risk2', amount: '-10.00', type: 'expense', category: null, description: 'y', suggestedCoaCode: '5040', date: '2024-03-01', propertyId: 'p-a' } as any,
+    ];
+    const report2 = buildScheduleEReport({
+      taxYear: 2024,
+      transactions: [...txs18, ...txs2],
+      properties,
+      tenants,
+    });
+    expect(report2.classificationQuality.confirmedPct).toBe(90);
+    expect(report2.classificationQuality.readyToFile).toBe(false);
+  });
+});
+
 describe('buildAllocationPeriods', () => {
   it('returns single period when no date ranges', () => {
     const members: MemberOwnership[] = [
