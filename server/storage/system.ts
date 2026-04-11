@@ -637,6 +637,7 @@ export class SystemStorage {
         category: schema.transactions.category,
         description: schema.transactions.description,
         coaCode: schema.transactions.coaCode,
+        suggestedCoaCode: schema.transactions.suggestedCoaCode,
         date: schema.transactions.date,
         payee: schema.transactions.payee,
         propertyId: schema.transactions.propertyId,

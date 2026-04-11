@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useTenantId } from '@/contexts/TenantContext';
 import {
   useConsolidatedReport, useRunTaxAutomation,
   useScheduleEReport, useForm1065Report, useExportTaxPackage,
   type ReportParams, type TaxReportParams,
   type ScheduleEPropertyColumn, type ScheduleELineItem,
+  type ScheduleELineSummaryItem, type ClassificationQuality,
   type Form1065Report as Form1065ReportType, type K1MemberAllocation,
 } from '@/hooks/use-reports';
 import { useToast } from '@/hooks/use-toast';
@@ -42,6 +43,129 @@ const TAB_CONFIG: Array<{ key: ReportTab; label: string; icon: typeof BarChart3 
   { key: 'form-1065', label: 'Form 1065 / K-1', icon: Users },
 ];
 
+function ClassificationQualityBanner({ quality }: { quality: ClassificationQuality }) {
+  if (quality.totalTransactions === 0) return null;
+  const ready = quality.readyToFile;
+  const borderClass = ready ? 'border-l-emerald-400' : 'border-l-rose-400';
+  const iconClass = ready ? 'text-emerald-400' : 'text-rose-400';
+  const textClass = ready ? 'text-emerald-400' : 'text-rose-400';
+
+  return (
+    <div className={`cf-card p-3 border-l-2 ${borderClass}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {ready ? (
+            <CheckCircle2 className={`w-3.5 h-3.5 ${iconClass}`} />
+          ) : (
+            <AlertTriangle className={`w-3.5 h-3.5 ${iconClass}`} />
+          )}
+          <span className={`text-xs font-medium ${textClass}`}>
+            {ready ? 'Ready to file' : 'Not ready to file'} — {quality.confirmedPct}% of transactions are human-confirmed (L2)
+          </span>
+        </div>
+        <span className="text-[10px] text-[hsl(var(--cf-text-muted))] font-mono">
+          {quality.l2ClassifiedCount} confirmed · {quality.l1SuggestedOnlyCount} L1 suggested · {quality.unclassifiedCount} unclassified
+        </span>
+      </div>
+      {quality.l1SuggestedOnlyCount > 0 && (
+        <p className="text-[10px] text-[hsl(var(--cf-text-muted))] mt-1">
+          {formatCurrency(quality.l1SuggestedOnlyAmount)} of suggested-only transactions haven't been reviewed. Visit Classification to confirm them before filing.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LineSummarySection({ summary }: { summary: ScheduleELineSummaryItem[] }) {
+  const [expandedLine, setExpandedLine] = useState<string | null>(null);
+  if (summary.length === 0) return null;
+
+  const totalIncome = summary
+    .filter((s) => s.lineNumber === 'Line 3')
+    .reduce((sum, s) => sum + s.amount, 0);
+  const totalExpenses = summary
+    .filter((s) => s.lineNumber !== 'Line 3')
+    .reduce((sum, s) => sum + s.amount, 0);
+  const net = totalIncome - totalExpenses;
+
+  return (
+    <div className="cf-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-[hsl(var(--cf-border-subtle))] flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileText className="w-3.5 h-3.5 text-[hsl(var(--cf-text-muted))]" />
+          <div>
+            <h4 className="text-sm font-medium text-[hsl(var(--cf-text))]">Schedule E Line Summary</h4>
+            <p className="text-[10px] text-[hsl(var(--cf-text-muted))]">Aggregated across all properties — what you file on the form</p>
+          </div>
+        </div>
+        <span className={`text-sm font-mono font-bold ${net >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+          Net: {formatCurrency(net)}
+        </span>
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text-muted))]">
+            <th className="text-left px-3 py-2 font-medium w-24">Line</th>
+            <th className="text-left px-3 py-2 font-medium">Description</th>
+            <th className="text-right px-3 py-2 font-medium w-28">Amount</th>
+            <th className="text-right px-3 py-2 font-medium w-16">Txns</th>
+            <th className="text-right px-3 py-2 font-medium w-24">Breakdown</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.map((line) => {
+            const isExpanded = expandedLine === line.lineNumber;
+            const isIncome = line.lineNumber === 'Line 3';
+            const hasMultipleCoa = line.coaBreakdown.length > 1;
+            return (
+              <Fragment key={line.lineNumber}>
+                <tr
+                  className="border-b border-[hsl(var(--cf-border-subtle))] hover:bg-[hsl(var(--cf-raised))]"
+                >
+                  <td className="px-3 py-2 text-[hsl(var(--cf-text-muted))] font-mono">{line.lineNumber}</td>
+                  <td className="px-3 py-2 text-[hsl(var(--cf-text))]">{line.lineLabel}</td>
+                  <td className={`px-3 py-2 text-right font-mono font-medium ${isIncome ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {formatCurrency(line.amount)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[hsl(var(--cf-text-muted))]">{line.transactionCount}</td>
+                  <td className="px-3 py-2 text-right">
+                    {hasMultipleCoa ? (
+                      <button
+                        onClick={() => setExpandedLine(isExpanded ? null : line.lineNumber)}
+                        className="text-[10px] text-[hsl(var(--cf-lime))] hover:underline"
+                      >
+                        {isExpanded ? 'Hide' : `${line.coaBreakdown.length} codes`}
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-[hsl(var(--cf-text-muted))] font-mono">{line.coaBreakdown[0]?.coaCode}</span>
+                    )}
+                  </td>
+                </tr>
+                {isExpanded &&
+                  line.coaBreakdown.map((entry) => (
+                    <tr key={`${line.lineNumber}-${entry.coaCode}`} className="bg-[hsl(var(--cf-raised))]">
+                      <td />
+                      <td className="px-3 py-1.5 text-[10px] text-[hsl(var(--cf-text-muted))] pl-6">
+                        <span className="font-mono">{entry.coaCode}</span> — {entry.coaName}
+                      </td>
+                      <td className={`px-3 py-1.5 text-right font-mono text-[10px] ${isIncome ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {formatCurrency(entry.amount)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-[10px] text-[hsl(var(--cf-text-muted))]">
+                        {entry.transactionCount}
+                      </td>
+                      <td />
+                    </tr>
+                  ))}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ScheduleETab({ taxYear }: { taxYear: number }) {
   const params: TaxReportParams = { taxYear, includeDescendants: true };
   const { data, isLoading, error } = useScheduleEReport(params);
@@ -52,6 +176,9 @@ function ScheduleETab({ taxYear }: { taxYear: number }) {
 
   return (
     <div className="space-y-4">
+      {/* Classification quality banner */}
+      <ClassificationQualityBanner quality={data.classificationQuality} />
+
       {/* Warnings */}
       {data.uncategorizedCount > 0 && (
         <div className="cf-card p-3 border-l-2 border-l-amber-400">
@@ -64,6 +191,9 @@ function ScheduleETab({ taxYear }: { taxYear: number }) {
           )}
         </div>
       )}
+
+      {/* Aggregated Line Summary — this is what goes on the IRS form */}
+      <LineSummarySection summary={data.lineSummary} />
 
       {/* Per-property cards */}
       {data.properties.map((prop: ScheduleEPropertyColumn) => (
@@ -436,8 +566,9 @@ export default function Reports() {
               onChange={e => setTaxYear(Number(e.target.value))}
               className="block w-[120px] h-8 text-xs rounded border border-[hsl(var(--cf-border-subtle))] bg-[hsl(var(--cf-surface))] text-[hsl(var(--cf-text))] px-2"
             >
-              <option value={2024}>2024</option>
-              <option value={2025}>2025</option>
+              {Array.from({ length: 5 }, (_, i) => currentYear - 3 + i).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
             </select>
           </div>
         </div>

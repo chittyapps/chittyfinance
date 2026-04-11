@@ -91,6 +91,52 @@ export interface ScheduleEPropertyColumn {
   netIncome: number;
 }
 
+/**
+ * Aggregated Schedule E line totals across all properties.
+ * This is what you type into the actual IRS Schedule E form — the sum
+ * of every property's contribution to each line.
+ *
+ * The `coaBreakdown` lets tax preparers see which specific COA codes
+ * rolled up into a given line, with counts for drill-down.
+ */
+export interface ScheduleELineSummaryItem {
+  lineNumber: string;
+  lineLabel: string;
+  amount: number;
+  transactionCount: number;
+  /** Per-COA-code contribution to this line (for drill-down UI). */
+  coaBreakdown: Array<{
+    coaCode: string;
+    coaName: string;
+    amount: number;
+    transactionCount: number;
+  }>;
+}
+
+/**
+ * Classification quality stats on the transactions that fed the report.
+ *
+ * Tax reports should prefer L2-classified rows (human-approved coa_code).
+ * L1-only rows (suggested_coa_code set, coa_code null) are AI/keyword
+ * guesses that have not been confirmed — the filer should review them
+ * before trusting the totals.
+ */
+export interface ClassificationQuality {
+  totalTransactions: number;
+  /** Rows with authoritative coa_code set (L2+). */
+  l2ClassifiedCount: number;
+  /** Rows with only suggested_coa_code set (L1, not yet confirmed). */
+  l1SuggestedOnlyCount: number;
+  /** Rows with neither coa_code nor suggested_coa_code — fell back to keyword matcher. */
+  unclassifiedCount: number;
+  /** Dollar amount covered by L1-only suggestions — the "at-risk" portion. */
+  l1SuggestedOnlyAmount: number;
+  /** 0-100. Share of transactions that are L2 (safe to file). */
+  confirmedPct: number;
+  /** True when confirmedPct is at or above the safe-to-file threshold (default 0.95). */
+  readyToFile: boolean;
+}
+
 export interface ScheduleEReport {
   taxYear: number;
   properties: ScheduleEPropertyColumn[];
@@ -99,6 +145,10 @@ export interface ScheduleEReport {
   uncategorizedAmount: number;
   uncategorizedCount: number;
   unmappedCategories: string[];
+  /** Aggregated line totals across all properties (what you file on the form). */
+  lineSummary: ScheduleELineSummaryItem[];
+  /** Classification trust-path quality stats. */
+  classificationQuality: ClassificationQuality;
 }
 
 export interface K1MemberAllocation {
@@ -226,9 +276,25 @@ export function buildScheduleEReport(params: {
   // Entity-level (no propertyId) line accumulators
   const entityLines = new Map<string, { amount: number; count: number }>();
 
+  // Aggregated line summary across all properties — keyed by Schedule E line,
+  // each holds a per-COA-code rollup for drill-down.
+  const lineSummaryAgg = new Map<
+    string,
+    { amount: number; count: number; coaBreakdown: Map<string, { amount: number; count: number }> }
+  >();
+
   let uncategorizedAmount = 0;
   let uncategorizedCount = 0;
   const unmappedSet = new Set<string>();
+
+  // Classification quality counters — track every transaction that makes it
+  // into this report, regardless of property attribution. This is what the
+  // filer uses to decide whether the report is safe to file.
+  let l2ClassifiedCount = 0;
+  let l1SuggestedOnlyCount = 0;
+  let unclassifiedCount = 0;
+  let l1SuggestedOnlyAmount = 0;
+  let contributingTxCount = 0;
 
   // Partnership entity types are reported on Form 1065, not Schedule E entity-level.
   // Only property-attributed transactions and non-partnership entity-level items belong here.
@@ -247,6 +313,7 @@ export function buildScheduleEReport(params: {
     }
 
     const propId = (tx as any).propertyId as string | null;
+    let contributed = false;
 
     if (propId && propertyMap.has(propId)) {
       // Property-attributed transaction → Schedule E property column
@@ -259,6 +326,7 @@ export function buildScheduleEReport(params: {
       existing.amount += tx.type === 'income' ? rawAmount : absAmount;
       existing.count += 1;
       lines.set(key, existing);
+      contributed = true;
     } else {
       // No property attribution — only include in Schedule E entity-level
       // if the transaction's tenant is NOT a partnership type (those go to Form 1065)
@@ -271,6 +339,38 @@ export function buildScheduleEReport(params: {
       existing.amount += tx.type === 'income' ? rawAmount : absAmount;
       existing.count += 1;
       entityLines.set(key, existing);
+      contributed = true;
+    }
+
+    if (!contributed) continue;
+
+    // Roll up into cross-property line summary (amount sign-normalized:
+    // income positive, expenses positive magnitudes)
+    const summaryKey = tx.type === 'income' ? 'Line 3' : lineNumber;
+    let summaryBucket = lineSummaryAgg.get(summaryKey);
+    if (!summaryBucket) {
+      summaryBucket = { amount: 0, count: 0, coaBreakdown: new Map() };
+      lineSummaryAgg.set(summaryKey, summaryBucket);
+    }
+    const normalized = tx.type === 'income' ? rawAmount : absAmount;
+    summaryBucket.amount += normalized;
+    summaryBucket.count += 1;
+    const coaBucket = summaryBucket.coaBreakdown.get(coaCode) || { amount: 0, count: 0 };
+    coaBucket.amount += normalized;
+    coaBucket.count += 1;
+    summaryBucket.coaBreakdown.set(coaCode, coaBucket);
+
+    // Classification quality tally — one bucket per contributing transaction
+    contributingTxCount += 1;
+    const hasL2 = Boolean(tx.coaCode);
+    const hasL1 = Boolean(tx.suggestedCoaCode);
+    if (hasL2) {
+      l2ClassifiedCount += 1;
+    } else if (hasL1) {
+      l1SuggestedOnlyCount += 1;
+      l1SuggestedOnlyAmount += absAmount;
+    } else {
+      unclassifiedCount += 1;
     }
   }
 
@@ -346,6 +446,49 @@ export function buildScheduleEReport(params: {
     }
   }
 
+  // Build aggregated line summary across all properties (what you file on the form)
+  const lineSummary: ScheduleELineSummaryItem[] = [];
+  for (const lineNum of SCHEDULE_E_LINE_ORDER) {
+    const bucket = lineSummaryAgg.get(lineNum);
+    if (!bucket) continue;
+
+    const coaBreakdown = Array.from(bucket.coaBreakdown.entries())
+      .map(([coaCode, data]) => {
+        const account = getAccountByCode(coaCode);
+        return {
+          coaCode,
+          coaName: account?.name || 'Unknown',
+          amount: round2(data.amount),
+          transactionCount: data.count,
+        };
+      })
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+
+    lineSummary.push({
+      lineNumber: lineNum,
+      lineLabel: SCHEDULE_E_LINES[lineNum] || 'Other',
+      amount: round2(bucket.amount),
+      transactionCount: bucket.count,
+      coaBreakdown,
+    });
+  }
+
+  // Classification quality — 95% confirmed is the "ready to file" threshold.
+  // Chosen because tax filings tolerate some residual uncertainty (tenant
+  // rounding, late-posting charges) but more than 5% unconfirmed means the
+  // filer hasn't actually reviewed the AI suggestions.
+  const confirmedPct =
+    contributingTxCount === 0 ? 100 : round2((l2ClassifiedCount / contributingTxCount) * 100);
+  const classificationQuality: ClassificationQuality = {
+    totalTransactions: contributingTxCount,
+    l2ClassifiedCount,
+    l1SuggestedOnlyCount,
+    unclassifiedCount,
+    l1SuggestedOnlyAmount: round2(l1SuggestedOnlyAmount),
+    confirmedPct,
+    readyToFile: contributingTxCount === 0 || confirmedPct >= 95,
+  };
+
   return {
     taxYear,
     properties: propertyColumns,
@@ -354,6 +497,8 @@ export function buildScheduleEReport(params: {
     uncategorizedAmount: round2(uncategorizedAmount),
     uncategorizedCount,
     unmappedCategories: Array.from(unmappedSet).sort(),
+    lineSummary,
+    classificationQuality,
   };
 }
 
