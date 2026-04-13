@@ -88,6 +88,14 @@ export function useUnclassifiedTransactions(limit = 50) {
   });
 }
 
+export function useReconciledTransactions(limit = 50) {
+  const tenantId = useTenantId();
+  return useQuery<UnclassifiedTransaction[]>({
+    queryKey: ['/api/classification/reconciled', tenantId, limit],
+    enabled: !!tenantId,
+  });
+}
+
 export function useClassificationAudit(transactionId: string | null) {
   return useQuery<ClassificationAuditEntry[]>({
     queryKey: ['/api/classification/audit', transactionId],
@@ -189,5 +197,18 @@ export function useAiSuggest() {
         aiAvailable: boolean;
       }>,
     onSuccess: () => invalidateClassificationCache(qc),
+  });
+}
+
+/** L3 — unlock a reconciled transaction */
+export function useUnreconcileTransaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { transactionId: string }) =>
+      apiRequest('POST', '/api/classification/unreconcile', data).then((r) => r.json()),
+    onSuccess: () => {
+      invalidateClassificationCache(qc);
+      qc.invalidateQueries({ queryKey: ['/api/classification/reconciled'] });
+    },
   });
 }

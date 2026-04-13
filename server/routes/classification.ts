@@ -5,6 +5,7 @@ import { ledgerLog } from '../lib/ledger-client';
 import { findAccountCode } from '../../database/chart-of-accounts';
 import { ClassificationError } from '../storage/system';
 import { classifyBatchWithAI } from '../lib/classification-ai';
+import { logClassificationEvent, logCoaEvent } from '../lib/chittychronicle';
 
 export const classificationRoutes = new Hono<HonoEnv>();
 
@@ -125,6 +126,10 @@ classificationRoutes.post('/api/coa', async (c) => {
     action: 'coa.create',
     metadata: { tenantId, code: body.code, name: body.name, type: body.type, actorId: userId },
   }, c.env);
+
+  logCoaEvent(c.env, {
+    accountId: account.id, tenantId, action: 'create', code: body.code, actorId: userId,
+  });
 
   return c.json(account, 201);
 });
@@ -255,6 +260,12 @@ classificationRoutes.post('/api/classification/classify', async (c) => {
       metadata: { transactionId, coaCode, actorId: userId },
     }, c.env);
 
+    // Fire-and-forget Chronicle audit (never blocks response)
+    logClassificationEvent(c.env, {
+      transactionId, tenantId, action: 'classify', coaCode,
+      actorId: userId, actorType: 'user', confidence,
+    });
+
     return c.json(result);
   } catch (err) {
     return mapClassificationError(err, c);
@@ -282,6 +293,11 @@ classificationRoutes.post('/api/classification/reconcile', async (c) => {
       action: 'classification.reconcile',
       metadata: { transactionId, actorId: userId },
     }, c.env);
+
+    logClassificationEvent(c.env, {
+      transactionId, tenantId, action: 'reconcile',
+      coaCode: result.coaCode ?? '', actorId: userId, actorType: 'user',
+    });
 
     return c.json(result);
   } catch (err) {
@@ -411,6 +427,46 @@ classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
     keywordCount,
     aiAvailable: Boolean(apiKey),
   });
+});
+
+// GET /api/classification/reconciled — list reconciled (locked) transactions
+classificationRoutes.get('/api/classification/reconciled', async (c) => {
+  const storage = c.get('storage');
+  const tenantId = c.get('tenantId');
+  const limitParsed = limitQuerySchema.safeParse(c.req.query('limit'));
+  if (!limitParsed.success) {
+    return c.json({ error: 'invalid_limit', message: 'limit must be 1-500' }, 400);
+  }
+  const txns = await storage.getReconciledTransactions(tenantId, limitParsed.data);
+  return c.json(txns);
+});
+
+// POST /api/classification/unreconcile — L3: unlock a reconciled transaction
+classificationRoutes.post('/api/classification/unreconcile', async (c) => {
+  const storage = c.get('storage');
+  const tenantId = c.get('tenantId');
+  const userId = c.get('userId');
+
+  const parsed = reconcileBodySchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_body', details: parsed.error.flatten() }, 400);
+  }
+
+  const result = await storage.unreconciledTransaction(parsed.data.transactionId, tenantId, userId);
+  if (!result) return c.json({ error: 'Transaction not found' }, 404);
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'classification.unreconcile',
+    metadata: { transactionId: parsed.data.transactionId, actorId: userId },
+  }, c.env);
+
+  logClassificationEvent(c.env, {
+    transactionId: parsed.data.transactionId, tenantId, action: 'unreconcile',
+    coaCode: result.coaCode ?? '', actorId: userId, actorType: 'user',
+  });
+
+  return c.json(result);
 });
 
 // GET /api/classification/audit/:transactionId — audit trail for a transaction (tenant-scoped)

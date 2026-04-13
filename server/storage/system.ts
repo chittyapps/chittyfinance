@@ -1108,6 +1108,42 @@ export class SystemStorage {
       .limit(limit);
   }
 
+  async getReconciledTransactions(tenantId: string, limit = 50) {
+    return this.db
+      .select()
+      .from(schema.transactions)
+      .where(and(eq(schema.transactions.tenantId, tenantId), eq(schema.transactions.reconciled, true)))
+      .orderBy(desc(schema.transactions.reconciledAt))
+      .limit(limit);
+  }
+
+  async unreconciledTransaction(txId: string, tenantId: string, actorId: string) {
+    const tx = await this.getTransaction(txId, tenantId);
+    if (!tx) return undefined;
+    if (!tx.reconciled) return tx;
+
+    const now = new Date();
+    await this.db.transaction(async (trx) => {
+      await trx
+        .update(schema.transactions)
+        .set({ reconciled: false, reconciledBy: null, reconciledAt: null, updatedAt: now })
+        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
+
+      await trx.insert(schema.classificationAudit).values({
+        transactionId: txId,
+        tenantId,
+        previousCoaCode: tx.coaCode,
+        newCoaCode: tx.coaCode ?? '9010',
+        action: 'unreconcile',
+        trustLevel: 'L3',
+        actorId,
+        actorType: 'user',
+      });
+    });
+
+    return this.getTransaction(txId, tenantId);
+  }
+
   async getClassificationAudit(transactionId: string, tenantId: string) {
     return this.db
       .select()
