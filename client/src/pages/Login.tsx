@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,14 @@ export default function Login() {
     return err ? (ERROR_MESSAGES[err] || err) : "";
   });
   const [loading, setLoading] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+
+  // If there's a ChittyID-related error, expand email form as fallback
+  useEffect(() => {
+    if (error && ['auth_unavailable', 'token_exchange', 'no_account'].some(e => error.includes(e) || window.location.search.includes(e))) {
+      setShowEmailForm(true);
+    }
+  }, [error]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,57 +77,76 @@ export default function Login() {
             <div className="text-xs text-rose-400 bg-rose-400/10 rounded px-3 py-2">{error}</div>
           )}
 
+          {/* Primary: ChittyID SSO */}
           <a
             href="/api/auth/chittyid/authorize"
-            className="flex items-center justify-center gap-2 w-full h-9 rounded-md bg-[hsl(var(--cf-surface))] border border-[hsl(var(--cf-border-subtle))] text-sm font-medium text-[hsl(var(--cf-text))] hover:bg-[hsl(var(--cf-surface-hover))] transition-colors"
+            className="flex items-center justify-center gap-2 w-full h-10 rounded-md bg-lime-500 hover:bg-lime-600 text-black text-sm font-medium transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0">
-              <rect width="16" height="16" rx="3" fill="#667eea"/>
-              <text x="8" y="12" textAnchor="middle" fontSize="10" fontWeight="700" fill="white">ID</text>
+              <rect width="16" height="16" rx="3" fill="#1a1a1a"/>
+              <text x="8" y="12" textAnchor="middle" fontSize="10" fontWeight="700" fill="#84cc16">ID</text>
             </svg>
             Sign in with ChittyID
           </a>
 
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-[hsl(var(--cf-border-subtle))]" />
-            <span className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">or</span>
-            <div className="flex-1 h-px bg-[hsl(var(--cf-border-subtle))]" />
-          </div>
+          <p className="text-[10px] text-[hsl(var(--cf-text-muted))] text-center">
+            Recommended — single sign-on across all ChittyOS services
+          </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs text-[hsl(var(--cf-text-secondary))]">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="h-9 text-sm"
-                placeholder="you@example.com"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-xs text-[hsl(var(--cf-text-secondary))]">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="h-9 text-sm"
-              />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-lime-500 hover:bg-lime-600 text-black font-medium h-9 text-sm"
+          {/* Collapsible email/password fallback */}
+          {!showEmailForm ? (
+            <button
+              onClick={() => setShowEmailForm(true)}
+              className="flex items-center justify-center gap-2 w-full text-[10px] text-[hsl(var(--cf-text-muted))] hover:text-[hsl(var(--cf-text))] transition-colors pt-2"
             >
-              {loading ? "Signing in..." : "Sign In"}
-            </Button>
-          </form>
+              <div className="flex-1 h-px bg-[hsl(var(--cf-border-subtle))]" />
+              <span>Use email &amp; password instead</span>
+              <div className="flex-1 h-px bg-[hsl(var(--cf-border-subtle))]" />
+            </button>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-[hsl(var(--cf-border-subtle))]" />
+                <span className="text-[10px] text-[hsl(var(--cf-text-muted))] uppercase tracking-wider">or email</span>
+                <div className="flex-1 h-px bg-[hsl(var(--cf-border-subtle))]" />
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="email" className="text-xs text-[hsl(var(--cf-text-secondary))]">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="h-9 text-sm"
+                    placeholder="you@example.com"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="password" className="text-xs text-[hsl(var(--cf-text-secondary))]">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="h-9 text-sm"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[hsl(var(--cf-surface))] hover:bg-[hsl(var(--cf-surface-hover))] border border-[hsl(var(--cf-border-subtle))] text-[hsl(var(--cf-text))] font-medium h-9 text-sm"
+                >
+                  {loading ? "Signing in..." : "Sign In with Email"}
+                </Button>
+              </form>
+            </>
+          )}
         </div>
       </div>
     </div>

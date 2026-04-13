@@ -3,13 +3,17 @@ import {
   useChartOfAccounts,
   useClassificationStats,
   useUnclassifiedTransactions,
+  useReconciledTransactions,
   useClassifyTransaction,
   useReconcileTransaction,
+  useUnreconcileTransaction,
   useAiSuggest,
   useBatchSuggest,
   type UnclassifiedTransaction,
   type ChartOfAccount,
 } from '@/hooks/use-classification';
+
+type TabMode = 'queue' | 'reconciled';
 
 type SortMode = 'date-desc' | 'amount-desc' | 'confidence-asc' | 'confidence-desc';
 
@@ -81,12 +85,15 @@ function compareTransactions(a: UnclassifiedTransaction, b: UnclassifiedTransact
 export default function Classification() {
   const { data: stats } = useClassificationStats();
   const { data: txns = [], isLoading } = useUnclassifiedTransactions(100);
+  const { data: reconciledTxns = [], isLoading: reconciledLoading } = useReconciledTransactions(100);
   const { data: coa = [] } = useChartOfAccounts();
   const classify = useClassifyTransaction();
   const reconcile = useReconcileTransaction();
+  const unreconcile = useUnreconcileTransaction();
   const aiSuggest = useAiSuggest();
   const batchSuggest = useBatchSuggest();
 
+  const [activeTab, setActiveTab] = useState<TabMode>('queue');
   const [sortMode, setSortMode] = useState<SortMode>('date-desc');
   const [lastResult, setLastResult] = useState<string | null>(null);
 
@@ -203,41 +210,130 @@ export default function Classification() {
         </div>
       )}
 
-      {/* Sort controls */}
-      <div className="flex items-center gap-3">
-        <label className="text-xs text-[hsl(var(--cf-text-muted))]">Sort:</label>
-        <select
-          value={sortMode}
-          onChange={(e) => setSortMode(e.target.value as SortMode)}
-          className="px-3 py-1.5 text-sm bg-[hsl(var(--cf-surface))] border border-[hsl(var(--cf-border))] rounded-md text-[hsl(var(--cf-text))]"
+      {/* Tab switcher */}
+      <div className="flex gap-1 p-1 bg-[hsl(var(--cf-raised))] rounded-lg w-fit">
+        <button
+          onClick={() => setActiveTab('queue')}
+          className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            activeTab === 'queue'
+              ? 'bg-[hsl(var(--cf-surface))] text-[hsl(var(--cf-text))] shadow-sm'
+              : 'text-[hsl(var(--cf-text-muted))] hover:text-[hsl(var(--cf-text))]'
+          }`}
         >
-          <option value="date-desc">Most recent</option>
-          <option value="amount-desc">Largest amount</option>
-          <option value="confidence-asc">Lowest confidence first</option>
-          <option value="confidence-desc">Highest confidence first</option>
-        </select>
+          Queue ({txns.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('reconciled')}
+          className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            activeTab === 'reconciled'
+              ? 'bg-[hsl(var(--cf-surface))] text-[hsl(var(--cf-text))] shadow-sm'
+              : 'text-[hsl(var(--cf-text-muted))] hover:text-[hsl(var(--cf-text))]'
+          }`}
+        >
+          Reconciled ({reconciledTxns.length})
+        </button>
       </div>
 
-      {/* Transaction queue */}
-      {isLoading ? (
-        <div className="text-center py-12 text-[hsl(var(--cf-text-muted))]">Loading...</div>
-      ) : sortedTxns.length === 0 ? (
-        <div className="text-center py-12 text-[hsl(var(--cf-text-muted))]">
-          No unclassified transactions. Nothing to review.
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {sortedTxns.map((tx) => (
-            <TransactionRow
-              key={tx.id}
-              tx={tx}
-              coaMap={coaMap}
-              coa={coa}
-              onClassify={(code) => handleClassify(tx.id, code)}
-              onReconcile={() => handleReconcile(tx.id)}
-            />
-          ))}
-        </div>
+      {/* Queue tab */}
+      {activeTab === 'queue' && (
+        <>
+          {/* Sort controls */}
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-[hsl(var(--cf-text-muted))]">Sort:</label>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="px-3 py-1.5 text-sm bg-[hsl(var(--cf-surface))] border border-[hsl(var(--cf-border))] rounded-md text-[hsl(var(--cf-text))]"
+            >
+              <option value="date-desc">Most recent</option>
+              <option value="amount-desc">Largest amount</option>
+              <option value="confidence-asc">Lowest confidence first</option>
+              <option value="confidence-desc">Highest confidence first</option>
+            </select>
+          </div>
+
+          {isLoading ? (
+            <div className="text-center py-12 text-[hsl(var(--cf-text-muted))]">Loading...</div>
+          ) : sortedTxns.length === 0 ? (
+            <div className="text-center py-12 text-[hsl(var(--cf-text-muted))]">
+              No unclassified transactions. Nothing to review.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sortedTxns.map((tx) => (
+                <TransactionRow
+                  key={tx.id}
+                  tx={tx}
+                  coaMap={coaMap}
+                  coa={coa}
+                  onClassify={(code) => handleClassify(tx.id, code)}
+                  onReconcile={() => handleReconcile(tx.id)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Reconciled tab */}
+      {activeTab === 'reconciled' && (
+        <>
+          {reconciledLoading ? (
+            <div className="text-center py-12 text-[hsl(var(--cf-text-muted))]">Loading...</div>
+          ) : reconciledTxns.length === 0 ? (
+            <div className="text-center py-12 text-[hsl(var(--cf-text-muted))]">
+              No reconciled transactions yet.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {reconciledTxns.map((tx) => {
+                const account = tx.coaCode ? coaMap.get(tx.coaCode) : null;
+                const amount = parseFloat(tx.amount);
+                return (
+                  <div key={tx.id} className="bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-3">
+                          <span className={`text-lg font-display font-semibold ${amount >= 0 ? 'text-green-400' : 'text-[hsl(var(--cf-text))]'}`}>
+                            {formatCurrency(amount)}
+                          </span>
+                          <span className="text-xs text-[hsl(var(--cf-text-muted))]">{formatDate(tx.date)}</span>
+                          <span className="text-xs text-yellow-400">Reconciled</span>
+                        </div>
+                        <div className="text-sm text-[hsl(var(--cf-text))] mt-1 truncate">{tx.description}</div>
+                        {account && (
+                          <div className="mt-1 text-xs text-green-400">
+                            {account.code} — {account.name}
+                          </div>
+                        )}
+                        {tx.reconciledBy && (
+                          <div className="mt-1 text-[10px] text-[hsl(var(--cf-text-muted))]">
+                            by {tx.reconciledBy} on {tx.reconciledAt ? formatDate(tx.reconciledAt) : '—'}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          unreconcile.mutate(
+                            { transactionId: tx.id },
+                            {
+                              onSuccess: () => setLastResult('Transaction unlocked'),
+                              onError: (err: any) => setLastResult(`Error: ${err.message}`),
+                            },
+                          );
+                        }}
+                        disabled={unreconcile.isPending}
+                        className="px-3 py-1.5 text-xs font-medium bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] text-[hsl(var(--cf-text))] rounded hover:bg-[hsl(var(--cf-surface))] transition-colors disabled:opacity-50 shrink-0"
+                      >
+                        Unlock
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
