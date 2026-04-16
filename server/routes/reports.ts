@@ -10,6 +10,7 @@ import {
   type ReportingAccountRow,
   type ReportingTransactionRow,
 } from '../lib/consolidated-reporting';
+import { centralWorkflowLog } from '../lib/central-workflows';
 import { ledgerLog } from '../lib/ledger-client';
 
 export const reportRoutes = new Hono<HonoEnv>();
@@ -282,8 +283,30 @@ reportRoutes.post('/api/workflows/close-tax-automation', async (c) => {
       },
     }, c.env);
 
+    const runId = `close-${Date.now()}`;
+
+    centralWorkflowLog(c, {
+      aggregateId: runId,
+      tenantId,
+      workflowType: 'close_tax_automation',
+      title: payload.preflight.readyToFileTaxes ? 'Tax close ready for filing' : 'Tax close remediation required',
+      status: payload.preflight.readyToFileTaxes ? 'completed' : 'in_progress',
+      claimable: !payload.preflight.readyToFileTaxes,
+      lane: 'close',
+      progressState: payload.preflight.readyToFileTaxes ? 'completed' : 'blocked',
+      metadata: {
+        startDate,
+        endDate,
+        readyToFileTaxes: payload.preflight.readyToFileTaxes,
+        nextStep: payload.preflight.readyToFileTaxes ? 'prepare_tax_package' : 'resolve_preflight_issues',
+        warningCount: payload.preflight.checks.filter((x) => x.status === 'warn').length,
+        failureCount: payload.preflight.checks.filter((x) => x.status === 'fail').length,
+        localRoute: '/api/workflows/close-tax-automation',
+      },
+    }, c.env);
+
     return c.json({
-      runId: `close-${Date.now()}`,
+      runId,
       generatedAt: new Date().toISOString(),
       ...payload,
       aiReview,

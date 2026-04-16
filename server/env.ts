@@ -14,6 +14,8 @@ export interface Env {
   CHITTYAGENT_API_BASE?: string;
   CHITTYAGENT_API_TOKEN?: string;
   CHITTY_LEDGER_BASE?: string;
+  CHITTY_CONTEXT_BASE?: string;
+  CHITTY_CONTEXT_TOKEN?: string;
   // ChittySchema — optional override of https://schema.chitty.cc for the
   // centralized schema validation service. Leave unset in production.
   CHITTYSCHEMA_URL?: string;

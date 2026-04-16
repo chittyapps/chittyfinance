@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { centralWorkflowLog } from '../lib/central-workflows';
 
 export const workflowRoutes = new Hono<HonoEnv>();
 
@@ -31,6 +32,23 @@ workflowRoutes.post('/api/workflows', async (c) => {
     metadata: body.metadata,
   });
 
+  centralWorkflowLog(c, {
+    aggregateId: workflow.id,
+    tenantId,
+    workflowType: workflow.type,
+    title: workflow.title,
+    description: workflow.description,
+    status: workflow.status,
+    claimable: true,
+    lane: workflow.status === 'requested' ? 'approvals' : 'progress',
+    metadata: {
+      propertyId: workflow.propertyId,
+      requestor: workflow.requestor,
+      costEstimate: workflow.costEstimate,
+      localTable: 'workflows',
+    },
+  }, c.env);
+
   return c.json(workflow, 201);
 });
 
@@ -46,6 +64,22 @@ workflowRoutes.patch('/api/workflows/:id', async (c) => {
   });
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
+
+  centralWorkflowLog(c, {
+    aggregateId: workflow.id,
+    tenantId: workflow.tenantId,
+    workflowType: workflow.type,
+    title: workflow.title,
+    description: workflow.description,
+    status: workflow.status,
+    lane: workflow.status === 'requested' ? 'approvals' : 'progress',
+    metadata: {
+      propertyId: workflow.propertyId,
+      localTable: 'workflows',
+      syncSource: 'PATCH /api/workflows/:id',
+    },
+  }, c.env);
+
   return c.json(workflow);
 });
 
@@ -60,6 +94,23 @@ workflowRoutes.patch('/api/workflows/:id/approve', async (c) => {
   });
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
+
+  centralWorkflowLog(c, {
+    aggregateId: workflow.id,
+    tenantId: workflow.tenantId,
+    workflowType: workflow.type,
+    title: workflow.title,
+    description: workflow.description,
+    status: workflow.status,
+    claimable: true,
+    lane: 'approvals',
+    metadata: {
+      propertyId: workflow.propertyId,
+      localTable: 'workflows',
+      syncSource: 'PATCH /api/workflows/:id/approve',
+    },
+  }, c.env);
+
   return c.json(workflow);
 });
 
@@ -74,5 +125,22 @@ workflowRoutes.patch('/api/workflows/:id/complete', async (c) => {
   });
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
+
+  centralWorkflowLog(c, {
+    aggregateId: workflow.id,
+    tenantId: workflow.tenantId,
+    workflowType: workflow.type,
+    title: workflow.title,
+    description: workflow.description,
+    status: workflow.status,
+    claimable: false,
+    lane: 'progress',
+    metadata: {
+      propertyId: workflow.propertyId,
+      localTable: 'workflows',
+      syncSource: 'PATCH /api/workflows/:id/complete',
+    },
+  }, c.env);
+
   return c.json(workflow);
 });
