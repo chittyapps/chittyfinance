@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
-import { centralWorkflowLog } from '../lib/central-workflows';
+import { scopeLog } from '../lib/central-workflows';
 
 export const workflowRoutes = new Hono<HonoEnv>();
 
@@ -32,20 +32,17 @@ workflowRoutes.post('/api/workflows', async (c) => {
     metadata: body.metadata,
   });
 
-  centralWorkflowLog(c, {
-    aggregateId: workflow.id,
+  scopeLog(c, {
+    externalId: workflow.id,
     tenantId,
-    workflowType: workflow.type,
+    scopeType: workflow.type,
     title: workflow.title,
-    description: workflow.description,
-    status: workflow.status,
-    claimable: true,
-    lane: workflow.status === 'requested' ? 'approvals' : 'progress',
+    summary: workflow.description,
+    localStatus: workflow.status,
     metadata: {
       propertyId: workflow.propertyId,
       requestor: workflow.requestor,
       costEstimate: workflow.costEstimate,
-      localTable: 'workflows',
     },
   }, c.env);
 
@@ -65,18 +62,15 @@ workflowRoutes.patch('/api/workflows/:id', async (c) => {
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
 
-  centralWorkflowLog(c, {
-    aggregateId: workflow.id,
+  scopeLog(c, {
+    externalId: workflow.id,
     tenantId: workflow.tenantId,
-    workflowType: workflow.type,
+    scopeType: workflow.type,
     title: workflow.title,
-    description: workflow.description,
-    status: workflow.status,
-    lane: workflow.status === 'requested' ? 'approvals' : 'progress',
+    summary: workflow.description,
+    localStatus: workflow.status,
     metadata: {
       propertyId: workflow.propertyId,
-      localTable: 'workflows',
-      syncSource: 'PATCH /api/workflows/:id',
     },
   }, c.env);
 
@@ -95,19 +89,16 @@ workflowRoutes.patch('/api/workflows/:id/approve', async (c) => {
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
 
-  centralWorkflowLog(c, {
-    aggregateId: workflow.id,
+  scopeLog(c, {
+    externalId: workflow.id,
     tenantId: workflow.tenantId,
-    workflowType: workflow.type,
+    scopeType: workflow.type,
     title: workflow.title,
-    description: workflow.description,
-    status: workflow.status,
-    claimable: true,
-    lane: 'approvals',
+    summary: workflow.description,
+    localStatus: workflow.status,
+    statusReason: `Approved by ${c.get('userId')}`,
     metadata: {
       propertyId: workflow.propertyId,
-      localTable: 'workflows',
-      syncSource: 'PATCH /api/workflows/:id/approve',
     },
   }, c.env);
 
@@ -126,19 +117,15 @@ workflowRoutes.patch('/api/workflows/:id/complete', async (c) => {
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
 
-  centralWorkflowLog(c, {
-    aggregateId: workflow.id,
+  scopeLog(c, {
+    externalId: workflow.id,
     tenantId: workflow.tenantId,
-    workflowType: workflow.type,
+    scopeType: workflow.type,
     title: workflow.title,
-    description: workflow.description,
-    status: workflow.status,
-    claimable: false,
-    lane: 'progress',
+    summary: workflow.description,
+    localStatus: workflow.status,
     metadata: {
       propertyId: workflow.propertyId,
-      localTable: 'workflows',
-      syncSource: 'PATCH /api/workflows/:id/complete',
     },
   }, c.env);
 
