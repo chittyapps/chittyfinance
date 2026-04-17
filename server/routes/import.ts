@@ -774,6 +774,8 @@ interface AmazonRow {
   itemPromotion: number;
   paymentDate: string;
   paymentAmount: number;
+  paymentInstrumentType: string;
+  paymentIdentifier: string;
   sellerName: string;
   glCode: string;
   costCenter: string;
@@ -839,6 +841,8 @@ export function parseAmazonCSV(csv: string): AmazonRow[] {
       itemPromotion: parseNum(col(row, 'item promotion')),
       paymentDate: col(row, 'payment date'),
       paymentAmount: parseNum(col(row, 'payment amount')),
+      paymentInstrumentType: col(row, 'payment instrument type'),
+      paymentIdentifier: col(row, 'payment identifier').replace(/^="/, '').replace(/"$/, ''),
       sellerName: col(row, 'seller name'),
       glCode: col(row, 'gl code'),
       costCenter: col(row, 'cost center'),
@@ -861,7 +865,39 @@ async function amazonDeduplicationHash(orderId: string, asin: string, date: stri
   return `az-${hex.slice(0, 16)}`;
 }
 
-// POST /api/import/amazon — import Amazon Business order history CSV
+/**
+ * Parse Amazon Business returns CSV to build a set of returned (Order ID, ASIN) pairs.
+ * Returns CSV has no refund amounts — it's a return log only.
+ * Used to exclude returned items from order imports.
+ */
+export function parseAmazonReturnsCSV(csv: string): Set<string> {
+  const lines = csv.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (lines.length < 2) return new Set();
+
+  const headerLine = lines[0].replace(/^\uFEFF/, '');
+  const headers = parseCSVLine(headerLine).map((h) => h.toLowerCase().trim());
+
+  const returnKeys = new Set<string>();
+
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const values = parseCSVLine(lines[i]);
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
+
+    const orderId = (row['order id'] || row['order_id'] || '').trim();
+    const asin = (row['asin'] || '').trim();
+    if (orderId && asin) {
+      returnKeys.add(`${orderId}|${asin}`);
+    }
+  }
+
+  return returnKeys;
+}
+
+// POST /api/import/amazon — import Amazon Business order history
+// Accepts JSON body: { orders: "csv...", returns?: "csv..." }
+// Or raw CSV text (orders only, for backwards compat)
 // Requires X-Account-ID header or ?accountId query param
 importRoutes.post('/api/import/amazon', async (c) => {
   const storage = c.get('storage');
@@ -877,8 +913,22 @@ importRoutes.post('/api/import/amazon', async (c) => {
     return c.json({ error: 'Account not found or does not belong to this tenant' }, 404);
   }
 
-  const body = await c.req.text();
-  const parsed = parseAmazonCSV(body);
+  // Accept JSON { orders, returns? } or raw CSV text
+  let ordersCsv: string;
+  let returnKeys = new Set<string>();
+  const contentType = c.req.header('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    const body = await c.req.json<{ orders: string; returns?: string }>();
+    ordersCsv = body.orders;
+    if (body.returns) {
+      returnKeys = parseAmazonReturnsCSV(body.returns);
+    }
+  } else {
+    ordersCsv = await c.req.text();
+  }
+
+  const parsed = parseAmazonCSV(ordersCsv);
 
   if (parsed.length === 0) {
     return c.json({ error: 'No valid Amazon transactions found in CSV. Expected Amazon Business order history export with "Order Date" header.' }, 400);
@@ -897,6 +947,7 @@ importRoutes.post('/api/import/amazon', async (c) => {
 
   let imported = 0;
   let skipped = 0;
+  let returnFiltered = 0;
   let suspenseCount = 0;
   let personalCount = 0;
   const errors: string[] = [];
@@ -904,6 +955,13 @@ importRoutes.post('/api/import/amazon', async (c) => {
   const userStats: Record<string, { count: number; total: number; personalTotal: number }> = {};
 
   for (const row of parsed) {
+    // Skip returned items if returns CSV was provided
+    const returnKey = `${row.orderId}|${row.asin}`;
+    if (returnKeys.has(returnKey)) {
+      returnFiltered++;
+      continue;
+    }
+
     const externalId = await amazonDeduplicationHash(row.orderId, row.asin, row.orderDate);
     const existing = await storage.getTransactionByExternalId(externalId, tenantId);
     if (existing) {
@@ -966,6 +1024,8 @@ importRoutes.post('/api/import/amazon', async (c) => {
           itemPromotion: row.itemPromotion,
           normalizedEntity: entity,
           personalUse,
+          paymentType: row.paymentInstrumentType,
+          paymentCardLast4: row.paymentIdentifier,
           // Preserve any structured fields if populated (future-proofing for restructured account)
           ...(row.glCode ? { glCode: row.glCode } : {}),
           ...(row.costCenter ? { costCenter: row.costCenter } : {}),
@@ -988,6 +1048,7 @@ importRoutes.post('/api/import/amazon', async (c) => {
       parsed: parsed.length,
       imported,
       skipped,
+      returnFiltered,
       suspenseCount,
       personalCount,
       errorCount: errors.length,
@@ -998,6 +1059,8 @@ importRoutes.post('/api/import/amazon', async (c) => {
     parsed: parsed.length,
     imported,
     skipped,
+    returnFiltered,
+    returnsProvided: returnKeys.size,
     suspenseCount,
     personalCount,
     errors: errors.slice(0, 50),
