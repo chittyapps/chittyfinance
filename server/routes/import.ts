@@ -595,6 +595,417 @@ importRoutes.post('/api/import/hdpro', async (c) => {
   }, imported > 0 ? 200 : 422);
 });
 
+// ═══════════════════════════════════════════════════════════════
+// Amazon Business PO Number → Entity Normalization
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Normalize an Amazon Business PO Number + Account Group to a canonical entity key.
+ *
+ * Amazon Business uses PO Number for 3 different things simultaneously:
+ *   a) Property routing:  Surf 504, Addison 3S, ="211"
+ *   b) Entity routing:    ARIBIA LLC - COZY CASTLE, ARIBIA LLC - MGMT
+ *   c) Category tagging:  Furnishings and Decor, Cleaning / Maintenance
+ *
+ * Account Group adds a layer: Personal group + Surf 504 PO = personal spend at property.
+ * Account User detects Arias personal purchases on the business card.
+ */
+function normalizeAmazonEntity(
+  poNumber: string,
+  accountGroup: string,
+  accountUser: string,
+): { entity: EntityKey; personalUse: boolean } {
+  const po = poNumber.trim().toLowerCase();
+  const group = accountGroup.trim().toLowerCase();
+  const user = accountUser.trim().toLowerCase();
+
+  // Arias personal spend detection — any purchase by Luisa/LuLu in personal categories
+  const isArias = user.includes('arias') || user.includes('lulu');
+
+  // Personal group items are personal regardless of PO
+  if (group === 'personal') {
+    return { entity: 'personal-nick', personalUse: true };
+  }
+
+  // Explicit personal tags
+  if (po === 'personal' || po === 'nick' || po === 'personal purchase') {
+    return { entity: 'personal-nick', personalUse: true };
+  }
+
+  // Uncle Steve — personal
+  if (po === 'uncle steve') {
+    return { entity: 'personal-nick', personalUse: true };
+  }
+
+  // Property routing by PO Number
+  if (po === 'surf 504' || po.includes('cozy castle')) {
+    return { entity: 'cozy-castle', personalUse: isArias };
+  }
+  if (po === 'surf 211' || po === '="211"' || po === '211') {
+    return { entity: 'city-studio', personalUse: false };
+  }
+  if (po === 'addison 3s' || po.includes('lakeside loft')) {
+    return { entity: 'lakeside-loft', personalUse: false };
+  }
+  if (po.includes('apt arlene') || po.includes('clarendon')) {
+    return { entity: 'apt-arlene', personalUse: false };
+  }
+  if (po.includes('city studio')) {
+    return { entity: 'city-studio', personalUse: false };
+  }
+
+  // Entity routing
+  if (po.includes('aribia') && po.includes('mgmt')) {
+    return { entity: 'aribia-mgmt', personalUse: false };
+  }
+  if (po === 'chitty services' || group === 'chitty services') {
+    return { entity: 'aribia-mgmt', personalUse: false };
+  }
+  if (po === 'business' || po === 'aribia llc' || po === 'office expense') {
+    return { entity: 'aribia-mgmt', personalUse: false };
+  }
+
+  // CHITTY SERVICES group — category PO Numbers (Furnishings, Cleaning, Tools, etc.)
+  if (group === 'chitty services') {
+    return { entity: 'aribia-mgmt', personalUse: false };
+  }
+
+  // Capital Expenditure
+  if (po === 'capital expenditure') {
+    return { entity: 'aribia-mgmt', personalUse: false };
+  }
+
+  // Blank PO under ARIBIA LLC — suspense
+  if (!po || po === '(blank)') {
+    // If Arias user, flag as personal
+    if (isArias) return { entity: 'suspense', personalUse: true };
+    return { entity: 'suspense', personalUse: false };
+  }
+
+  return { entity: 'suspense', personalUse: isArias };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Amazon Category → COA Code Classification
+// ═══════════════════════════════════════════════════════════════
+
+/** Personal spend categories — COA 3200 (Owner Draws) */
+const AMAZON_PERSONAL_CATEGORIES = new Set([
+  'health and beauty', 'beauty', 'prestige beauty', 'grocery',
+  'pet products', 'apparel', 'book', 'luggage', 'sports',
+  'music', 'shoes', 'jewelry', 'baby product',
+]);
+
+/**
+ * Amazon category → COA mapping.
+ * NOT treated as authoritative — Amazon categories are unreliable.
+ * These are L1 suggestions only; confidence is low.
+ */
+const AMAZON_CATEGORY_COA: Record<string, string> = {
+  'home improvement': '5070',
+  'kitchen': '5080',
+  'home': '5080',
+  'lighting': '5070',
+  'lawn & patio': '5080',
+  'furniture': '7030',
+  'office product': '5080',
+  'business, industrial, & scientific supplies basic': '5080',
+};
+
+/**
+ * Classify an Amazon item. Amazon categories are NOT authoritative —
+ * confidence is kept low to force L2 human review.
+ */
+function classifyAmazonItem(
+  category: string,
+  personalUse: boolean,
+  poNumber: string,
+): { code: string; confidence: number } {
+  // Personal use → owner draws
+  if (personalUse) {
+    const catLower = category.toLowerCase();
+    if (AMAZON_PERSONAL_CATEGORIES.has(catLower)) {
+      return { code: '3200', confidence: 0.850 };
+    }
+    // Personal user but non-personal category — still likely personal, lower confidence
+    return { code: '3200', confidence: 0.500 };
+  }
+
+  // CHITTY SERVICES PO-based category hints (more reliable than Amazon category)
+  const poLower = poNumber.trim().toLowerCase();
+  if (poLower === 'cleaning / maintenance supplie') return { code: '5020', confidence: 0.700 };
+  if (poLower === 'furnishings and decor') return { code: '5080', confidence: 0.650 };
+  if (poLower === 'tools / equipment') return { code: '5080', confidence: 0.650 };
+  if (poLower === 'small appliances / electronics') return { code: '7030', confidence: 0.600 };
+  if (poLower === 'capital expenditure') return { code: '7030', confidence: 0.700 };
+  if (poLower === 'chitty furnishings') return { code: '5080', confidence: 0.650 };
+
+  // Amazon category fallback (low confidence — not authoritative)
+  const catLower = category.toLowerCase();
+  const catCode = AMAZON_CATEGORY_COA[catLower];
+  if (catCode) {
+    return { code: catCode, confidence: 0.400 };
+  }
+
+  // Suspense
+  return { code: '9010', confidence: 0.100 };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Amazon Business CSV Parser
+// ═══════════════════════════════════════════════════════════════
+
+interface AmazonRow {
+  orderDate: string;
+  orderId: string;
+  accountGroup: string;
+  poNumber: string;
+  orderStatus: string;
+  accountUser: string;
+  accountUserEmail: string;
+  amazonCategory: string;
+  asin: string;
+  title: string;
+  brand: string;
+  itemQuantity: number;
+  itemSubtotal: number;
+  itemTax: number;
+  itemNetTotal: number;
+  itemPromotion: number;
+  paymentDate: string;
+  paymentAmount: number;
+  sellerName: string;
+  glCode: string;
+  costCenter: string;
+  department: string;
+  projectCode: string;
+  location: string;
+}
+
+/**
+ * Parse Amazon Business order history CSV.
+ * Filters to Closed orders with non-zero amounts (excludes cancellations, returns, zero-amount).
+ */
+export function parseAmazonCSV(csv: string): AmazonRow[] {
+  const lines = csv.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (lines.length < 2) return [];
+
+  // Handle BOM
+  const headerLine = lines[0].replace(/^\uFEFF/, '');
+  const headers = parseCSVLine(headerLine).map((h) => h.toLowerCase().trim());
+
+  const rows: AmazonRow[] = [];
+  const parseNum = (s: string) => {
+    const cleaned = (s || '').replace(/[$,="]/g, '').trim();
+    return cleaned ? parseFloat(cleaned) : 0;
+  };
+
+  const col = (row: Record<string, string>, ...names: string[]): string => {
+    for (const n of names) {
+      const v = row[n];
+      if (v !== undefined && v !== '') return v;
+    }
+    return '';
+  };
+
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const values = parseCSVLine(lines[i]);
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
+
+    const status = col(row, 'order status');
+    const netTotal = parseNum(col(row, 'item net total'));
+
+    // Skip cancelled, pending, and zero-amount items
+    if (status !== 'Closed' || netTotal === 0) continue;
+
+    rows.push({
+      orderDate: col(row, 'order date'),
+      orderId: col(row, 'order id'),
+      accountGroup: col(row, 'account group'),
+      poNumber: col(row, 'po number'),
+      orderStatus: status,
+      accountUser: col(row, 'account user'),
+      accountUserEmail: col(row, 'account user email'),
+      amazonCategory: col(row, 'amazon-internal product category'),
+      asin: col(row, 'asin'),
+      title: col(row, 'title'),
+      brand: col(row, 'brand'),
+      itemQuantity: parseNum(col(row, 'item quantity')) || 1,
+      itemSubtotal: parseNum(col(row, 'item subtotal')),
+      itemTax: parseNum(col(row, 'item tax')),
+      itemNetTotal: netTotal,
+      itemPromotion: parseNum(col(row, 'item promotion')),
+      paymentDate: col(row, 'payment date'),
+      paymentAmount: parseNum(col(row, 'payment amount')),
+      sellerName: col(row, 'seller name'),
+      glCode: col(row, 'gl code'),
+      costCenter: col(row, 'cost center'),
+      department: col(row, 'department'),
+      projectCode: col(row, 'project code'),
+      location: col(row, 'location'),
+    });
+  }
+
+  return rows;
+}
+
+/** SHA-256 dedup hash for Amazon items (order_id + asin + date) */
+async function amazonDeduplicationHash(orderId: string, asin: string, date: string): Promise<string> {
+  const key = `amazon|${orderId}|${asin}|${date}`;
+  const data = new TextEncoder().encode(key);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = new Uint8Array(hashBuffer);
+  const hex = Array.from(hashArray).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `az-${hex.slice(0, 16)}`;
+}
+
+// POST /api/import/amazon — import Amazon Business order history CSV
+// Requires X-Account-ID header or ?accountId query param
+importRoutes.post('/api/import/amazon', async (c) => {
+  const storage = c.get('storage');
+  const tenantId = c.get('tenantId');
+
+  const accountId = c.req.header('X-Account-ID') || c.req.query('accountId');
+  if (!accountId) {
+    return c.json({ error: 'accountId is required (X-Account-ID header or ?accountId query param)' }, 400);
+  }
+
+  const account = await storage.getAccount(accountId, tenantId);
+  if (!account) {
+    return c.json({ error: 'Account not found or does not belong to this tenant' }, 404);
+  }
+
+  const body = await c.req.text();
+  const parsed = parseAmazonCSV(body);
+
+  if (parsed.length === 0) {
+    return c.json({ error: 'No valid Amazon transactions found in CSV. Expected Amazon Business order history export with "Order Date" header.' }, 400);
+  }
+
+  // Load properties for entity→property matching
+  const properties = await storage.getProperties(tenantId);
+  const propertyMap: Record<string, { id: string; tenantId: string }> = {};
+  for (const p of properties) {
+    const pName = p.name.toLowerCase();
+    if (pName.includes('city studio')) propertyMap['city-studio'] = { id: p.id, tenantId: p.tenantId };
+    if (pName.includes('arlene') || pName.includes('clarendon')) propertyMap['apt-arlene'] = { id: p.id, tenantId: p.tenantId };
+    if (pName.includes('cozy') || pName.includes('surf')) propertyMap['cozy-castle'] = { id: p.id, tenantId: p.tenantId };
+    if (pName.includes('lakeside') || pName.includes('addison')) propertyMap['lakeside-loft'] = { id: p.id, tenantId: p.tenantId };
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  let suspenseCount = 0;
+  let personalCount = 0;
+  const errors: string[] = [];
+  const entityStats: Record<string, { count: number; total: number; personal: number }> = {};
+  const userStats: Record<string, { count: number; total: number; personalTotal: number }> = {};
+
+  for (const row of parsed) {
+    const externalId = await amazonDeduplicationHash(row.orderId, row.asin, row.orderDate);
+    const existing = await storage.getTransactionByExternalId(externalId, tenantId);
+    if (existing) {
+      skipped++;
+      continue;
+    }
+
+    const { entity, personalUse } = normalizeAmazonEntity(
+      row.poNumber, row.accountGroup, row.accountUser,
+    );
+    const classification = classifyAmazonItem(
+      row.amazonCategory, personalUse, row.poNumber,
+    );
+
+    const isSuspense = classification.code === '9010';
+    if (isSuspense) suspenseCount++;
+    if (personalUse) personalCount++;
+
+    // Track stats
+    if (!entityStats[entity]) entityStats[entity] = { count: 0, total: 0, personal: 0 };
+    entityStats[entity].count++;
+    entityStats[entity].total += row.itemNetTotal;
+    if (personalUse) entityStats[entity].personal++;
+
+    const userKey = row.accountUser || '(unknown)';
+    if (!userStats[userKey]) userStats[userKey] = { count: 0, total: 0, personalTotal: 0 };
+    userStats[userKey].count++;
+    userStats[userKey].total += row.itemNetTotal;
+    if (personalUse) userStats[userKey].personalTotal += row.itemNetTotal;
+
+    const prop = propertyMap[entity];
+
+    try {
+      await storage.createTransaction({
+        tenantId,
+        accountId,
+        amount: String(Math.abs(row.itemNetTotal)),
+        type: row.itemNetTotal >= 0 ? 'expense' : 'income',
+        category: row.amazonCategory || 'amazon',
+        description: `Amazon: ${row.title.slice(0, 200)}`,
+        date: new Date(row.orderDate),
+        payee: row.sellerName || 'Amazon',
+        propertyId: prop?.id || null,
+        externalId,
+        suggestedCoaCode: classification.code,
+        classificationConfidence: String(classification.confidence),
+        metadata: {
+          source: 'amazon',
+          orderId: row.orderId,
+          asin: row.asin,
+          brand: row.brand,
+          amazonCategory: row.amazonCategory,
+          accountGroup: row.accountGroup,
+          poNumber: row.poNumber,
+          accountUser: row.accountUser,
+          accountUserEmail: row.accountUserEmail,
+          itemQuantity: row.itemQuantity,
+          itemSubtotal: row.itemSubtotal,
+          itemTax: row.itemTax,
+          itemPromotion: row.itemPromotion,
+          normalizedEntity: entity,
+          personalUse,
+          // Preserve any structured fields if populated (future-proofing for restructured account)
+          ...(row.glCode ? { glCode: row.glCode } : {}),
+          ...(row.costCenter ? { costCenter: row.costCenter } : {}),
+          ...(row.department ? { department: row.department } : {}),
+          ...(row.projectCode ? { projectCode: row.projectCode } : {}),
+        },
+      });
+      imported++;
+    } catch (err) {
+      errors.push(`Row ${row.orderDate} ASIN ${row.asin}: ${(err as Error).message}`);
+    }
+  }
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'import.amazon',
+    metadata: {
+      tenantId,
+      accountId,
+      parsed: parsed.length,
+      imported,
+      skipped,
+      suspenseCount,
+      personalCount,
+      errorCount: errors.length,
+    },
+  }, c.env);
+
+  return c.json({
+    parsed: parsed.length,
+    imported,
+    skipped,
+    suspenseCount,
+    personalCount,
+    errors: errors.slice(0, 50),
+    entityMapping: entityStats,
+    userBreakdown: userStats,
+  }, imported > 0 ? 200 : 422);
+});
+
 // POST /api/import/wave-sync — sync Wave transactions
 importRoutes.post('/api/import/wave-sync', async (c) => {
   const storage = c.get('storage');
