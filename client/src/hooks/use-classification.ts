@@ -200,6 +200,28 @@ export function useAiSuggest() {
   });
 }
 
+/** Tenant classification settings (bulk-accept opt-out, etc.) */
+export function useTenantSettings() {
+  const tenantId = useTenantId();
+  return useQuery<{ bulkAcceptDisabled: boolean }>({
+    queryKey: ['/api/tenants', tenantId, 'settings'],
+    queryFn: () => fetch(`/api/tenants/${tenantId}/settings`, { credentials: 'include' }).then((r) => r.json()),
+    enabled: !!tenantId,
+  });
+}
+
+export function useUpdateTenantSettings() {
+  const qc = useQueryClient();
+  const tenantId = useTenantId();
+  return useMutation({
+    mutationFn: (data: { bulkAcceptDisabled?: boolean }) =>
+      apiRequest('PATCH', `/api/tenants/${tenantId}/settings`, data).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/api/tenants', tenantId, 'settings'] });
+    },
+  });
+}
+
 /** L3 — unlock a reconciled transaction */
 export function useUnreconcileTransaction() {
   const qc = useQueryClient();

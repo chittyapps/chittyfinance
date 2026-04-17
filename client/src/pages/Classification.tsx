@@ -9,6 +9,9 @@ import {
   useUnreconcileTransaction,
   useAiSuggest,
   useBatchSuggest,
+  useTenantSettings,
+  useUpdateTenantSettings,
+  useClassificationAudit,
   type UnclassifiedTransaction,
   type ChartOfAccount,
 } from '@/hooks/use-classification';
@@ -92,10 +95,14 @@ export default function Classification() {
   const unreconcile = useUnreconcileTransaction();
   const aiSuggest = useAiSuggest();
   const batchSuggest = useBatchSuggest();
+  const { data: tenantSettings } = useTenantSettings();
+  const updateSettings = useUpdateTenantSettings();
 
   const [activeTab, setActiveTab] = useState<TabMode>('queue');
   const [sortMode, setSortMode] = useState<SortMode>('date-desc');
   const [lastResult, setLastResult] = useState<string | null>(null);
+
+  const bulkAcceptDisabled = tenantSettings?.bulkAcceptDisabled ?? false;
 
   const coaMap = useMemo(() => new Map(coa.map((a) => [a.code, a])), [coa]);
   const sortedTxns = useMemo(() => [...txns].sort((a, b) => compareTransactions(a, b, sortMode)), [txns, sortMode]);
@@ -183,13 +190,15 @@ export default function Classification() {
           >
             {aiSuggest.isPending ? 'Thinking...' : 'AI Suggest (GPT)'}
           </button>
-          <button
-            onClick={handleAcceptAll}
-            disabled={classify.isPending}
-            className="px-3 py-2 text-sm font-medium bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] text-[hsl(var(--cf-text))] rounded-md hover:bg-[hsl(var(--cf-surface))] transition-colors disabled:opacity-50"
-          >
-            Accept High-Confidence
-          </button>
+          {!bulkAcceptDisabled && (
+            <button
+              onClick={handleAcceptAll}
+              disabled={classify.isPending}
+              className="px-3 py-2 text-sm font-medium bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] text-[hsl(var(--cf-text))] rounded-md hover:bg-[hsl(var(--cf-surface))] transition-colors disabled:opacity-50"
+            >
+              Accept High-Confidence
+            </button>
+          )}
         </div>
       </div>
 
@@ -278,6 +287,24 @@ export default function Classification() {
       {/* Reconciled tab */}
       {activeTab === 'reconciled' && (
         <>
+          {/* Bulk accept toggle */}
+          <div className="flex items-center gap-3 px-4 py-3 bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] rounded-lg">
+            <label className="flex items-center gap-2 text-sm text-[hsl(var(--cf-text))] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bulkAcceptDisabled}
+                onChange={(e) => updateSettings.mutate({ bulkAcceptDisabled: e.target.checked })}
+                className="rounded border-[hsl(var(--cf-border))]"
+              />
+              Disable bulk-accept for this tenant
+            </label>
+            <span className="text-xs text-[hsl(var(--cf-text-muted))]">
+              {bulkAcceptDisabled
+                ? 'Every transaction requires individual L2 review'
+                : 'High-confidence suggestions can be bulk-accepted'}
+            </span>
+          </div>
+
           {reconciledLoading ? (
             <div className="text-center py-12 text-[hsl(var(--cf-text-muted))]">Loading...</div>
           ) : reconciledTxns.length === 0 ? (
@@ -286,51 +313,23 @@ export default function Classification() {
             </div>
           ) : (
             <div className="space-y-2">
-              {reconciledTxns.map((tx) => {
-                const account = tx.coaCode ? coaMap.get(tx.coaCode) : null;
-                const amount = parseFloat(tx.amount);
-                return (
-                  <div key={tx.id} className="bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] rounded-lg p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-3">
-                          <span className={`text-lg font-display font-semibold ${amount >= 0 ? 'text-green-400' : 'text-[hsl(var(--cf-text))]'}`}>
-                            {formatCurrency(amount)}
-                          </span>
-                          <span className="text-xs text-[hsl(var(--cf-text-muted))]">{formatDate(tx.date)}</span>
-                          <span className="text-xs text-yellow-400">Reconciled</span>
-                        </div>
-                        <div className="text-sm text-[hsl(var(--cf-text))] mt-1 truncate">{tx.description}</div>
-                        {account && (
-                          <div className="mt-1 text-xs text-green-400">
-                            {account.code} — {account.name}
-                          </div>
-                        )}
-                        {tx.reconciledBy && (
-                          <div className="mt-1 text-[10px] text-[hsl(var(--cf-text-muted))]">
-                            by {tx.reconciledBy} on {tx.reconciledAt ? formatDate(tx.reconciledAt) : '—'}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => {
-                          unreconcile.mutate(
-                            { transactionId: tx.id },
-                            {
-                              onSuccess: () => setLastResult('Transaction unlocked'),
-                              onError: (err: any) => setLastResult(`Error: ${err.message}`),
-                            },
-                          );
-                        }}
-                        disabled={unreconcile.isPending}
-                        className="px-3 py-1.5 text-xs font-medium bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] text-[hsl(var(--cf-text))] rounded hover:bg-[hsl(var(--cf-surface))] transition-colors disabled:opacity-50 shrink-0"
-                      >
-                        Unlock
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              {reconciledTxns.map((tx) => (
+                <ReconciledRow
+                  key={tx.id}
+                  tx={tx}
+                  coaMap={coaMap}
+                  onUnreconcile={() => {
+                    unreconcile.mutate(
+                      { transactionId: tx.id },
+                      {
+                        onSuccess: () => setLastResult('Transaction unlocked'),
+                        onError: (err: any) => setLastResult(`Error: ${err.message}`),
+                      },
+                    );
+                  }}
+                  isUnreconciling={unreconcile.isPending}
+                />
+              ))}
             </div>
           )}
         </>
@@ -356,6 +355,98 @@ interface TransactionRowProps {
   coa: ChartOfAccount[];
   onClassify: (code: string) => void;
   onReconcile: () => void;
+}
+
+interface ReconciledRowProps {
+  tx: UnclassifiedTransaction;
+  coaMap: Map<string, ChartOfAccount>;
+  onUnreconcile: () => void;
+  isUnreconciling: boolean;
+}
+
+function ReconciledRow({ tx, coaMap, onUnreconcile, isUnreconciling }: ReconciledRowProps) {
+  const [showAudit, setShowAudit] = useState(false);
+  const { data: auditLog } = useClassificationAudit(showAudit ? tx.id : null);
+  const account = tx.coaCode ? coaMap.get(tx.coaCode) : null;
+  const amount = parseFloat(tx.amount);
+
+  return (
+    <div className="bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] rounded-lg p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-3">
+            <span className={`text-lg font-display font-semibold ${amount >= 0 ? 'text-green-400' : 'text-[hsl(var(--cf-text))]'}`}>
+              {formatCurrency(amount)}
+            </span>
+            <span className="text-xs text-[hsl(var(--cf-text-muted))]">{formatDate(tx.date)}</span>
+            <span className="text-xs text-yellow-400">Reconciled</span>
+          </div>
+          <div className="text-sm text-[hsl(var(--cf-text))] mt-1 truncate">{tx.description}</div>
+          {account && (
+            <div className="mt-1 text-xs text-green-400">
+              {account.code} — {account.name}
+            </div>
+          )}
+          <div className="mt-1 flex items-center gap-4 text-[10px] text-[hsl(var(--cf-text-muted))]">
+            {tx.classifiedBy && (
+              <span>Classified by {tx.classifiedBy}{tx.classifiedAt ? ` on ${formatDate(tx.classifiedAt)}` : ''}</span>
+            )}
+            {tx.reconciledBy && (
+              <span>Reconciled by {tx.reconciledBy}{tx.reconciledAt ? ` on ${formatDate(tx.reconciledAt)}` : ''}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <button
+            onClick={() => setShowAudit(!showAudit)}
+            className="px-3 py-1.5 text-xs font-medium bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] text-[hsl(var(--cf-text-muted))] rounded hover:text-[hsl(var(--cf-text))] transition-colors"
+          >
+            {showAudit ? 'Hide Trail' : 'Audit Trail'}
+          </button>
+          <button
+            onClick={onUnreconcile}
+            disabled={isUnreconciling}
+            className="px-3 py-1.5 text-xs font-medium bg-[hsl(var(--cf-raised))] border border-[hsl(var(--cf-border))] text-[hsl(var(--cf-text))] rounded hover:bg-[hsl(var(--cf-surface))] transition-colors disabled:opacity-50"
+          >
+            Unlock
+          </button>
+        </div>
+      </div>
+
+      {/* Audit trail expansion */}
+      {showAudit && auditLog && auditLog.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-[hsl(var(--cf-border))] space-y-1">
+          {auditLog.map((entry) => (
+            <div key={entry.id} className="flex items-baseline gap-2 text-[10px]">
+              <span className="text-[hsl(var(--cf-text-muted))] w-[70px] shrink-0">{formatDate(entry.createdAt)}</span>
+              <span className={`w-[60px] shrink-0 ${
+                entry.action === 'reconcile' ? 'text-yellow-400' :
+                entry.action.includes('classify') ? 'text-green-400' :
+                'text-[hsl(var(--cf-text-muted))]'
+              }`}>{entry.action}</span>
+              <span className="text-[hsl(var(--cf-text))]">{entry.newCoaCode}</span>
+              {entry.previousCoaCode && (
+                <span className="text-[hsl(var(--cf-text-muted))]">(was {entry.previousCoaCode})</span>
+              )}
+              <span className="text-[hsl(var(--cf-text-muted))]">
+                {entry.trustLevel} by {entry.actorId}
+              </span>
+              {entry.confidence && (
+                <span className={confidenceColor(parseFloat(entry.confidence))}>
+                  {(parseFloat(entry.confidence) * 100).toFixed(0)}%
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {showAudit && (!auditLog || auditLog.length === 0) && (
+        <div className="mt-3 pt-3 border-t border-[hsl(var(--cf-border))] text-[10px] text-[hsl(var(--cf-text-muted))]">
+          No audit entries found
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TransactionRow({ tx, coaMap, coa, onClassify, onReconcile }: TransactionRowProps) {
