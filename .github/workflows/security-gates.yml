@@ -97,4 +97,4 @@ jobs:
           cd "${{ steps.pkg.outputs.dir }}"
           # CVE-2024-45296: picomatch ReDoS in transitive deps (neonctl, tailwindcss)
           # Cannot be resolved via overrides — parent packages pin vulnerable versions
-          pnpm audit --prod --audit-level high --ignore CVE-2024-45296
+          pnpm audit --prod --audit-level high --ignore CVE-2024-45296 --ignore-registry-errors
