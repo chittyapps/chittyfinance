@@ -205,7 +205,7 @@ export function useTenantSettings() {
   const tenantId = useTenantId();
   return useQuery<{ bulkAcceptDisabled: boolean }>({
     queryKey: ['/api/tenants', tenantId, 'settings'],
-    queryFn: () => fetch(`/api/tenants/${tenantId}/settings`, { credentials: 'include' }).then((r) => r.json()),
+    queryFn: () => apiRequest('GET', `/api/tenants/${tenantId}/settings`).then((r) => r.json()),
     enabled: !!tenantId,
   });
 }

@@ -39,6 +39,12 @@ function confidenceColor(conf: number): string {
   return 'text-red-400';
 }
 
+function auditActionColor(action: string): string {
+  if (action === 'reconcile') return 'text-yellow-400';
+  if (action.includes('classify')) return 'text-green-400';
+  return 'text-[hsl(var(--cf-text-muted))]';
+}
+
 /**
  * Trust boundary for one-click "Accept High-Confidence Suggestions".
  *
@@ -110,7 +116,10 @@ export default function Classification() {
   function handleClassify(txId: string, coaCode: string) {
     classify.mutate(
       { transactionId: txId, coaCode, reason: 'Manual classification via UI' },
-      { onSuccess: () => setLastResult(`Classified transaction as ${coaCode}`) },
+      {
+        onSuccess: () => setLastResult(`Classified transaction as ${coaCode}`),
+        onError: (err: any) => setLastResult(`Classification failed: ${err.message}`),
+      },
     );
   }
 
@@ -147,8 +156,9 @@ export default function Classification() {
       setLastResult('No candidates qualified for bulk accept');
       return;
     }
-    // Fire mutations sequentially to avoid overloading the classify endpoint
     let done = 0;
+    let failed = 0;
+    const total = candidates.length;
     for (const tx of candidates) {
       if (!tx.suggestedCoaCode) continue;
       classify.mutate(
@@ -156,7 +166,11 @@ export default function Classification() {
         {
           onSuccess: () => {
             done++;
-            if (done === candidates.length) setLastResult(`Bulk accepted ${done} transactions`);
+            if (done + failed === total) setLastResult(`Bulk: ${done} accepted${failed ? `, ${failed} failed` : ''}`);
+          },
+          onError: () => {
+            failed++;
+            if (done + failed === total) setLastResult(`Bulk: ${done} accepted, ${failed} failed`);
           },
         },
       );
@@ -293,7 +307,17 @@ export default function Classification() {
               <input
                 type="checkbox"
                 checked={bulkAcceptDisabled}
-                onChange={(e) => updateSettings.mutate({ bulkAcceptDisabled: e.target.checked })}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  updateSettings.mutate(
+                    { bulkAcceptDisabled: checked },
+                    {
+                      onSuccess: () => setLastResult(checked ? 'Bulk-accept disabled for this tenant' : 'Bulk-accept re-enabled'),
+                      onError: (err: any) => setLastResult(`Failed to update setting: ${err.message}`),
+                    },
+                  );
+                }}
+                disabled={updateSettings.isPending}
                 className="rounded border-[hsl(var(--cf-border))]"
               />
               Disable bulk-accept for this tenant
@@ -366,7 +390,7 @@ interface ReconciledRowProps {
 
 function ReconciledRow({ tx, coaMap, onUnreconcile, isUnreconciling }: ReconciledRowProps) {
   const [showAudit, setShowAudit] = useState(false);
-  const { data: auditLog } = useClassificationAudit(showAudit ? tx.id : null);
+  const { data: auditLog, isLoading: auditLoading } = useClassificationAudit(showAudit ? tx.id : null);
   const account = tx.coaCode ? coaMap.get(tx.coaCode) : null;
   const amount = parseFloat(tx.amount);
 
@@ -414,35 +438,34 @@ function ReconciledRow({ tx, coaMap, onUnreconcile, isUnreconciling }: Reconcile
       </div>
 
       {/* Audit trail expansion */}
-      {showAudit && auditLog && auditLog.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-[hsl(var(--cf-border))] space-y-1">
-          {auditLog.map((entry) => (
-            <div key={entry.id} className="flex items-baseline gap-2 text-[10px]">
-              <span className="text-[hsl(var(--cf-text-muted))] w-[70px] shrink-0">{formatDate(entry.createdAt)}</span>
-              <span className={`w-[60px] shrink-0 ${
-                entry.action === 'reconcile' ? 'text-yellow-400' :
-                entry.action.includes('classify') ? 'text-green-400' :
-                'text-[hsl(var(--cf-text-muted))]'
-              }`}>{entry.action}</span>
-              <span className="text-[hsl(var(--cf-text))]">{entry.newCoaCode}</span>
-              {entry.previousCoaCode && (
-                <span className="text-[hsl(var(--cf-text-muted))]">(was {entry.previousCoaCode})</span>
-              )}
-              <span className="text-[hsl(var(--cf-text-muted))]">
-                {entry.trustLevel} by {entry.actorId}
-              </span>
-              {entry.confidence && (
-                <span className={confidenceColor(parseFloat(entry.confidence))}>
-                  {(parseFloat(entry.confidence) * 100).toFixed(0)}%
-                </span>
-              )}
+      {showAudit && (
+        <div className="mt-3 pt-3 border-t border-[hsl(var(--cf-border))]">
+          {auditLoading ? (
+            <div className="text-[10px] text-[hsl(var(--cf-text-muted))]">Loading audit trail...</div>
+          ) : auditLog && auditLog.length > 0 ? (
+            <div className="space-y-1">
+              {auditLog.map((entry) => (
+                <div key={entry.id} className="flex items-baseline gap-2 text-[10px]">
+                  <span className="text-[hsl(var(--cf-text-muted))] w-[70px] shrink-0">{formatDate(entry.createdAt)}</span>
+                  <span className={`w-[60px] shrink-0 ${auditActionColor(entry.action)}`}>{entry.action}</span>
+                  <span className="text-[hsl(var(--cf-text))]">{entry.newCoaCode}</span>
+                  {entry.previousCoaCode && (
+                    <span className="text-[hsl(var(--cf-text-muted))]">(was {entry.previousCoaCode})</span>
+                  )}
+                  <span className="text-[hsl(var(--cf-text-muted))]">
+                    {entry.trustLevel} by {entry.actorId}
+                  </span>
+                  {entry.confidence && (
+                    <span className={confidenceColor(parseFloat(entry.confidence))}>
+                      {(parseFloat(entry.confidence) * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-      {showAudit && (!auditLog || auditLog.length === 0) && (
-        <div className="mt-3 pt-3 border-t border-[hsl(var(--cf-border))] text-[10px] text-[hsl(var(--cf-text-muted))]">
-          No audit entries found
+          ) : (
+            <div className="text-[10px] text-[hsl(var(--cf-text-muted))]">No audit entries found</div>
+          )}
         </div>
       )}
     </div>

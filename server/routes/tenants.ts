@@ -42,63 +42,70 @@ tenantRoutes.get('/api/tenants/:id', async (c) => {
   });
 });
 
-// PATCH /api/tenants/:id/settings — update tenant metadata settings (owner/admin only)
+// ── Settings helpers ──
+
 const settingsSchema = z.object({
   bulkAcceptDisabled: z.boolean().optional(),
-}).passthrough(); // allow arbitrary metadata keys
+}).strict();
 
-tenantRoutes.patch('/api/tenants/:id/settings', async (c) => {
+/** Verify user membership and fetch tenant, returning both or a 404 response. */
+async function resolveUserTenant(c: any) {
   const storage = c.get('storage');
   const userId = c.get('userId');
   const tenantId = c.req.param('id');
 
-  // Verify access and role
   const memberships = await storage.getUserTenants(userId);
-  const membership = memberships.find((item) => item.tenant.id === tenantId);
-  if (!membership) return c.json({ error: 'Tenant not found' }, 404);
+  const membership = memberships.find((item: any) => item.tenant.id === tenantId);
+  if (!membership) return { error: c.json({ error: 'Tenant not found' }, 404) } as const;
 
-  if (!['owner', 'admin'].includes(membership.role)) {
+  const tenant = await storage.getTenant(tenantId);
+  if (!tenant) return { error: c.json({ error: 'Tenant not found' }, 404) } as const;
+
+  return { membership, tenant, tenantId, userId, storage } as const;
+}
+
+// GET /api/tenants/:id/settings — get tenant settings (classification flags, etc.)
+tenantRoutes.get('/api/tenants/:id/settings', async (c) => {
+  const result = await resolveUserTenant(c);
+  if ('error' in result) return result.error;
+
+  const metadata = (result.tenant.metadata as Record<string, unknown>) ?? {};
+  return c.json({
+    bulkAcceptDisabled: metadata.bulkAcceptDisabled ?? false,
+  });
+});
+
+// PATCH /api/tenants/:id/settings — update tenant metadata settings (owner/admin only)
+tenantRoutes.patch('/api/tenants/:id/settings', async (c) => {
+  const result = await resolveUserTenant(c);
+  if ('error' in result) return result.error;
+
+  if (!['owner', 'admin'].includes(result.membership.role)) {
     return c.json({ error: 'Owner or admin role required to modify tenant settings' }, 403);
   }
 
-  const body = settingsSchema.safeParse(await c.req.json().catch(() => ({})));
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    return c.json({ error: 'Request body must be valid JSON' }, 400);
+  }
+  const body = settingsSchema.safeParse(rawBody);
   if (!body.success) {
     return c.json({ error: 'invalid_body', details: body.error.flatten() }, 400);
   }
 
-  const tenant = await storage.getTenant(tenantId);
-  if (!tenant) return c.json({ error: 'Tenant not found' }, 404);
-
-  const currentMetadata = (tenant.metadata as Record<string, unknown>) ?? {};
+  const currentMetadata = (result.tenant.metadata as Record<string, unknown>) ?? {};
   const updatedMetadata = { ...currentMetadata, ...body.data };
 
-  const updated = await storage.updateTenant(tenantId, { metadata: updatedMetadata });
+  const updated = await result.storage.updateTenant(result.tenantId, { metadata: updatedMetadata });
   if (!updated) return c.json({ error: 'Update failed' }, 500);
 
   ledgerLog(c, {
     entityType: 'audit',
     action: 'tenant.settings_updated',
-    metadata: { tenantId, changes: Object.keys(body.data), actorId: userId },
+    metadata: { tenantId: result.tenantId, changes: Object.keys(body.data), actorId: result.userId },
   }, c.env);
 
   return c.json(updated);
-});
-
-// GET /api/tenants/:id/settings — get tenant settings (classification flags, etc.)
-tenantRoutes.get('/api/tenants/:id/settings', async (c) => {
-  const storage = c.get('storage');
-  const userId = c.get('userId');
-  const tenantId = c.req.param('id');
-
-  const memberships = await storage.getUserTenants(userId);
-  const membership = memberships.find((item) => item.tenant.id === tenantId);
-  if (!membership) return c.json({ error: 'Tenant not found' }, 404);
-
-  const tenant = await storage.getTenant(tenantId);
-  if (!tenant) return c.json({ error: 'Tenant not found' }, 404);
-
-  const metadata = (tenant.metadata as Record<string, unknown>) ?? {};
-  return c.json({
-    bulkAcceptDisabled: metadata.bulkAcceptDisabled ?? false,
-  });
 });
