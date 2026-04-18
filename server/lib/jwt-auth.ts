@@ -54,7 +54,18 @@ export async function verifyChittyAuthJWT(
       algorithms: ['ES256'],
     });
     return payload as unknown as ChittyAuthClaims;
-  } catch {
+  } catch (err) {
+    // Expected: expired/invalid tokens (JWTExpired, JWTClaimValidationFailed, JWSSignatureVerificationFailed)
+    // Unexpected: network errors, JWKS fetch failures, malformed responses
+    const isExpectedJoseError = err instanceof Error && (
+      err.name === 'JWTExpired' ||
+      err.name === 'JWTClaimValidationFailed' ||
+      err.name === 'JWSSignatureVerificationFailed' ||
+      err.name === 'JWTInvalid'
+    );
+    if (!isExpectedJoseError) {
+      console.error('[jwt-auth] Unexpected verification failure:', err);
+    }
     return null;
   }
 }

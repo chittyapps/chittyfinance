@@ -62,7 +62,13 @@ export const hybridAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
 
     // Resolve ChittyID → local user
     const storage = c.get('storage');
-    const user = await storage.getUserByChittyId(claims.sub);
+    let user;
+    try {
+      user = await storage.getUserByChittyId(claims.sub);
+    } catch (err) {
+      console.error('[hybridAuth] Failed to resolve ChittyID to user:', claims.sub, err);
+      return c.json({ error: 'internal_error', message: 'Session verification failed' }, 500);
+    }
     if (!user) {
       deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
       return c.json({ error: 'user_not_found', message: 'No local account linked to this ChittyID' }, 401);

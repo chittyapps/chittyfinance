@@ -169,7 +169,9 @@ chittyIdAuthRoutes.get('/api/auth/chittyid/callback', async (c) => {
     if (payload.exp) {
       maxAge = Math.max(payload.exp - Math.floor(Date.now() / 1000), 300);
     }
-  } catch { /* use default maxAge */ }
+  } catch (err) {
+    console.warn('[chittyid-auth] Could not parse JWT exp for cookie maxAge, using 7-day default:', err);
+  }
 
   setCookie(c, SESSION_COOKIE_NAME, `${JWT_COOKIE_PREFIX}${jwtToken}`, {
     path: '/',

@@ -173,7 +173,7 @@ function ScheduleETab({ workspace, onWorkspaceChange }: {
 }) {
   // Discovery query — all data, cached, populates filter options
   const discoveryParams: TaxReportParams = { taxYear: workspace.taxYear, includeDescendants: true };
-  const { data: discoveryData } = useScheduleEReport(discoveryParams);
+  const { data: discoveryData, error: discoveryError } = useScheduleEReport(discoveryParams);
 
   // Filtered query — only when filters active
   const hasPropertyFilter = workspace.selectedPropertyIds.size > 0;
@@ -186,7 +186,7 @@ function ScheduleETab({ workspace, onWorkspaceChange }: {
     propertyIds: hasPropertyFilter ? [...workspace.selectedPropertyIds] : undefined,
     tenantIds: hasEntityFilter ? [...workspace.selectedTenantIds] : undefined,
   } : null;
-  const { data: filteredData, isLoading: filteredLoading } = useScheduleEReport(filteredParams);
+  const { data: filteredData, isLoading: filteredLoading, error: filteredError } = useScheduleEReport(filteredParams);
 
   // Use filtered result when filters active, otherwise discovery result
   const data = hasAnyFilter ? filteredData : discoveryData;
@@ -205,6 +205,8 @@ function ScheduleETab({ workspace, onWorkspaceChange }: {
 
   const netIncome = data ? data.properties.reduce((sum, p) => sum + p.netIncome, 0) + data.entityLevelTotal : null;
 
+  const error = hasAnyFilter ? filteredError : discoveryError;
+  if (error) return <div className="cf-card p-4 text-sm text-rose-400">Failed to load Schedule E report.</div>;
   if (!discoveryData && isLoading) return <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">Loading Schedule E...</div>;
 
   return (

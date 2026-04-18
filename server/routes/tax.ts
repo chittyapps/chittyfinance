@@ -97,12 +97,19 @@ taxRoutes.get('/api/reports/tax/schedule-e', async (c) => {
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
 
+  // Validate inputs (400 on bad params)
+  let taxYear: number, filterPropertyIds: string[] | undefined, filterTenantIds: string[] | undefined;
   try {
-    const taxYear = parseTaxYear(c.req.query('taxYear'));
-    const includeDescendants = parseBool(c.req.query('includeDescendants'), true);
-    const filterPropertyIds = parseUuidList(c.req.query('propertyIds'));
-    const filterTenantIds = parseUuidList(c.req.query('tenantIds'));
+    taxYear = parseTaxYear(c.req.query('taxYear'));
+    filterPropertyIds = parseUuidList(c.req.query('propertyIds'));
+    filterTenantIds = parseUuidList(c.req.query('tenantIds'));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : 'Invalid parameters' }, 400);
+  }
 
+  const includeDescendants = parseBool(c.req.query('includeDescendants'), true);
+
+  try {
     const { transactions, tenantInfos, propertyInfos } = await loadTaxData(
       storage, tenantId, taxYear, includeDescendants,
       filterPropertyIds, filterTenantIds,
@@ -117,9 +124,8 @@ taxRoutes.get('/api/reports/tax/schedule-e', async (c) => {
 
     return c.json(report);
   } catch (error) {
-    return c.json({
-      error: error instanceof Error ? error.message : 'Failed to generate Schedule E report',
-    }, 400);
+    console.error('[tax] Schedule E report generation failed:', error);
+    return c.json({ error: 'Internal error generating report' }, 500);
   }
 });
 
