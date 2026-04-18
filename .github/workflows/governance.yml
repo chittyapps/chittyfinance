@@ -95,7 +95,22 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.payload.pull_request.number
             });
-            const humanApprovals = reviews.filter(r => r.state === 'APPROVED' && !r.user.login.includes('[bot]'));
+            const latestReviewByUser = new Map();
+            for (const review of reviews) {
+              if (!review.user || review.user.login.includes('[bot]')) {
+                continue;
+              }
+              const existing = latestReviewByUser.get(review.user.login);
+              if (
+                !existing ||
+                new Date(review.submitted_at).getTime() > new Date(existing.submitted_at).getTime()
+              ) {
+                latestReviewByUser.set(review.user.login, review);
+              }
+            }
+            const humanApprovals = Array.from(latestReviewByUser.values()).filter(
+              review => review.state === 'APPROVED'
+            );
             const required = 1;
             if (humanApprovals.length < required) {
               core.setFailed(`Requires at least ${required} human approval(s). Current: ${humanApprovals.length}`);
