@@ -17,7 +17,7 @@ on:
       - 'release/**'
 
 env:
-  GOVERNANCE_REF: 8cd6fe0f29268b256368bdfc9b37d4745cc3f380
+  GOVERNANCE_REF: 83a7d1da1cfa5041f18450a6d43ff336068285de
 
 permissions: {}
 
@@ -131,6 +131,8 @@ PY
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
+            const path = require('path');
             const reviews = await github.paginate(github.rest.pulls.listReviews, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -156,6 +158,38 @@ PY
             const required = 1;
             if (humanApprovals.length < required) {
               core.setFailed(`Requires at least ${required} human approval(s). Current: ${humanApprovals.length}`);
+              return;
+            }
+
+            const workspace = process.env.GITHUB_WORKSPACE || '.';
+            const ownerFile = ['CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS']
+              .find(file => fs.existsSync(path.join(workspace, file)));
+            if (!ownerFile) {
+              core.setFailed('Missing CODEOWNERS');
+              return;
+            }
+
+            const ownerContent = fs.readFileSync(path.join(workspace, ownerFile), 'utf8');
+            const individualOwners = new Set();
+            for (const rawLine of ownerContent.split('\n')) {
+              const line = rawLine.replace(/#.*/, '').trim();
+              if (!line) continue;
+              for (const token of line.split(/\s+/).slice(1)) {
+                if (!token.startsWith('@') || token.includes('/')) continue;
+                individualOwners.add(token.slice(1).toLowerCase());
+              }
+            }
+
+            if (individualOwners.size === 0) {
+              core.setFailed(`No individual CODEOWNERS entries found in ${ownerFile}; add at least one @username owner for enforcement.`);
+              return;
+            }
+
+            const codeOwnerApprovals = humanApprovals.filter(review =>
+              individualOwners.has(review.user.login.toLowerCase())
+            );
+            if (codeOwnerApprovals.length < 1) {
+              core.setFailed('Requires at least 1 approval from an individual CODEOWNER listed in CODEOWNERS.');
             }
 
   hardening:
