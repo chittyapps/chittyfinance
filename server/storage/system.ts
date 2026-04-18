@@ -180,6 +180,15 @@ export class SystemStorage {
     return row;
   }
 
+  async updateTenant(id: string, data: { metadata: Record<string, unknown> }) {
+    const [row] = await this.db
+      .update(schema.tenants)
+      .set({ metadata: data.metadata, updatedAt: new Date() })
+      .where(eq(schema.tenants.id, id))
+      .returning();
+    return row;
+  }
+
   async getTenantBySlug(slug: string) {
     const [row] = await this.db.select().from(schema.tenants).where(eq(schema.tenants.slug, slug));
     return row;
