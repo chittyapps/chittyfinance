@@ -3,16 +3,10 @@ import { setCookie } from 'hono/cookie';
 import type { HonoEnv } from '../env';
 import { createDb } from '../db/connection';
 import { SystemStorage } from '../storage/system';
-import { SESSION_COOKIE_NAME, SESSION_TTL } from '../lib/session';
+import { SESSION_COOKIE_NAME, JWT_COOKIE_PREFIX } from '../lib/session';
 import { generateOAuthState, validateOAuthState } from '../lib/oauth-state-edge';
 
 const CHITTYAUTH_BASE = 'https://auth.chitty.cc';
-
-function generateSessionId(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 /** Generate PKCE code_verifier + code_challenge (S256) */
 async function generatePKCE(): Promise<{ verifier: string; challenge: string }> {
@@ -160,18 +154,29 @@ chittyIdAuthRoutes.get('/api/auth/chittyid/callback', async (c) => {
     return c.redirect('/login?error=account_disabled');
   }
 
-  // Create session (same path as password login)
-  const sessionId = generateSessionId();
-  await kv.put(`session:${sessionId}`, JSON.stringify({ userId: user.id }), {
-    expirationTtl: SESSION_TTL,
-  });
+  // Set JWT cookie (the ChittyAuth access_token is the JWT)
+  const jwtToken = tokenData.access_token;
+  if (!jwtToken) {
+    console.error('[chittyid-auth] No access_token in token response');
+    return c.redirect('/login?error=no_token');
+  }
 
-  setCookie(c, SESSION_COOKIE_NAME, sessionId, {
+  // Derive maxAge from JWT exp claim (local decode, no verification needed here)
+  let maxAge = 60 * 60 * 24 * 7; // default 7 days
+  try {
+    const [, payloadB64] = jwtToken.split('.');
+    const payload = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/')));
+    if (payload.exp) {
+      maxAge = Math.max(payload.exp - Math.floor(Date.now() / 1000), 300);
+    }
+  } catch { /* use default maxAge */ }
+
+  setCookie(c, SESSION_COOKIE_NAME, `${JWT_COOKIE_PREFIX}${jwtToken}`, {
     path: '/',
     httpOnly: true,
     secure: new URL(c.req.url).protocol === 'https:',
     sameSite: 'Lax',
-    maxAge: SESSION_TTL,
+    maxAge,
   });
 
   return c.redirect('/');
