@@ -16,6 +16,9 @@ on:
       - production
       - 'release/**'
 
+env:
+  GOVERNANCE_REF: 8cd6fe0f29268b256368bdfc9b37d4745cc3f380
+
 permissions: {}
 
 jobs:
@@ -33,20 +36,48 @@ jobs:
 
       - name: Fetch Governance Rules
         run: |
-          # Public distribution repo (rules are signed; safe to publish)
-          # Pin to an immutable upstream revision so rules.json and CANON_PUBLIC_KEY
-          # cannot both be replaced via changes to a moving branch ref.
-          GOVERNANCE_REF="0123456789abcdef0123456789abcdef01234567"
-          curl -fsSL "https://raw.githubusercontent.com/chittyfoundation/.github/${GOVERNANCE_REF}/governance/rules.json" -o rules.json
-          curl -fsSL "https://raw.githubusercontent.com/chittyfoundation/.github/${GOVERNANCE_REF}/governance/CANON_PUBLIC_KEY" -o CANON_PUBLIC_KEY
+          fetch_file() {
+            local url="$1"
+            local output="$2"
+            local label="$3"
+            curl --fail --show-error --silent --location \
+              --retry 5 \
+              --retry-delay 2 \
+              --retry-max-time 30 \
+              --retry-all-errors \
+              "$url" -o "$output" || {
+                echo "::error::Unable to fetch ${label}: $url"
+                exit 1
+              }
+          }
+
+          # Pin governance artifacts to immutable revision for stable trust root.
+          fetch_file "https://raw.githubusercontent.com/chittyfoundation/.github/${GOVERNANCE_REF}/governance/rules.json" "rules.json" "governance rules"
 
       - name: Verify Rules Signature
         run: |
+          fetch_file() {
+            local url="$1"
+            local output="$2"
+            local label="$3"
+            curl --fail --show-error --silent --location \
+              --retry 5 \
+              --retry-delay 2 \
+              --retry-max-time 30 \
+              --retry-all-errors \
+              "$url" -o "$output" || {
+                echo "::error::Unable to fetch ${label}: $url"
+                exit 1
+              }
+          }
+
           SIGNATURE=$(jq -r '.signature.signature // empty' rules.json)
           if [[ -z "$SIGNATURE" ]]; then
             echo "::error::Governance rules are NOT SIGNED. Human must run sign-rules.sh and publish CANON_PUBLIC_KEY + signed rules.json."
             exit 1
           fi
+
+          fetch_file "https://raw.githubusercontent.com/chittyfoundation/.github/${GOVERNANCE_REF}/governance/CANON_PUBLIC_KEY" "CANON_PUBLIC_KEY" "governance public key"
 
           CANONICAL=$(jq -cS 'del(.signature.signature) | del(.signature.signed_at)' rules.json)
           echo -n "$CANONICAL" > canonical.json
@@ -72,8 +103,10 @@ jobs:
           PROTECTED_PATTERNS=$(jq -r '.rules.protected_files.files[]' rules.json)
           VIOLATIONS=""
 
-          for pattern in $PROTECTED_PATTERNS; do
+          while IFS= read -r pattern; do
+            [[ -z "$pattern" ]] && continue
             while IFS= read -r file; do
+              [[ -z "$file" ]] && continue
               if python3 - "$pattern" "$file" <<'PY'
 import sys
 from pathlib import PurePosixPath
@@ -87,7 +120,7 @@ PY
                 VIOLATIONS="${VIOLATIONS}${file} matches protected pattern: ${pattern}\n"
               fi
             done <<< "$CHANGED_FILES"
-          done
+          done <<< "$PROTECTED_PATTERNS"
 
           if [[ -n "$VIOLATIONS" ]]; then
             echo "::warning::Protected files modified (extra scrutiny required):"
@@ -153,8 +186,8 @@ PY
               "$url" -o "$output" || fail "Unable to fetch ${label}: $url"
           }
 
-          OWNERS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/owners.json"
-          REQS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/repo_requirements.json"
+          OWNERS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/${GOVERNANCE_REF}/governance/owners.json"
+          REQS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/${GOVERNANCE_REF}/governance/repo_requirements.json"
           fetch_json "$OWNERS_URL" owners.json "ownership registry"
           fetch_json "$REQS_URL" repo_requirements.json "repo requirements"
 
