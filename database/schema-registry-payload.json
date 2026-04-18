@@ -1,0 +1,60 @@
+{
+  "database": "chittyfinance",
+  "description": "ChittyFinance multi-tenant financial management platform — COA, classification, and property accounting",
+  "owner": "chittyfinance",
+  "tables": [
+    {
+      "name": "chart_of_accounts",
+      "description": "REI Chart of Accounts with tenant-specific overrides. NULL tenant_id = global default (80 seeded).",
+      "columns": {
+        "id": { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "tenant_id": { "type": "uuid", "nullable": true, "references": "tenants.id", "description": "NULL = global default template" },
+        "code": { "type": "text", "nullable": false, "description": "4-digit account code (e.g. 5070)" },
+        "name": { "type": "text", "nullable": false },
+        "type": { "type": "text", "nullable": false, "enum": ["asset", "liability", "equity", "income", "expense"] },
+        "subtype": { "type": "text", "nullable": true, "enum": ["cash", "receivable", "fixed", "contra", "current", "long-term", "capital", "suspense", "non-deductible"] },
+        "description": { "type": "text", "nullable": true },
+        "schedule_e_line": { "type": "text", "nullable": true, "description": "IRS Schedule E line reference (e.g. Line 14)" },
+        "tax_deductible": { "type": "boolean", "nullable": false, "default": false },
+        "parent_code": { "type": "text", "nullable": true, "description": "Hierarchical grouping (e.g. 5100 → parent of 5110)" },
+        "is_active": { "type": "boolean", "nullable": false, "default": true },
+        "effective_date": { "type": "timestamp", "nullable": true },
+        "modified_by": { "type": "text", "nullable": true, "description": "L4 auditor who last changed this" },
+        "metadata": { "type": "jsonb", "nullable": true, "description": "Keywords, aliases for keyword matching" },
+        "created_at": { "type": "timestamp", "nullable": false, "default": "now()" },
+        "updated_at": { "type": "timestamp", "nullable": false, "default": "now()" }
+      },
+      "indexes": [
+        { "name": "coa_tenant_idx", "columns": ["tenant_id"] },
+        { "name": "coa_code_idx", "columns": ["code"] },
+        { "name": "coa_type_idx", "columns": ["type"] },
+        { "name": "coa_tenant_code_idx", "columns": ["tenant_id", "code"], "unique": true }
+      ]
+    },
+    {
+      "name": "classification_audit",
+      "description": "Immutable audit trail for every COA classification change. Actions: suggest, re-suggest, classify, reclassify, reconcile, unreconcile.",
+      "columns": {
+        "id": { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "transaction_id": { "type": "uuid", "nullable": false, "references": "transactions.id" },
+        "tenant_id": { "type": "uuid", "nullable": false, "references": "tenants.id", "description": "Denormalized for tenant-scoped queries" },
+        "previous_coa_code": { "type": "text", "nullable": true },
+        "new_coa_code": { "type": "text", "nullable": false },
+        "action": { "type": "text", "nullable": false, "enum": ["suggest", "re-suggest", "classify", "reclassify", "reconcile", "unreconcile"] },
+        "trust_level": { "type": "text", "nullable": false, "enum": ["L0", "L1", "L2", "L3", "L4"] },
+        "actor_id": { "type": "text", "nullable": false, "description": "User UUID, agent session ID, or 'auto:keyword-match'/'auto:openai-gpt4o-mini'" },
+        "actor_type": { "type": "text", "nullable": false, "enum": ["user", "agent", "system"] },
+        "confidence": { "type": "numeric(4,3)", "nullable": true, "description": "0.000-1.000 at time of action" },
+        "reason": { "type": "text", "nullable": true },
+        "metadata": { "type": "jsonb", "nullable": true },
+        "created_at": { "type": "timestamp", "nullable": false, "default": "now()" }
+      },
+      "indexes": [
+        { "name": "classification_audit_transaction_idx", "columns": ["transaction_id"] },
+        { "name": "classification_audit_tenant_idx", "columns": ["tenant_id"] },
+        { "name": "classification_audit_actor_idx", "columns": ["actor_id"] },
+        { "name": "classification_audit_trust_level_idx", "columns": ["trust_level"] }
+      ]
+    }
+  ]
+}

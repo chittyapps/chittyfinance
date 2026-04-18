@@ -41,6 +41,34 @@ const mercuryWebhookEnvelopeSchema = z.object({
     .optional(),
 });
 
+/**
+ * Wave webhook transaction payload.
+ *
+ * Wave uses GraphQL push notifications. ChittyConnect normalizes to this
+ * shape before forwarding, same as Mercury.
+ */
+const waveTransactionSchema = z.object({
+  tenantId: z.string().uuid(),
+  accountId: z.string().uuid(),
+  waveTransactionId: z.string(),
+  description: z.string(),
+  amount: z.number(),
+  category: z.string().optional().nullable(),
+  postedAt: z.string(),
+  payee: z.string().optional().nullable(),
+});
+
+const waveWebhookEnvelopeSchema = z.object({
+  id: z.string().optional(),
+  eventId: z.string().optional(),
+  type: z.string().optional(),
+  data: z
+    .object({
+      transaction: waveTransactionSchema.optional(),
+    })
+    .optional(),
+});
+
 // POST /api/webhooks/stripe — Stripe webhook endpoint
 webhookRoutes.post('/api/webhooks/stripe', async (c) => {
   const secret = c.env.STRIPE_WEBHOOK_SECRET;
@@ -221,4 +249,94 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     },
     201,
   );
+});
+
+// POST /api/webhooks/wave — Wave Accounting webhook with real-time classification
+// Same flow as Mercury: service-auth → zod → KV dedup → classify → ChittySchema advisory → persist
+webhookRoutes.post('/api/webhooks/wave', async (c) => {
+  const expected = c.env.CHITTY_AUTH_SERVICE_TOKEN;
+  if (!expected) return c.json({ error: 'auth_not_configured' }, 500);
+
+  const auth = c.req.header('authorization') ?? '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token || token !== expected) return c.json({ error: 'unauthorized' }, 401);
+
+  const rawBody = await c.req.json().catch(() => null);
+  const envelope = waveWebhookEnvelopeSchema.safeParse(rawBody);
+  if (!envelope.success) {
+    return c.json({ error: 'invalid_envelope', details: envelope.error.flatten() }, 400);
+  }
+
+  const eventId = c.req.header('x-event-id') || envelope.data.id || envelope.data.eventId;
+  if (!eventId) return c.json({ error: 'missing_event_id' }, 400);
+
+  const kv = c.env.FINANCE_KV;
+  const dedupKey = `webhook:wave:${eventId}`;
+  const existing = await kv.get(dedupKey);
+  if (existing) return c.json({ received: true, duplicate: true }, 202);
+  await kv.put(dedupKey, JSON.stringify(rawBody || {}), { expirationTtl: 604800 });
+
+  const tx = envelope.data.data?.transaction;
+  if (!tx) return c.json({ received: true }, 202);
+
+  const suggestedCoaCode = findAccountCode(tx.description, tx.category ?? undefined);
+  const isSuspense = suggestedCoaCode === '9010';
+  const classificationConfidence = isSuspense ? '0.100' : '0.700';
+  const externalId = `wave:${tx.waveTransactionId}`;
+
+  const schemaResult = await validateRow(c.env, 'FinancialTransactionsInsertSchema', {
+    tenantId: tx.tenantId,
+    accountId: tx.accountId,
+    amount: String(tx.amount),
+    type: tx.amount >= 0 ? 'income' : 'expense',
+    description: tx.description,
+    date: tx.postedAt,
+    externalId,
+  });
+
+  if (!schemaResult.ok && schemaResult.errors) {
+    console.warn('[webhook:wave] ChittySchema validation failed (advisory)', { eventId, errors: schemaResult.errors });
+  }
+
+  const db = createDb(c.env.DATABASE_URL);
+  const storage = new SystemStorage(db);
+
+  const dupRow = await storage.getTransactionByExternalId(externalId, tx.tenantId);
+  if (dupRow) return c.json({ received: true, duplicate: true, transactionId: dupRow.id }, 202);
+
+  const created = await storage.createTransaction({
+    tenantId: tx.tenantId,
+    accountId: tx.accountId,
+    amount: String(tx.amount),
+    type: tx.amount >= 0 ? 'income' : 'expense',
+    category: tx.category ?? null,
+    description: tx.description,
+    date: new Date(tx.postedAt),
+    payee: tx.payee ?? null,
+    externalId,
+    suggestedCoaCode,
+    classificationConfidence,
+    metadata: { source: 'wave_webhook', waveTransactionId: tx.waveTransactionId, eventId },
+  });
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'webhook.wave.transaction_ingested',
+    metadata: {
+      tenantId: tx.tenantId,
+      accountId: tx.accountId,
+      transactionId: created.id,
+      suggestedCoaCode,
+      confidence: classificationConfidence,
+      schemaAdvisory: schemaResult.advisory,
+    },
+  }, c.env);
+
+  return c.json({
+    received: true,
+    transactionId: created.id,
+    suggestedCoaCode,
+    classificationConfidence,
+    schemaAdvisory: schemaResult.advisory,
+  }, 201);
 });
