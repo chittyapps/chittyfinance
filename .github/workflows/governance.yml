@@ -16,14 +16,15 @@ on:
       - production
       - 'release/**'
 
-permissions:
-  contents: read
-  pull-requests: read
+permissions: {}
 
 jobs:
   governance:
     name: PR Governance Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout PR
         uses: actions/checkout@v4
@@ -100,6 +101,8 @@ jobs:
   hardening:
     name: Portfolio Hardening Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout PR
         uses: actions/checkout@v4
