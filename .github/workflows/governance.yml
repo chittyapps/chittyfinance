@@ -155,8 +155,11 @@ jobs:
           fi
 
           # Eligibility gating (warn-only until registry is populated)
-          OWNERS_FILE="CODEOWNERS"
-          [[ -f ".github/CODEOWNERS" ]] && OWNERS_FILE=".github/CODEOWNERS"
+          OWNERS_FILE=""
+          [[ -f "CODEOWNERS" ]] && OWNERS_FILE="CODEOWNERS"
+          [[ -z "$OWNERS_FILE" && -f ".github/CODEOWNERS" ]] && OWNERS_FILE=".github/CODEOWNERS"
+          [[ -z "$OWNERS_FILE" && -f "docs/CODEOWNERS" ]] && OWNERS_FILE="docs/CODEOWNERS"
+          [[ -n "$OWNERS_FILE" ]] || exit 0
           PRINCIPALS=$(sed 's/#.*$//' "$OWNERS_FILE" | tr '\t' ' ' | tr ' ' '\n' | grep '^@' | sort -u || true)
           [[ -n "$PRINCIPALS" ]] || exit 0
 
