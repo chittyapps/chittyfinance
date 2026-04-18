@@ -48,7 +48,8 @@ const storageMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
   await next();
 };
 
-const authAndContext: MiddlewareHandler<HonoEnv>[] = [hybridAuth, storageMiddleware, callerContext];
+// storageMiddleware runs first so hybridAuth can resolve JWT → chittyId → userId
+const authAndContext: MiddlewareHandler<HonoEnv>[] = [storageMiddleware, hybridAuth, callerContext];
 const protectedRoute: MiddlewareHandler<HonoEnv>[] = [...authAndContext, tenantMiddleware];
 
 export function createApp() {

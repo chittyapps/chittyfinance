@@ -3,8 +3,9 @@ import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 import type { HonoEnv } from '../env';
 import { createDb } from '../db/connection';
 import { SystemStorage } from '../storage/system';
-import { SESSION_COOKIE_NAME, SESSION_TTL, parseSession } from '../lib/session';
+import { SESSION_COOKIE_NAME, SESSION_TTL, parseSession, isJwtSession, extractJwtFromCookie } from '../lib/session';
 import { verifyPassword } from '../lib/password';
+import { verifyChittyAuthJWT } from '../lib/jwt-auth';
 import { ledgerLog } from '../lib/ledger-client';
 
 function generateSessionId(): string {
@@ -15,16 +16,43 @@ function generateSessionId(): string {
 
 export const sessionRoutes = new Hono<HonoEnv>();
 
-// GET /api/session — return current user from session cookie
+// GET /api/session — return current user from session cookie (JWT or KV)
 sessionRoutes.get('/api/session', async (c) => {
-  const kv = c.env.FINANCE_KV;
-  const sessionId = getCookie(c, SESSION_COOKIE_NAME);
-
-  if (!sessionId) {
+  const cookieValue = getCookie(c, SESSION_COOKIE_NAME);
+  if (!cookieValue) {
     return c.json({ error: 'not_authenticated' }, 401);
   }
 
-  const raw = await kv.get(`session:${sessionId}`);
+  const db = createDb(c.env.DATABASE_URL);
+  const storage = new SystemStorage(db);
+
+  // Path A: JWT session (ChittyAuth-issued token)
+  if (isJwtSession(cookieValue)) {
+    const token = extractJwtFromCookie(cookieValue);
+    const claims = await verifyChittyAuthJWT(token, c.env);
+    if (!claims) {
+      deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
+      return c.json({ error: 'session_expired' }, 401);
+    }
+
+    const user = await storage.getUserByChittyId(claims.sub);
+    if (!user) {
+      deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
+      return c.json({ error: 'user_not_found' }, 401);
+    }
+
+    return c.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      chittyId: user.chittyId || null,
+    });
+  }
+
+  // Path B: KV session (legacy or password-login)
+  const kv = c.env.FINANCE_KV;
+  const raw = await kv.get(`session:${cookieValue}`);
   if (!raw) {
     deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
     return c.json({ error: 'session_expired' }, 401);
@@ -32,17 +60,14 @@ sessionRoutes.get('/api/session', async (c) => {
 
   const sessionData = parseSession(raw);
   if (!sessionData) {
-    await kv.delete(`session:${sessionId}`);
+    await kv.delete(`session:${cookieValue}`);
     deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
     return c.json({ error: 'session_expired' }, 401);
   }
 
-  const db = createDb(c.env.DATABASE_URL);
-  const storage = new SystemStorage(db);
   const user = await storage.getUser(sessionData.userId);
-
   if (!user) {
-    await kv.delete(`session:${sessionId}`);
+    await kv.delete(`session:${cookieValue}`);
     deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
     return c.json({ error: 'user_not_found' }, 401);
   }
@@ -56,7 +81,7 @@ sessionRoutes.get('/api/session', async (c) => {
   });
 });
 
-// POST /api/session — login with email + password
+// POST /api/session — login with email + password (KV session, unchanged)
 sessionRoutes.post('/api/session', async (c) => {
   const body = await c.req.json<{ email: string; password: string }>().catch(() => null);
   if (!body?.email || !body?.password) {
@@ -111,13 +136,16 @@ sessionRoutes.post('/api/session', async (c) => {
   });
 });
 
-// DELETE /api/session — logout
+// DELETE /api/session — logout (handles both JWT and KV sessions)
 sessionRoutes.delete('/api/session', async (c) => {
-  const kv = c.env.FINANCE_KV;
-  const sessionId = getCookie(c, SESSION_COOKIE_NAME);
+  const cookieValue = getCookie(c, SESSION_COOKIE_NAME);
 
-  if (sessionId) {
-    await kv.delete(`session:${sessionId}`);
+  if (cookieValue) {
+    // JWT sessions have no KV entry — just clear the cookie
+    if (!isJwtSession(cookieValue)) {
+      const kv = c.env.FINANCE_KV;
+      await kv.delete(`session:${cookieValue}`);
+    }
     deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
   }
 

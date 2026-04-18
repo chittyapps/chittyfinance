@@ -2,6 +2,8 @@ export interface Env {
   DATABASE_URL: string;
   CHITTY_AUTH_SERVICE_TOKEN: string;
   CHITTY_AUTH_JWKS_URL?: string;
+  CHITTY_AUTH_ISSUER?: string;
+  CHITTY_AUTH_AUDIENCE?: string;
   CHITTYCONNECT_API_BASE?: string;
   OPENAI_API_KEY?: string;
   STRIPE_SECRET_KEY?: string;
