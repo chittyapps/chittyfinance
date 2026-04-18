@@ -165,7 +165,7 @@ PY
             const ownerFile = ['CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS']
               .find(file => fs.existsSync(path.join(workspace, file)));
             if (!ownerFile) {
-              core.setFailed('Missing CODEOWNERS');
+              core.setFailed('Missing CODEOWNERS (checked: CODEOWNERS, .github/CODEOWNERS, docs/CODEOWNERS)');
               return;
             }
 
@@ -175,6 +175,8 @@ PY
               const line = rawLine.replace(/#.*/, '').trim();
               if (!line) continue;
               for (const token of line.split(/\s+/).slice(1)) {
+                // Enforce individual @username identities only; team owners (@org/team)
+                // are excluded because reviewer-to-team membership cannot be resolved here.
                 if (!token.startsWith('@') || token.includes('/')) continue;
                 individualOwners.add(token.slice(1).toLowerCase());
               }
