@@ -34,8 +34,11 @@ jobs:
       - name: Fetch Governance Rules
         run: |
           # Public distribution repo (rules are signed; safe to publish)
-          curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/rules.json" -o rules.json
-          curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/CANON_PUBLIC_KEY" -o CANON_PUBLIC_KEY
+          # Pin to an immutable upstream revision so rules.json and CANON_PUBLIC_KEY
+          # cannot both be replaced via changes to a moving branch ref.
+          GOVERNANCE_REF="0123456789abcdef0123456789abcdef01234567"
+          curl -fsSL "https://raw.githubusercontent.com/chittyfoundation/.github/${GOVERNANCE_REF}/governance/rules.json" -o rules.json
+          curl -fsSL "https://raw.githubusercontent.com/chittyfoundation/.github/${GOVERNANCE_REF}/governance/CANON_PUBLIC_KEY" -o CANON_PUBLIC_KEY
 
       - name: Verify Rules Signature
         run: |
