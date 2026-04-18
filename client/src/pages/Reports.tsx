@@ -1,4 +1,5 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useState, useCallback } from 'react';
+import ScheduleEWorkspaceControls from '@/components/reports/ScheduleEWorkspaceControls';
 import { useTenantId } from '@/contexts/TenantContext';
 import {
   useConsolidatedReport, useRunTaxAutomation,
@@ -166,16 +167,62 @@ function LineSummarySection({ summary }: { summary: ScheduleELineSummaryItem[] }
   );
 }
 
-function ScheduleETab({ taxYear }: { taxYear: number }) {
-  const params: TaxReportParams = { taxYear, includeDescendants: true };
-  const { data, isLoading, error } = useScheduleEReport(params);
+function ScheduleETab({ workspace, onWorkspaceChange }: {
+  workspace: { taxYear: number; selectedPropertyIds: Set<string>; selectedTenantIds: Set<string> };
+  onWorkspaceChange: (ws: { taxYear: number; selectedPropertyIds: Set<string>; selectedTenantIds: Set<string> }) => void;
+}) {
+  // Discovery query — all data, cached, populates filter options
+  const discoveryParams: TaxReportParams = { taxYear: workspace.taxYear, includeDescendants: true };
+  const { data: discoveryData } = useScheduleEReport(discoveryParams);
 
-  if (isLoading) return <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">Loading Schedule E...</div>;
-  if (error) return <div className="cf-card p-4 text-sm text-rose-400">Failed to load Schedule E report.</div>;
-  if (!data) return null;
+  // Filtered query — only when filters active
+  const hasPropertyFilter = workspace.selectedPropertyIds.size > 0;
+  const hasEntityFilter = workspace.selectedTenantIds.size > 0;
+  const hasAnyFilter = hasPropertyFilter || hasEntityFilter;
+
+  const filteredParams: TaxReportParams | null = hasAnyFilter ? {
+    taxYear: workspace.taxYear,
+    includeDescendants: true,
+    propertyIds: hasPropertyFilter ? [...workspace.selectedPropertyIds] : undefined,
+    tenantIds: hasEntityFilter ? [...workspace.selectedTenantIds] : undefined,
+  } : null;
+  const { data: filteredData, isLoading: filteredLoading } = useScheduleEReport(filteredParams);
+
+  // Use filtered result when filters active, otherwise discovery result
+  const data = hasAnyFilter ? filteredData : discoveryData;
+  const isLoading = hasAnyFilter ? filteredLoading : !discoveryData;
+
+  // Derive workspace options from discovery data
+  const availableProperties = (discoveryData?.properties ?? []).map((p) => ({
+    propertyId: p.propertyId,
+    propertyName: p.propertyName,
+    address: p.address,
+    tenantName: p.tenantName,
+  }));
+  const availableEntities = Array.from(
+    new Map((discoveryData?.properties ?? []).map((p) => [p.tenantId, { tenantId: p.tenantId, tenantName: p.tenantName, tenantType: 'property' }])).values(),
+  );
+
+  const netIncome = data ? data.properties.reduce((sum, p) => sum + p.netIncome, 0) + data.entityLevelTotal : null;
+
+  if (!discoveryData && isLoading) return <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">Loading Schedule E...</div>;
 
   return (
     <div className="space-y-4">
+      {/* Workspace controls */}
+      <ScheduleEWorkspaceControls
+        state={workspace}
+        onChange={onWorkspaceChange}
+        availableProperties={availableProperties}
+        availableEntities={availableEntities}
+        netIncome={netIncome}
+        isLoading={isLoading && hasAnyFilter}
+      />
+
+      {!data ? (
+        <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">Loading filtered report...</div>
+      ) : (
+        <>
       {/* Classification quality banner */}
       <ClassificationQualityBanner quality={data.classificationQuality} />
 
@@ -269,7 +316,9 @@ function ScheduleETab({ taxYear }: { taxYear: number }) {
       )}
 
       {data.properties.length === 0 && (
-        <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">No property transactions found for {taxYear}.</div>
+        <div className="cf-card p-8 text-center text-sm text-[hsl(var(--cf-text-muted))]">No property transactions found for {workspace.taxYear}.</div>
+      )}
+        </>
       )}
     </div>
   );
@@ -428,6 +477,15 @@ export default function Reports() {
   const [includeDescendants, setIncludeDescendants] = useState(true);
   const [includeIntercompany, setIncludeIntercompany] = useState(false);
   const [taxYear, setTaxYear] = useState(currentYear);
+  const [workspace, setWorkspace] = useState({
+    taxYear: currentYear,
+    selectedPropertyIds: new Set<string>(),
+    selectedTenantIds: new Set<string>(),
+  });
+  const handleWorkspaceChange = useCallback((ws: typeof workspace) => {
+    setWorkspace(ws);
+    setTaxYear(ws.taxYear);
+  }, []);
 
   const params: ReportParams | null = tenantId ? { startDate, endDate, includeDescendants, includeIntercompany } : null;
   const { data, isLoading, error } = useConsolidatedReport(activeTab === 'consolidated' ? params : null);
@@ -479,7 +537,14 @@ export default function Reports() {
   };
 
   const handleExportTaxPackage = (format: 'csv' | 'json') => {
-    exportTaxPkg.mutate({ taxYear, format }, {
+    const hasPropertyFilter = workspace.selectedPropertyIds.size > 0;
+    const hasEntityFilter = workspace.selectedTenantIds.size > 0;
+    exportTaxPkg.mutate({
+      taxYear,
+      format,
+      propertyIds: hasPropertyFilter ? [...workspace.selectedPropertyIds] : undefined,
+      tenantIds: hasEntityFilter ? [...workspace.selectedTenantIds] : undefined,
+    }, {
       onSuccess: () => toast({ title: `Tax package exported (${format.toUpperCase()})` }),
       onError: () => toast({ title: 'Export failed', variant: 'destructive' }),
     });
@@ -556,8 +621,8 @@ export default function Reports() {
         </div>
       )}
 
-      {/* Controls — tax tabs */}
-      {activeTab !== 'consolidated' && (
+      {/* Controls — Form 1065 tab only (Schedule E has its own workspace controls) */}
+      {activeTab === 'form-1065' && (
         <div className="cf-card p-4 flex gap-4 items-end">
           <div>
             <Label className="text-xs text-[hsl(var(--cf-text-muted))]">Tax Year</Label>
@@ -575,7 +640,7 @@ export default function Reports() {
       )}
 
       {/* Schedule E Tab */}
-      {activeTab === 'schedule-e' && <ScheduleETab taxYear={taxYear} />}
+      {activeTab === 'schedule-e' && <ScheduleETab workspace={workspace} onWorkspaceChange={handleWorkspaceChange} />}
 
       {/* Form 1065 / K-1 Tab */}
       {activeTab === 'form-1065' && <Form1065Tab taxYear={taxYear} />}

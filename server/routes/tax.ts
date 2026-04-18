@@ -29,15 +29,35 @@ function parseBool(value: unknown, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseUuidList(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  const ids = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (ids.length === 0) return undefined;
+  for (const id of ids) {
+    if (!UUID_RE.test(id)) throw new Error(`Invalid UUID in filter: ${id}`);
+  }
+  return ids;
+}
+
 async function loadTaxData(
   storage: any,
   tenantId: string,
   taxYear: number,
   includeDescendants: boolean,
+  filterPropertyIds?: string[],
+  filterTenantIds?: string[],
 ) {
   let tenantIds = includeDescendants
     ? await storage.getTenantDescendantIds(tenantId)
     : [tenantId];
+
+  // Narrow tenants if filter provided
+  if (filterTenantIds?.length) {
+    const allowed = new Set(filterTenantIds);
+    tenantIds = tenantIds.filter((id: string) => allowed.has(id));
+  }
 
   const startDateIso = `${taxYear}-01-01T00:00:00.000Z`;
   const endDateIso = `${taxYear}-12-31T23:59:59.999Z`;
@@ -55,13 +75,19 @@ async function loadTaxData(
     metadata: t.metadata,
   }));
 
-  const propertyInfos: PropertyInfo[] = properties.map((p: any) => ({
+  let propertyInfos: PropertyInfo[] = properties.map((p: any) => ({
     id: p.id,
     tenantId: p.tenantId,
     name: p.name,
     address: [p.address, p.city, p.state].filter(Boolean).join(', '),
     state: p.state || 'UNASSIGNED',
   }));
+
+  // Narrow properties if filter provided
+  if (filterPropertyIds?.length) {
+    const allowed = new Set(filterPropertyIds);
+    propertyInfos = propertyInfos.filter((p) => allowed.has(p.id));
+  }
 
   return { tenantIds, transactions, tenantInfos, propertyInfos };
 }
@@ -74,9 +100,12 @@ taxRoutes.get('/api/reports/tax/schedule-e', async (c) => {
   try {
     const taxYear = parseTaxYear(c.req.query('taxYear'));
     const includeDescendants = parseBool(c.req.query('includeDescendants'), true);
+    const filterPropertyIds = parseUuidList(c.req.query('propertyIds'));
+    const filterTenantIds = parseUuidList(c.req.query('tenantIds'));
 
     const { transactions, tenantInfos, propertyInfos } = await loadTaxData(
       storage, tenantId, taxYear, includeDescendants,
+      filterPropertyIds, filterTenantIds,
     );
 
     const report = buildScheduleEReport({
@@ -131,9 +160,12 @@ taxRoutes.get('/api/reports/tax/export', async (c) => {
     const taxYear = parseTaxYear(c.req.query('taxYear'));
     const format = (c.req.query('format') || 'csv').toLowerCase();
     const includeDescendants = parseBool(c.req.query('includeDescendants'), true);
+    const filterPropertyIds = parseUuidList(c.req.query('propertyIds'));
+    const filterTenantIds = parseUuidList(c.req.query('tenantIds'));
 
     const { transactions, tenantInfos, propertyInfos } = await loadTaxData(
       storage, tenantId, taxYear, includeDescendants,
+      filterPropertyIds, filterTenantIds,
     );
 
     const scheduleE = buildScheduleEReport({

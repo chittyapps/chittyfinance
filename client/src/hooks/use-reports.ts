@@ -110,6 +110,8 @@ export function useRunTaxAutomation() {
 export interface TaxReportParams {
   taxYear: number;
   includeDescendants?: boolean;
+  propertyIds?: string[];
+  tenantIds?: string[];
 }
 
 export interface ScheduleELineItem {
@@ -203,6 +205,8 @@ function buildTaxQueryString(params: TaxReportParams): string {
   const qs = new URLSearchParams();
   qs.set('taxYear', String(params.taxYear));
   if (params.includeDescendants !== undefined) qs.set('includeDescendants', String(params.includeDescendants));
+  if (params.propertyIds?.length) qs.set('propertyIds', params.propertyIds.join(','));
+  if (params.tenantIds?.length) qs.set('tenantIds', params.tenantIds.join(','));
   return qs.toString();
 }
 
