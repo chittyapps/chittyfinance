@@ -73,9 +73,17 @@ jobs:
           VIOLATIONS=""
 
           for pattern in $PROTECTED_PATTERNS; do
-            REGEX=$(echo "$pattern" | sed 's/\*\*/.*/' | sed 's/\*/.*/g')
             while IFS= read -r file; do
-              if [[ "$file" =~ $REGEX ]]; then
+              if python3 - "$pattern" "$file" <<'PY'
+import sys
+from pathlib import PurePosixPath
+
+pattern = sys.argv[1]
+file_path = sys.argv[2]
+
+sys.exit(0 if PurePosixPath(file_path).match(pattern) else 1)
+PY
+              then
                 VIOLATIONS="${VIOLATIONS}${file} matches protected pattern: ${pattern}\n"
               fi
             done <<< "$CHANGED_FILES"
