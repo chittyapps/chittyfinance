@@ -7,6 +7,7 @@ interface DiscoveryEnv {
   CHITTY_AUTH_SERVICE_TOKEN?: string;
   CHITTYCONNECT_API_TOKEN?: string;
   CHITTYCONNECT_SERVICE_TOKEN?: string;
+  CHITTY_ENV?: string;
 }
 
 const DISCOVERY_BASE = 'https://discovery.chitty.cc';
@@ -19,6 +20,8 @@ function getToken(env: DiscoveryEnv): string | undefined {
 }
 
 export async function registerWithDiscovery(env: DiscoveryEnv): Promise<boolean> {
+  if (env.CHITTY_ENV === 'test') return false;
+
   const token = getToken(env);
   if (!token) {
     console.warn('[discovery-client] No service token available — skipping registration');
@@ -71,6 +74,8 @@ export async function registerWithDiscovery(env: DiscoveryEnv): Promise<boolean>
 }
 
 export async function sendHeartbeat(env: DiscoveryEnv): Promise<boolean> {
+  if (env.CHITTY_ENV === 'test') return false;
+
   const token = getToken(env);
   if (!token) return false;
 

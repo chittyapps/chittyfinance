@@ -26,6 +26,7 @@ interface LedgerEnv {
   CHITTY_LEDGER_BASE?: string;
   CHITTY_AUTH_SERVICE_TOKEN?: string;
   CHITTYCONNECT_API_TOKEN?: string;
+  CHITTY_ENV?: string;
 }
 
 // ── Resolution ──
@@ -34,6 +35,8 @@ let _cached: { url: string; expires: number } | null = null;
 
 export async function resolveLedgerBase(env: LedgerEnv): Promise<string> {
   if (env.CHITTY_LEDGER_BASE) return env.CHITTY_LEDGER_BASE.replace(/\/$/, '');
+
+  if (env.CHITTY_ENV === 'test') return 'https://ledger.chitty.cc';
 
   if (_cached && _cached.expires > Date.now()) return _cached.url;
 
