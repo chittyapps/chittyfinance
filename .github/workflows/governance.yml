@@ -115,11 +115,22 @@ jobs:
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
           warn() { echo "::warning::$1"; }
+          fetch_json() {
+            local url="$1"
+            local output="$2"
+            local label="$3"
+            curl --fail --show-error --silent --location \
+              --retry 5 \
+              --retry-delay 2 \
+              --retry-max-time 30 \
+              --retry-all-errors \
+              "$url" -o "$output" || fail "Unable to fetch ${label}: $url"
+          }
 
           OWNERS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/owners.json"
           REQS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/repo_requirements.json"
-          curl -sL "$OWNERS_URL" -o owners.json || fail "Unable to fetch ownership registry: $OWNERS_URL"
-          curl -sL "$REQS_URL" -o repo_requirements.json || fail "Unable to fetch repo requirements: $REQS_URL"
+          fetch_json "$OWNERS_URL" owners.json "ownership registry"
+          fetch_json "$REQS_URL" repo_requirements.json "repo requirements"
 
           if [[ ! -f "SECURITY.md" && ! -f ".github/SECURITY.md" ]]; then
             fail "Missing SECURITY.md"
