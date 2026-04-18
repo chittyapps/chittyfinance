@@ -237,6 +237,8 @@ export function useExportTaxPackage() {
       qs.set('taxYear', String(params.taxYear));
       qs.set('format', params.format || 'csv');
       if (params.includeDescendants !== undefined) qs.set('includeDescendants', String(params.includeDescendants));
+      if (params.propertyIds?.length) qs.set('propertyIds', params.propertyIds.join(','));
+      if (params.tenantIds?.length) qs.set('tenantIds', params.tenantIds.join(','));
       const res = await apiRequest('GET', `/api/reports/tax/export?${qs}`);
       const blob = await res.blob();
       const ext = params.format === 'json' ? 'json' : 'csv';
