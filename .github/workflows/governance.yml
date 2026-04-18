@@ -130,7 +130,7 @@ jobs:
           if git ls-files | grep -qE '(^|/)node_modules/'; then
             fail "Tracked node_modules detected"
           fi
-          if git ls-files | grep -qE '(^|/)\\.wrangler/'; then
+          if git ls-files | grep -qE '(^|/)\.wrangler/'; then
             fail "Tracked .wrangler detected"
           fi
           if [[ -f "package.json" ]]; then
