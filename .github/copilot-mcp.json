@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "chitty": {
+      "type": "http",
+      "url": "https://ch1tty.com/mcp",
+      "tools": ["*"]
+    },
+    "chittyevidence-ksn": {
+      "type": "http",
+      "url": "https://ae39deba-9bcc-4613-8139-edbcc7603180.search.ai.cloudflare.com/mcp",
+      "tools": ["*"]
+    }
+  }
+}
