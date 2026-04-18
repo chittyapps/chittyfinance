@@ -96,11 +96,19 @@ jobs:
             CHANGED_FILES="$CHANGED_FILES" python3 - <<'PY'
 import json
 import os
+import sys
 from pathlib import PurePosixPath
 
 changed_files = [line for line in os.environ.get("CHANGED_FILES", "").splitlines() if line]
-with open("rules.json", "r", encoding="utf-8") as f:
-    rules = json.load(f)
+try:
+    with open("rules.json", "r", encoding="utf-8") as f:
+        rules = json.load(f)
+except FileNotFoundError:
+    print("Missing rules.json", file=sys.stderr)
+    sys.exit(2)
+except json.JSONDecodeError as exc:
+    print(f"Invalid rules.json: {exc}", file=sys.stderr)
+    sys.exit(2)
 
 protected_patterns = rules.get("rules", {}).get("protected_files", {}).get("files", [])
 violations = []
@@ -189,8 +197,9 @@ PY
           if [[ ! -f "SECURITY.md" && ! -f ".github/SECURITY.md" ]]; then
             fail "Missing SECURITY.md"
           fi
-          if git ls-files | grep -qE '(^|/)\.env(\..+)?$'; then
-            fail "Tracked .env file detected"
+          DOTENV_FILES=$(git ls-files | grep -E '(^|/)\.env(\..+)?$' || true)
+          if [[ -n "$DOTENV_FILES" ]]; then
+            fail "Tracked .env file(s) detected: ${DOTENV_FILES//$'\n'/, }"
           fi
           if git ls-files | grep -qE '(^|/)node_modules/'; then
             fail "Tracked node_modules detected"
