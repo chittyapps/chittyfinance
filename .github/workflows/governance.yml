@@ -94,8 +94,11 @@ jobs:
           exit 1
 
       - name: Check Protected File Changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           echo "Changed files:"
           echo "$CHANGED_FILES"
           echo ""
@@ -138,7 +141,7 @@ PY
             });
             const latestReviewByUser = new Map();
             for (const review of reviews) {
-              if (!review.user || review.user.login.includes('[bot]')) {
+              if (!review.user || review.user.type === 'Bot') {
                 continue;
               }
               const existing = latestReviewByUser.get(review.user.login);
