@@ -911,10 +911,10 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ✅ Frontend property management UI (Add/Edit property, Add unit/lease dialogs, detail panel with 5 tabs)
 - ✅ Lease expiration notifications (cron trigger + API endpoint + action queue + dashboard widget)
 
-### Phase 5: ChittyOS Ecosystem Integration
-- ⏳ Replace demo auth with ChittyID
-- ⏳ Expose financial data as MCP resources
-- ⏳ Log to ChittyChronicle (audit trail)
+### Phase 5: ChittyOS Ecosystem Integration (Partially Completed)
+- ✅ Replace demo auth with ChittyID (default login path with graceful email/password fallback)
+- ✅ Expose financial data as MCP resources
+- ✅ Log to ChittyChronicle (audit trail for classification + COA mutations)
 - ⏳ Issue ChittyCert certificates for secure connections
 
 ### Phase 6: Advanced Features

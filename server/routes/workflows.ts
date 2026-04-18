@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { scopeLog } from '../lib/central-workflows';
 
 export const workflowRoutes = new Hono<HonoEnv>();
 
@@ -31,6 +32,20 @@ workflowRoutes.post('/api/workflows', async (c) => {
     metadata: body.metadata,
   });
 
+  scopeLog(c, {
+    externalId: workflow.id,
+    tenantId,
+    scopeType: workflow.type,
+    title: workflow.title,
+    summary: workflow.description,
+    localStatus: workflow.status,
+    metadata: {
+      propertyId: workflow.propertyId,
+      requestor: workflow.requestor,
+      costEstimate: workflow.costEstimate,
+    },
+  }, c.env);
+
   return c.json(workflow, 201);
 });
 
@@ -46,6 +61,19 @@ workflowRoutes.patch('/api/workflows/:id', async (c) => {
   });
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
+
+  scopeLog(c, {
+    externalId: workflow.id,
+    tenantId: workflow.tenantId,
+    scopeType: workflow.type,
+    title: workflow.title,
+    summary: workflow.description,
+    localStatus: workflow.status,
+    metadata: {
+      propertyId: workflow.propertyId,
+    },
+  }, c.env);
+
   return c.json(workflow);
 });
 
@@ -60,6 +88,20 @@ workflowRoutes.patch('/api/workflows/:id/approve', async (c) => {
   });
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
+
+  scopeLog(c, {
+    externalId: workflow.id,
+    tenantId: workflow.tenantId,
+    scopeType: workflow.type,
+    title: workflow.title,
+    summary: workflow.description,
+    localStatus: workflow.status,
+    statusReason: `Approved by ${c.get('userId')}`,
+    metadata: {
+      propertyId: workflow.propertyId,
+    },
+  }, c.env);
+
   return c.json(workflow);
 });
 
@@ -74,5 +116,18 @@ workflowRoutes.patch('/api/workflows/:id/complete', async (c) => {
   });
 
   if (!workflow) return c.json({ error: 'Workflow not found' }, 404);
+
+  scopeLog(c, {
+    externalId: workflow.id,
+    tenantId: workflow.tenantId,
+    scopeType: workflow.type,
+    title: workflow.title,
+    summary: workflow.description,
+    localStatus: workflow.status,
+    metadata: {
+      propertyId: workflow.propertyId,
+    },
+  }, c.env);
+
   return c.json(workflow);
 });
