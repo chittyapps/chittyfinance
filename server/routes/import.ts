@@ -1069,6 +1069,185 @@ importRoutes.post('/api/import/amazon', async (c) => {
   }, imported > 0 ? 200 : 422);
 });
 
+// POST /api/import/mercury-csv — import Mercury bank CSV export
+// Accepts raw CSV body. Parses Source Account to resolve tenant + account.
+// Auto-creates accounts if needed. Deduplicates via external_id.
+importRoutes.post('/api/import/mercury-csv', async (c) => {
+  const storage = c.get('storage');
+  const callerTenantId = c.get('tenantId');
+
+  const body = await c.req.text();
+  const lines = body.split('\n').filter((l) => l.trim());
+  if (lines.length < 2) {
+    return c.json({ error: 'CSV must have header + data rows' }, 400);
+  }
+
+  const header = lines[0];
+  const cols = parseCSVLine(header);
+  const colIdx = (name: string) => cols.findIndex((c) => c.toLowerCase().includes(name.toLowerCase()));
+
+  const iDate = colIdx('Date');
+  const iDesc = colIdx('Description');
+  const iAmount = colIdx('Amount');
+  const iStatus = colIdx('Status');
+  const iAccount = colIdx('Source Account');
+  const iBankDesc = colIdx('Bank Description');
+  const iGlCode = colIdx('GL Code');
+  const iNote = colIdx('Note');
+  const iTimestamp = colIdx('Timestamp');
+  const iCategory = colIdx('Mercury Category');
+
+  if (iDate < 0 || iDesc < 0 || iAmount < 0) {
+    return c.json({ error: 'Missing required columns: Date, Description, Amount' }, 400);
+  }
+
+  // Account name → tenant mapping
+  const ACCOUNT_TENANT_MAP: Record<string, { tenantSlug: string; accountName: string }> = {
+    'llc - operating': { tenantSlug: 'aribia-llc', accountName: 'LLC Operating (xx1956)' },
+    'aribia operating': { tenantSlug: 'aribia-llc', accountName: 'ARIBIA Operating (xx9551)' },
+    'xfers': { tenantSlug: 'aribia-llc', accountName: 'Inter-Company Transfer (xx2930)' },
+    'city - rental': { tenantSlug: 'aribia-city-studio', accountName: 'City Rental (xx8111)' },
+    'cozy - rental': { tenantSlug: 'nicholas-bianchi', accountName: 'Cozy Rental (xx9023)' },
+    'loft - rental': { tenantSlug: 'nicholas-bianchi', accountName: 'Loft Rental (xx4209)' },
+    'mgmt - ap': { tenantSlug: 'aribia-mgmt', accountName: 'MGMT AP (xx4152)' },
+    'mgmt - ar': { tenantSlug: 'aribia-mgmt', accountName: 'MGMT AR (xx4609)' },
+    'mgmt - operating': { tenantSlug: 'aribia-mgmt', accountName: 'MGMT Operating (xx1322)' },
+    'mgmt (0374)': { tenantSlug: 'aribia-mgmt', accountName: 'MGMT Operating (xx0374)' },
+    'mgmt (0402)': { tenantSlug: 'aribia-mgmt', accountName: 'MGMT Furniture (xx0402)' },
+    'operating (mercury checking xx2540)': { tenantSlug: 'aribia-llc', accountName: 'Operating (xx2540)' },
+  };
+
+  // Load all tenants to resolve slugs → UUIDs
+  const allTenants = await storage.getTenants();
+  const slugToTenantId: Record<string, string> = {};
+  for (const t of allTenants) slugToTenantId[t.slug] = t.id;
+
+  // Account cache: accountName → account UUID
+  const accountCache: Record<string, string> = {};
+
+  async function resolveAccount(sourceAccount: string): Promise<{ tenantId: string; accountId: string }> {
+    const lower = sourceAccount.toLowerCase();
+    let mapping: { tenantSlug: string; accountName: string } | undefined;
+    for (const [key, val] of Object.entries(ACCOUNT_TENANT_MAP)) {
+      if (lower.includes(key)) { mapping = val; break; }
+    }
+    if (!mapping) {
+      mapping = { tenantSlug: 'aribia-mgmt', accountName: sourceAccount.slice(0, 50) };
+    }
+
+    const tenantId = slugToTenantId[mapping.tenantSlug] || callerTenantId;
+    const cacheKey = `${tenantId}:${mapping.accountName}`;
+
+    if (!accountCache[cacheKey]) {
+      // Try find existing by name
+      const accounts = await storage.getAccounts(tenantId);
+      const existing = accounts.find((a) => a.name === mapping!.accountName);
+      if (existing) {
+        accountCache[cacheKey] = existing.id;
+      } else {
+        const created = await storage.createAccount({
+          tenantId,
+          name: mapping.accountName,
+          type: 'checking',
+          institution: 'Mercury',
+        });
+        accountCache[cacheKey] = created.id;
+      }
+    }
+
+    return { tenantId, accountId: accountCache[cacheKey] };
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const row = parseCSVLine(lines[i]);
+    if (row.length < 3) continue;
+
+    const dateStr = row[iDate]?.trim();
+    const description = row[iDesc]?.trim();
+    const amountStr = row[iAmount]?.trim();
+    const status = iStatus >= 0 ? row[iStatus]?.trim() : '';
+    const sourceAccount = iAccount >= 0 ? row[iAccount]?.trim() || '' : '';
+    const bankDesc = iBankDesc >= 0 ? row[iBankDesc]?.trim() || '' : '';
+    const glCode = iGlCode >= 0 ? row[iGlCode]?.trim() || '' : '';
+    const note = iNote >= 0 ? row[iNote]?.trim() || '' : '';
+    const mercuryCategory = iCategory >= 0 ? row[iCategory]?.trim() || '' : '';
+
+    if (!dateStr || !description || !amountStr) { skipped++; continue; }
+    if (status === 'Failed' || status === 'Cancelled') { skipped++; continue; }
+
+    const amount = parseFloat(amountStr.replace(/[,"$]/g, ''));
+    if (isNaN(amount)) { skipped++; continue; }
+
+    // Parse date (MM-DD-YYYY or YYYY-MM-DD)
+    let date: Date;
+    if (dateStr.includes('-') && dateStr.length === 10) {
+      const parts = dateStr.split('-');
+      if (parts[0].length === 4) {
+        date = new Date(dateStr);
+      } else {
+        date = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+      }
+    } else {
+      date = new Date(dateStr);
+    }
+    if (isNaN(date.getTime())) { skipped++; continue; }
+
+    try {
+      const { tenantId, accountId } = await resolveAccount(sourceAccount);
+
+      // External ID for dedup: mercury:csv:<date>:<amount>:<desc_hash>
+      const descHash = description.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const externalId = `mercury:csv:${dateStr}:${amount}:${descHash}`;
+
+      const dup = await storage.getTransactionByExternalId(externalId, tenantId);
+      if (dup) { skipped++; continue; }
+
+      // Classify: prefer GL code from Mercury, else keyword match
+      let suggestedCoaCode = '9010';
+      let confidence = '0.100';
+      if (glCode) {
+        const codeMatch = glCode.match(/^\d{4}/);
+        if (codeMatch) { suggestedCoaCode = codeMatch[0]; confidence = '0.850'; }
+      }
+      if (suggestedCoaCode === '9010') {
+        suggestedCoaCode = findAccountCode(bankDesc || description, mercuryCategory || undefined);
+        confidence = suggestedCoaCode === '9010' ? '0.100' : '0.700';
+      }
+
+      await storage.createTransaction({
+        tenantId,
+        accountId,
+        amount: String(amount),
+        type: amount >= 0 ? 'income' : 'expense',
+        category: mercuryCategory || null,
+        description: bankDesc || description,
+        date,
+        payee: description,
+        externalId,
+        suggestedCoaCode,
+        classificationConfidence: confidence,
+        metadata: { source: 'mercury_csv', note: note || undefined, glCode: glCode || undefined },
+      });
+      imported++;
+    } catch (e: any) {
+      console.warn('[import:mercury-csv] Row error:', e.message, { row: i });
+      errors++;
+    }
+  }
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'import.mercury_csv',
+    metadata: { imported, skipped, errors, totalRows: lines.length - 1 },
+  }, c.env);
+
+  return c.json({ imported, skipped, errors, totalRows: lines.length - 1 });
+});
+
 // POST /api/import/wave-sync — sync Wave transactions
 importRoutes.post('/api/import/wave-sync', async (c) => {
   const storage = c.get('storage');
