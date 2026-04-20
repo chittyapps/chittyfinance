@@ -208,7 +208,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   // Skips verification entirely if no secret found (allows registration ping).
   const rawBody = await c.req.text();
   const kv = c.env.FINANCE_KV;
-  const secret = (await kv.get(`webhook:mercury:secret:${tenantId}`)) ?? c.env.MERCURY_WEBHOOK_SECRET;
+  const secret = await kv.get(`webhook:mercury:secret:${tenantId}`);
   const signatureHeader = c.req.header('Mercury-Signature') ?? '';
 
   if (secret) {
