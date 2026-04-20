@@ -169,7 +169,7 @@ export async function seedItCanBeLLC() {
 
   console.log('✅ Created ARIBIA LLC - APT ARLENE');
 
-  // Create property record for Villa Vista
+  // Create property record for Villa Vista (formerly Apt Arlene)
   const [villaVistaProperty] = await db.insert(schema.properties).values({
     tenantId: aribiaAptArlene.id,
     name: 'Villa Vista',
@@ -187,7 +187,7 @@ export async function seedItCanBeLLC() {
 
   console.log('✅ Created Villa Vista property record');
 
-  // Create Morada Mami property (under ARIBIA LLC directly)
+  // Create Morada Mami property (Colombia, under ARIBIA LLC directly)
   const [moradaMamiProperty] = await db.insert(schema.properties).values({
     tenantId: aribiaLLC.id,
     name: 'Morada Mami',
@@ -203,59 +203,6 @@ export async function seedItCanBeLLC() {
   }).returning();
 
   console.log('✅ Created Morada Mami property record');
-
-  // Create Nicholas Bianchi personal tenant (personally held properties)
-  const [nicholasBianchiTenant] = await db.insert(schema.tenants).values({
-    name: 'Nicholas Bianchi',
-    slug: 'nicholas-bianchi',
-    type: 'personal',
-    parentId: itCanBeLLC.id,
-    metadata: {
-      description: 'Personally held real estate assets',
-      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
-      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
-    },
-  }).returning();
-
-  console.log('✅ Created Nicholas Bianchi (personal)');
-
-  // Create Lakeside Loft (personally held, income/mgmt via JAV LLC)
-  const [lakesideLoftProperty] = await db.insert(schema.properties).values({
-    tenantId: nicholasBianchiTenant.id,
-    name: 'Lakeside Loft',
-    address: '541 W Addison St Unit 3S',
-    city: 'Chicago',
-    state: 'IL',
-    zip: '60613',
-    country: 'USA',
-    propertyType: 'condo',
-    metadata: {
-      brand: 'Chicago Furnished Condos',
-      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
-      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
-    },
-  }).returning();
-
-  console.log('✅ Created Lakeside Loft property record');
-
-  // Create Cozy Castle (personally held, income/mgmt via JAV LLC)
-  const [cozyCastleProperty] = await db.insert(schema.properties).values({
-    tenantId: nicholasBianchiTenant.id,
-    name: 'Cozy Castle',
-    address: '550 W Surf St Unit 504',
-    city: 'Chicago',
-    state: 'IL',
-    zip: '60657',
-    country: 'USA',
-    propertyType: 'condo',
-    metadata: {
-      brand: 'Chicago Furnished Condos',
-      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
-      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
-    },
-  }).returning();
-
-  console.log('✅ Created Cozy Castle property record');
 
   // Create placeholder for ChittyCorp LLC (pending formation)
   const [chittyCorp] = await db.insert(schema.tenants).values({
@@ -273,6 +220,59 @@ export async function seedItCanBeLLC() {
   }).returning();
 
   console.log('✅ Created ChittyCorp LLC (pending)');
+
+  // Create Nicholas Bianchi personal tenant (personally held properties)
+  const [nicholasBianchiTenant] = await db.insert(schema.tenants).values({
+    name: 'Nicholas Bianchi',
+    slug: 'nicholas-bianchi',
+    type: 'personal',
+    parentId: itCanBeLLC.id,
+    metadata: {
+      description: 'Personally held real estate assets',
+      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
+      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
+    },
+  }).returning();
+
+  console.log('✅ Created Nicholas Bianchi (personal)');
+
+  // Create Lakeside Loft property (personally held, income/mgmt via JAV LLC)
+  await db.insert(schema.properties).values({
+    tenantId: nicholasBianchiTenant.id,
+    name: 'Lakeside Loft',
+    address: '541 W Addison St Unit 3S',
+    city: 'Chicago',
+    state: 'IL',
+    zip: '60613',
+    country: 'USA',
+    propertyType: 'condo',
+    metadata: {
+      brand: 'Chicago Furnished Condos',
+      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
+      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
+    },
+  });
+
+  console.log('✅ Created Lakeside Loft property record');
+
+  // Create Cozy Castle property (personally held, income/mgmt via JAV LLC)
+  await db.insert(schema.properties).values({
+    tenantId: nicholasBianchiTenant.id,
+    name: 'Cozy Castle',
+    address: '550 W Surf St Unit 504',
+    city: 'Chicago',
+    state: 'IL',
+    zip: '60657',
+    country: 'USA',
+    propertyType: 'condo',
+    metadata: {
+      brand: 'Chicago Furnished Condos',
+      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
+      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
+    },
+  });
+
+  console.log('✅ Created Cozy Castle property record');
 
   // Create users with initial passwords (change on first login in production)
   const defaultPassword = process.env.SEED_PASSWORD || 'chittyfinance2026';
@@ -344,6 +344,9 @@ export async function seedItCanBeLLC() {
   console.log('\nTenant Structure:');
   console.log('├── IT CAN BE LLC (holding)');
   console.log('│   ├── JEAN ARLENE VENTURING LLC (personal, 85%)');
+  console.log('│   ├── Nicholas Bianchi (personal)');
+  console.log('│   │   ├── Lakeside Loft — 541 W Addison St #3S');
+  console.log('│   │   └── Cozy Castle — 550 W Surf St #504');
   console.log('│   ├── ARIBIA LLC (series, 100%)');
   console.log('│   │   ├── ARIBIA LLC - MGMT (management)');
   console.log('│   │   ├── ARIBIA LLC - CITY STUDIO (property)');
@@ -351,13 +354,10 @@ export async function seedItCanBeLLC() {
   console.log('│   │   ├── ARIBIA LLC - APT ARLENE (property)');
   console.log('│   │   │   └── Villa Vista — 4343 N Clarendon #1610');
   console.log('│   │   └── Morada Mami — Carrera 76A #53-215, Medellin');
-  console.log('│   ├── Nicholas Bianchi (personal)');
-  console.log('│   │   ├── Lakeside Loft — 541 W Addison St #3S');
-  console.log('│   │   └── Cozy Castle — 550 W Surf St #504');
   console.log('│   └── ChittyCorp LLC (holding, pending)');
   console.log('\nUsers:');
-  console.log('├── Nicholas Bianchi (full access, all 8 tenants)');
-  console.log('└── Sharon E Jones (limited access: ITCB, ARIBIA, APT ARLENE)');
+  console.log('├── Nicholas Bianchi (full access)');
+  console.log('└── Sharon E Jones (limited access)');
 }
 
 // Run seed if called directly

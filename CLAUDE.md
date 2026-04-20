@@ -94,6 +94,9 @@ ChittyFinance supports two operational modes (controlled by `MODE` environment v
 ```
 IT CAN BE LLC (holding)
 ├── JEAN ARLENE VENTURING LLC (personal, 85% owner)
+├── Nicholas Bianchi (personal — income/mgmt assigned to JAV LLC)
+│   ├── Lakeside Loft — 541 W Addison St #3S, Chicago IL
+│   └── Cozy Castle — 550 W Surf St #504, Chicago IL
 ├── ARIBIA LLC (series, 100% owned)
 │   ├── ARIBIA LLC - MGMT (management)
 │   │   ├── Chicago Furnished Condos (consumer brand)
@@ -103,18 +106,15 @@ IT CAN BE LLC (holding)
 │   ├── ARIBIA LLC - APT ARLENE (property)
 │   │   └── Villa Vista — 4343 N Clarendon #1610, Chicago IL
 │   └── Morada Mami — Carrera 76A #53-215, Medellin, Colombia
-├── Nicholas Bianchi (personal, income/mgmt assigned to JAV LLC)
-│   ├── Lakeside Loft — 541 W Addison St #3S, Chicago IL
-│   └── Cozy Castle — 550 W Surf St #504, Chicago IL
 └── ChittyCorp LLC (holding, pending formation)
 ```
 
 **Tenant Types:**
 - `holding` - Holding companies (IT CAN BE LLC, ChittyCorp LLC)
 - `series` - Series LLCs (ARIBIA LLC)
-- `property` - Property holding entities (City Studio, Villa Vista)
+- `property` - Property holding entities (City Studio, Apt Arlene)
 - `management` - Management companies (ARIBIA LLC - MGMT)
-- `personal` - Personal entities (JEAN ARLENE VENTURING LLC)
+- `personal` - Personal entities (JEAN ARLENE VENTURING LLC, Nicholas Bianchi)
 
 **Key Features:**
 - Each tenant has isolated financial data
@@ -291,14 +291,15 @@ const db = drizzleBetterSqlite(sqlite, { schema: standaloneSchema });
 Creates the complete IT CAN BE LLC entity structure:
 1. IT CAN BE LLC (parent holding company)
 2. JEAN ARLENE VENTURING LLC (85% owner, personal income funnel)
-3. ARIBIA LLC (series parent)
-4. ARIBIA LLC - MGMT (management company with two brands)
-5. ARIBIA LLC - CITY STUDIO (property entity)
-6. ARIBIA LLC - APT ARLENE (property entity)
-7. ChittyCorp LLC (pending formation)
+3. Nicholas Bianchi (personal — properties held individually, income/mgmt via JAV LLC)
+4. ARIBIA LLC (series parent)
+5. ARIBIA LLC - MGMT (management company with two brands)
+6. ARIBIA LLC - CITY STUDIO (property entity)
+7. ARIBIA LLC - APT ARLENE (property entity)
+8. ChittyCorp LLC (pending formation)
 
 Also creates:
-- Property records: Lakeside Loft, Cozy Castle, City Studio, Villa Vista, Morada Mami
+- 5 property records: Lakeside Loft, Cozy Castle, City Studio, Villa Vista, Morada Mami
 - User accounts for Nicholas Bianchi and Sharon E Jones
 - Access permissions for each user to appropriate tenants
 
