@@ -9,36 +9,86 @@ import { ledgerLog } from '../lib/ledger-client';
 
 export const webhookRoutes = new Hono<HonoEnv>();
 
+// ── Mercury native webhook types ──
+
+/** Mercury event envelope (JSON Merge Patch format). */
+const mercuryEventSchema = z.object({
+  id: z.string(),
+  resourceType: z.string(), // 'transaction', 'account', etc.
+  resourceId: z.string(),
+  operationType: z.string(), // 'create', 'update', 'delete'
+  resourceVersion: z.number().optional(),
+  occurredAt: z.string().optional(),
+  changedPaths: z.array(z.string()).optional(),
+  mergePatch: z.record(z.unknown()).optional(),
+  previousValues: z.record(z.unknown()).optional(),
+});
+
 /**
- * Mercury webhook transaction payload shape.
- *
- * ChittyConnect normalizes Mercury's native payload to this shape before
- * forwarding to us, so we can trust the field names here.
- *
- * `tenantId` and `accountId` must be resolved by ChittyConnect before it
- * POSTs to us — we don't have tenant middleware on webhook routes (they
- * use service auth, not session/role auth).
+ * Verify Mercury-Signature header using Web Crypto (Workers-compatible).
+ * Header format: t=<unix_timestamp>,v1=<hex_hmac>
+ * Signed payload: <timestamp>.<raw_body>
  */
-const mercuryTransactionSchema = z.object({
+async function verifyMercurySignature(
+  rawBody: string,
+  signatureHeader: string,
+  secret: string,
+): Promise<boolean> {
+  const parts = signatureHeader.split(',');
+  let timestamp: string | undefined;
+  let signature: string | undefined;
+
+  for (const part of parts) {
+    const [key, ...rest] = part.split('=');
+    const value = rest.join('=');
+    if (key === 't') timestamp = value;
+    if (key === 'v1') signature = value;
+  }
+
+  if (!timestamp || !signature) return false;
+
+  const signedPayload = `${timestamp}.${rawBody}`;
+  const encoder = new TextEncoder();
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+
+  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(signedPayload));
+  const expected = Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, '0')).join('');
+
+  // Constant-time comparison
+  if (expected.length !== signature.length) return false;
+  let result = 0;
+  for (let i = 0; i < expected.length; i++) {
+    result |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+/** ChittyConnect-normalized transaction (legacy path, kept for backwards compat). */
+const normalizedTransactionSchema = z.object({
   tenantId: z.string().uuid(),
   accountId: z.string().uuid(),
   mercuryTransactionId: z.string(),
   description: z.string(),
-  amount: z.number(), // signed: negative = expense
+  amount: z.number(),
   category: z.string().optional().nullable(),
-  postedAt: z.string(), // ISO 8601
+  postedAt: z.string(),
   payee: z.string().optional().nullable(),
 });
 
-const mercuryWebhookEnvelopeSchema = z.object({
+const normalizedEnvelopeSchema = z.object({
   id: z.string().optional(),
   eventId: z.string().optional(),
-  type: z.string().optional(), // e.g. 'transaction.created'
-  data: z
-    .object({
-      transaction: mercuryTransactionSchema.optional(),
-    })
-    .optional(),
+  type: z.string().optional(),
+  data: z.object({
+    transaction: normalizedTransactionSchema.optional(),
+  }).optional(),
 });
 
 /**
@@ -111,23 +161,187 @@ webhookRoutes.post('/api/webhooks/stripe', async (c) => {
   return c.json({ received: true });
 });
 
-// POST /api/webhooks/mercury — Mercury webhook endpoint with real-time classification
+// POST /api/webhooks/mercury/:tenantId — Mercury native webhook (tenant in URL)
+//
+// Auth: Mercury-Signature HMAC-SHA256 verification via MERCURY_WEBHOOK_SECRET
+// Payload: Mercury event envelope (JSON Merge Patch format)
 //
 // Flow:
-//   1. Service-auth check (Bearer token == CHITTY_AUTH_SERVICE_TOKEN)
+//   1. Verify Mercury-Signature header
 //   2. KV-based idempotency (7-day TTL dedup window)
-//   3. Parse + validate envelope with zod
-//   4. If payload carries a transaction, persist it to the DB with an
-//      auto-suggested COA code (L0 → L1 keyword match at ingest)
-//   5. Advisory validation against ChittySchema's FinancialTransactionsSchema
-//      — never blocks the write, only logs warnings
+//   3. Parse Mercury event envelope
+//   4. For transaction events: resolve account, classify, persist
+//   5. Advisory ChittySchema validation (never blocks)
 //
 // Returns:
-//   200 { received, duplicate? } — envelope-only events (no transaction)
-//   201 { received, transactionId, suggestedCoaCode, schemaAdvisory? } — persisted tx
-//   400 on validation failure (envelope or payload)
+//   200 { received } — non-transaction events or envelope-only
+//   201 { received, transactionId, suggestedCoaCode } — persisted tx
+//   400 on validation failure
+//   401 on signature failure
+webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
+  const tenantId = c.req.param('tenantId');
+
+  // Verify Mercury-Signature HMAC (skip if secret not yet configured — allows
+  // Mercury's verification ping during webhook registration to succeed)
+  const rawBody = await c.req.text();
+  const secret = c.env.MERCURY_WEBHOOK_SECRET;
+  const signatureHeader = c.req.header('Mercury-Signature') ?? '';
+
+  if (secret) {
+    if (!signatureHeader || !(await verifyMercurySignature(rawBody, signatureHeader, secret))) {
+      return c.json({ error: 'invalid_signature' }, 401);
+    }
+  } else {
+    console.warn('[webhook:mercury] MERCURY_WEBHOOK_SECRET not set — signature verification skipped');
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    // Empty body or non-JSON — treat as verification ping
+    return c.json({ received: true }, 200);
+  }
+
+  const parsed = mercuryEventSchema.safeParse(body);
+  if (!parsed.success) {
+    // Unrecognized payload (e.g. Mercury verification ping) — ack without error
+    console.warn('[webhook:mercury] Unrecognized payload, acking', { tenantId, body });
+    return c.json({ received: true }, 200);
+  }
+
+  const event = parsed.data;
+
+  // KV idempotency — 7-day dedup window
+  const kv = c.env.FINANCE_KV;
+  const dedupKey = `webhook:mercury:${event.id}`;
+  const existing = await kv.get(dedupKey);
+  if (existing) {
+    return c.json({ received: true, duplicate: true }, 200);
+  }
+  await kv.put(dedupKey, rawBody, { expirationTtl: 604800 });
+
+  // Only process transaction events
+  if (event.resourceType !== 'transaction') {
+    return c.json({ received: true, resourceType: event.resourceType }, 200);
+  }
+
+  // For transaction creates/updates, extract fields from mergePatch
+  const patch = (event.mergePatch ?? {}) as Record<string, unknown>;
+  const amount = typeof patch.amount === 'number' ? patch.amount : null;
+  const description = (patch.bankDescription as string) ?? (patch.counterpartyName as string) ?? '';
+  const counterpartyName = (patch.counterpartyName as string) ?? null;
+  const postedAt = (patch.postedAt as string) ?? (event.occurredAt as string) ?? null;
+  const mercuryAccountId = (patch.accountId as string) ?? null;
+
+  // For updates without amount (e.g. status change), just ack
+  if (amount === null) {
+    return c.json({ received: true, operationType: event.operationType }, 200);
+  }
+
+  const externalId = `mercury:${event.resourceId}`;
+
+  // Auto-classify
+  const suggestedCoaCode = findAccountCode(description);
+  const isSuspense = suggestedCoaCode === '9010';
+  const classificationConfidence = isSuspense ? '0.100' : '0.700';
+
+  const db = createDb(c.env.DATABASE_URL);
+  const storage = new SystemStorage(db);
+
+  // DB-level dedup
+  const dupRow = await storage.getTransactionByExternalId(externalId, tenantId);
+  if (dupRow) {
+    return c.json({ received: true, duplicate: true, transactionId: dupRow.id }, 200);
+  }
+
+  // Resolve local account from Mercury accountId, or use first active account for tenant
+  let accountId: string | null = null;
+  if (mercuryAccountId) {
+    const acct = await storage.lookupAccountByExternalId(`mercury:${mercuryAccountId}`);
+    if (acct && acct.tenantId === tenantId) {
+      accountId = acct.id;
+    }
+  }
+  if (!accountId) {
+    // Fallback: use first active account for this tenant, or create a default
+    const accounts = await storage.getAccounts(tenantId);
+    const active = accounts.find((a) => a.isActive);
+    if (active) {
+      accountId = active.id;
+    } else {
+      const created = await storage.createAccount({
+        tenantId,
+        name: 'Mercury Checking',
+        type: 'checking',
+        institution: 'Mercury',
+        externalId: mercuryAccountId ? `mercury:${mercuryAccountId}` : undefined,
+      });
+      accountId = created.id;
+    }
+  }
+
+  // Advisory ChittySchema validation
+  const schemaResult = await validateRow(c.env, 'FinancialTransactionsInsertSchema', {
+    tenantId,
+    accountId,
+    amount: String(amount),
+    type: amount >= 0 ? 'income' : 'expense',
+    description,
+    date: postedAt ?? new Date().toISOString(),
+    externalId,
+  });
+
+  if (!schemaResult.ok && schemaResult.errors) {
+    console.warn('[webhook:mercury] ChittySchema advisory', { eventId: event.id, errors: schemaResult.errors });
+  }
+
+  const created = await storage.createTransaction({
+    tenantId,
+    accountId,
+    amount: String(amount),
+    type: amount >= 0 ? 'income' : 'expense',
+    category: null,
+    description,
+    date: postedAt ? new Date(postedAt) : new Date(),
+    payee: counterpartyName,
+    externalId,
+    suggestedCoaCode,
+    classificationConfidence,
+    metadata: {
+      source: 'mercury_webhook',
+      mercuryTransactionId: event.resourceId,
+      mercuryAccountId,
+      eventId: event.id,
+      operationType: event.operationType,
+    },
+  });
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'webhook.mercury.transaction_ingested',
+    metadata: {
+      tenantId,
+      accountId,
+      transactionId: created.id,
+      suggestedCoaCode,
+      confidence: classificationConfidence,
+      schemaAdvisory: schemaResult.advisory,
+      schemaValid: schemaResult.ok,
+    },
+  }, c.env);
+
+  return c.json({
+    received: true,
+    transactionId: created.id,
+    suggestedCoaCode,
+    classificationConfidence,
+    schemaAdvisory: schemaResult.advisory,
+  }, 201);
+});
+
+// POST /api/webhooks/mercury — Legacy ChittyConnect-normalized path (service-token auth)
 webhookRoutes.post('/api/webhooks/mercury', async (c) => {
-  // Service auth check
   const expected = c.env.CHITTY_AUTH_SERVICE_TOKEN;
   if (!expected) {
     return c.json({ error: 'auth_not_configured' }, 500);
@@ -140,7 +354,7 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
   }
 
   const rawBody = await c.req.json().catch(() => null);
-  const envelope = mercuryWebhookEnvelopeSchema.safeParse(rawBody);
+  const envelope = normalizedEnvelopeSchema.safeParse(rawBody);
   if (!envelope.success) {
     return c.json({ error: 'invalid_envelope', details: envelope.error.flatten() }, 400);
   }
@@ -150,7 +364,6 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     return c.json({ error: 'missing_event_id' }, 400);
   }
 
-  // KV idempotency — 7-day dedup window
   const kv = c.env.FINANCE_KV;
   const dedupKey = `webhook:mercury:${eventId}`;
   const existing = await kv.get(dedupKey);
@@ -161,19 +374,14 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
 
   const tx = envelope.data.data?.transaction;
   if (!tx) {
-    // Envelope-only event (e.g. account.created, webhook.ping) — just ack
     return c.json({ received: true }, 202);
   }
 
-  // Auto-classify via keyword match at ingest (L0 → L1 suggestion).
-  // Suspense (9010) gets low confidence, matched codes get 0.700.
   const suggestedCoaCode = findAccountCode(tx.description, tx.category ?? undefined);
   const isSuspense = suggestedCoaCode === '9010';
   const classificationConfidence = isSuspense ? '0.100' : '0.700';
   const externalId = `mercury:${tx.mercuryTransactionId}`;
 
-  // Advisory ChittySchema validation — never blocks the write, only logs.
-  // Uses FinancialTransactionsSchema from the chittyledger database.
   const schemaResult = await validateRow(c.env, 'FinancialTransactionsInsertSchema', {
     tenantId: tx.tenantId,
     accountId: tx.accountId,
@@ -185,25 +393,15 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
   });
 
   if (!schemaResult.ok && schemaResult.errors) {
-    console.warn('[webhook:mercury] ChittySchema validation failed (advisory)', {
-      eventId,
-      errors: schemaResult.errors,
-    });
+    console.warn('[webhook:mercury] ChittySchema advisory', { eventId, errors: schemaResult.errors });
   }
 
-  // Persist via storage abstraction. Use a fresh DB/storage since webhook
-  // routes don't go through the storageMiddleware (no tenant context).
   const db = createDb(c.env.DATABASE_URL);
   const storage = new SystemStorage(db);
 
-  // Dedup at the DB level too — if ChittyConnect retries before the KV
-  // entry was written, the externalId unique lookup catches it
   const dupRow = await storage.getTransactionByExternalId(externalId, tx.tenantId);
   if (dupRow) {
-    return c.json(
-      { received: true, duplicate: true, transactionId: dupRow.id },
-      202,
-    );
+    return c.json({ received: true, duplicate: true, transactionId: dupRow.id }, 202);
   }
 
   const created = await storage.createTransaction({
@@ -221,34 +419,27 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     metadata: { source: 'mercury_webhook', mercuryTransactionId: tx.mercuryTransactionId, eventId },
   });
 
-  ledgerLog(
-    c,
-    {
-      entityType: 'audit',
-      action: 'webhook.mercury.transaction_ingested',
-      metadata: {
-        tenantId: tx.tenantId,
-        accountId: tx.accountId,
-        transactionId: created.id,
-        suggestedCoaCode,
-        confidence: classificationConfidence,
-        schemaAdvisory: schemaResult.advisory,
-        schemaValid: schemaResult.ok,
-      },
-    },
-    c.env,
-  );
-
-  return c.json(
-    {
-      received: true,
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'webhook.mercury.transaction_ingested',
+    metadata: {
+      tenantId: tx.tenantId,
+      accountId: tx.accountId,
       transactionId: created.id,
       suggestedCoaCode,
-      classificationConfidence,
+      confidence: classificationConfidence,
       schemaAdvisory: schemaResult.advisory,
+      schemaValid: schemaResult.ok,
     },
-    201,
-  );
+  }, c.env);
+
+  return c.json({
+    received: true,
+    transactionId: created.id,
+    suggestedCoaCode,
+    classificationConfidence,
+    schemaAdvisory: schemaResult.advisory,
+  }, 201);
 });
 
 // POST /api/webhooks/wave — Wave Accounting webhook with real-time classification

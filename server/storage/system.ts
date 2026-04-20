@@ -74,6 +74,15 @@ export class SystemStorage {
     return row;
   }
 
+  /** Look up an account by external_id across all tenants (for webhook resolution). */
+  async lookupAccountByExternalId(externalId: string) {
+    const [row] = await this.db
+      .select()
+      .from(schema.accounts)
+      .where(eq(schema.accounts.externalId, externalId));
+    return row;
+  }
+
   async createAccount(data: typeof schema.accounts.$inferInsert) {
     const [row] = await this.db.insert(schema.accounts).values(data).returning();
     return row;
