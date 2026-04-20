@@ -161,9 +161,29 @@ webhookRoutes.post('/api/webhooks/stripe', async (c) => {
   return c.json({ received: true });
 });
 
+// PUT /api/webhooks/mercury/:tenantId/secret — Store per-tenant webhook secret
+// Auth: service token (internal use only)
+webhookRoutes.put('/api/webhooks/mercury/:tenantId/secret', async (c) => {
+  const expected = c.env.CHITTY_AUTH_SERVICE_TOKEN;
+  if (!expected) return c.json({ error: 'auth_not_configured' }, 500);
+
+  const auth = c.req.header('authorization') ?? '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token || token !== expected) return c.json({ error: 'unauthorized' }, 401);
+
+  const { secret } = await c.req.json<{ secret: string }>();
+  if (!secret) return c.json({ error: 'secret required' }, 400);
+
+  const tenantId = c.req.param('tenantId');
+  const kv = c.env.FINANCE_KV;
+  await kv.put(`webhook:mercury:secret:${tenantId}`, secret);
+
+  return c.json({ stored: true, tenantId });
+});
+
 // POST /api/webhooks/mercury/:tenantId — Mercury native webhook (tenant in URL)
 //
-// Auth: Mercury-Signature HMAC-SHA256 verification via MERCURY_WEBHOOK_SECRET
+// Auth: Mercury-Signature HMAC-SHA256 verification via per-tenant KV secret
 // Payload: Mercury event envelope (JSON Merge Patch format)
 //
 // Flow:
@@ -181,10 +201,14 @@ webhookRoutes.post('/api/webhooks/stripe', async (c) => {
 webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId');
 
-  // Verify Mercury-Signature HMAC (skip if secret not yet configured — allows
-  // Mercury's verification ping during webhook registration to succeed)
+  // Verify Mercury-Signature HMAC.
+  // Each Mercury webhook registration returns a unique secret, so we store
+  // per-tenant secrets in KV at `webhook:mercury:secret:<tenantId>`.
+  // Falls back to MERCURY_WEBHOOK_SECRET env var (shared/legacy).
+  // Skips verification entirely if no secret found (allows registration ping).
   const rawBody = await c.req.text();
-  const secret = c.env.MERCURY_WEBHOOK_SECRET;
+  const kv = c.env.FINANCE_KV;
+  const secret = (await kv.get(`webhook:mercury:secret:${tenantId}`)) ?? c.env.MERCURY_WEBHOOK_SECRET;
   const signatureHeader = c.req.header('Mercury-Signature') ?? '';
 
   if (secret) {
@@ -192,7 +216,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
       return c.json({ error: 'invalid_signature' }, 401);
     }
   } else {
-    console.warn('[webhook:mercury] MERCURY_WEBHOOK_SECRET not set — signature verification skipped');
+    console.warn('[webhook:mercury] No secret for tenant', tenantId, '— signature verification skipped');
   }
 
   let body: unknown;
@@ -213,7 +237,6 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const event = parsed.data;
 
   // KV idempotency — 7-day dedup window
-  const kv = c.env.FINANCE_KV;
   const dedupKey = `webhook:mercury:${event.id}`;
   const existing = await kv.get(dedupKey);
   if (existing) {
