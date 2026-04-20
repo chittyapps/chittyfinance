@@ -99,16 +99,20 @@ IT CAN BE LLC (holding)
 │   │   ├── Chicago Furnished Condos (consumer brand)
 │   │   └── Chitty Services (vendor/tech services)
 │   ├── ARIBIA LLC - CITY STUDIO (property)
-│   │   └── 550 W Surf St C211, Chicago IL
-│   └── ARIBIA LLC - APT ARLENE (property)
-│       └── 4343 N Clarendon #1610, Chicago IL
+│   │   └── City Studio — 550 W Surf St C211, Chicago IL
+│   ├── ARIBIA LLC - APT ARLENE (property)
+│   │   └── Villa Vista — 4343 N Clarendon #1610, Chicago IL
+│   └── Morada Mami — Carrera 76A #53-215, Medellin, Colombia
+├── Nicholas Bianchi (personal, income/mgmt assigned to JAV LLC)
+│   ├── Lakeside Loft — 541 W Addison St #3S, Chicago IL
+│   └── Cozy Castle — 550 W Surf St #504, Chicago IL
 └── ChittyCorp LLC (holding, pending formation)
 ```
 
 **Tenant Types:**
 - `holding` - Holding companies (IT CAN BE LLC, ChittyCorp LLC)
 - `series` - Series LLCs (ARIBIA LLC)
-- `property` - Property holding entities (City Studio, Apt Arlene)
+- `property` - Property holding entities (City Studio, Villa Vista)
 - `management` - Management companies (ARIBIA LLC - MGMT)
 - `personal` - Personal entities (JEAN ARLENE VENTURING LLC)
 
@@ -294,7 +298,7 @@ Creates the complete IT CAN BE LLC entity structure:
 7. ChittyCorp LLC (pending formation)
 
 Also creates:
-- Property records for City Studio and Apt Arlene
+- Property records: Lakeside Loft, Cozy Castle, City Studio, Villa Vista, Morada Mami
 - User accounts for Nicholas Bianchi and Sharon E Jones
 - Access permissions for each user to appropriate tenants
 

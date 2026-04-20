@@ -169,10 +169,10 @@ export async function seedItCanBeLLC() {
 
   console.log('✅ Created ARIBIA LLC - APT ARLENE');
 
-  // Create property record for Apt Arlene
-  const [aptArleneProperty] = await db.insert(schema.properties).values({
+  // Create property record for Villa Vista
+  const [villaVistaProperty] = await db.insert(schema.properties).values({
     tenantId: aribiaAptArlene.id,
-    name: 'Apartment Arlene',
+    name: 'Villa Vista',
     address: '4343 N Clarendon Unit 1610',
     city: 'Chicago',
     state: 'IL',
@@ -185,7 +185,77 @@ export async function seedItCanBeLLC() {
     },
   }).returning();
 
-  console.log('✅ Created Apartment Arlene property record');
+  console.log('✅ Created Villa Vista property record');
+
+  // Create Morada Mami property (under ARIBIA LLC directly)
+  const [moradaMamiProperty] = await db.insert(schema.properties).values({
+    tenantId: aribiaLLC.id,
+    name: 'Morada Mami',
+    address: 'Carrera 76 A # 53-215',
+    city: 'Medellin',
+    state: 'ANT',
+    zip: '050026',
+    country: 'COL',
+    propertyType: 'condo',
+    metadata: {
+      description: 'Colombia property',
+    },
+  }).returning();
+
+  console.log('✅ Created Morada Mami property record');
+
+  // Create Nicholas Bianchi personal tenant (personally held properties)
+  const [nicholasBianchiTenant] = await db.insert(schema.tenants).values({
+    name: 'Nicholas Bianchi',
+    slug: 'nicholas-bianchi',
+    type: 'personal',
+    parentId: itCanBeLLC.id,
+    metadata: {
+      description: 'Personally held real estate assets',
+      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
+      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
+    },
+  }).returning();
+
+  console.log('✅ Created Nicholas Bianchi (personal)');
+
+  // Create Lakeside Loft (personally held, income/mgmt via JAV LLC)
+  const [lakesideLoftProperty] = await db.insert(schema.properties).values({
+    tenantId: nicholasBianchiTenant.id,
+    name: 'Lakeside Loft',
+    address: '541 W Addison St Unit 3S',
+    city: 'Chicago',
+    state: 'IL',
+    zip: '60613',
+    country: 'USA',
+    propertyType: 'condo',
+    metadata: {
+      brand: 'Chicago Furnished Condos',
+      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
+      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
+    },
+  }).returning();
+
+  console.log('✅ Created Lakeside Loft property record');
+
+  // Create Cozy Castle (personally held, income/mgmt via JAV LLC)
+  const [cozyCastleProperty] = await db.insert(schema.properties).values({
+    tenantId: nicholasBianchiTenant.id,
+    name: 'Cozy Castle',
+    address: '550 W Surf St Unit 504',
+    city: 'Chicago',
+    state: 'IL',
+    zip: '60657',
+    country: 'USA',
+    propertyType: 'condo',
+    metadata: {
+      brand: 'Chicago Furnished Condos',
+      income_assigned_to: 'JEAN ARLENE VENTURING LLC',
+      management_assigned_to: 'JEAN ARLENE VENTURING LLC',
+    },
+  }).returning();
+
+  console.log('✅ Created Cozy Castle property record');
 
   // Create placeholder for ChittyCorp LLC (pending formation)
   const [chittyCorp] = await db.insert(schema.tenants).values({
@@ -235,6 +305,7 @@ export async function seedItCanBeLLC() {
     aribiaCityStudio,
     aribiaAptArlene,
     chittyCorp,
+    nicholasBianchiTenant,
   ];
 
   for (const tenant of allTenants) {
@@ -276,13 +347,17 @@ export async function seedItCanBeLLC() {
   console.log('│   ├── ARIBIA LLC (series, 100%)');
   console.log('│   │   ├── ARIBIA LLC - MGMT (management)');
   console.log('│   │   ├── ARIBIA LLC - CITY STUDIO (property)');
-  console.log('│   │   │   └── 550 W Surf St C211');
-  console.log('│   │   └── ARIBIA LLC - APT ARLENE (property)');
-  console.log('│   │       └── 4343 N Clarendon #1610');
+  console.log('│   │   │   └── City Studio — 550 W Surf St C211');
+  console.log('│   │   ├── ARIBIA LLC - APT ARLENE (property)');
+  console.log('│   │   │   └── Villa Vista — 4343 N Clarendon #1610');
+  console.log('│   │   └── Morada Mami — Carrera 76A #53-215, Medellin');
+  console.log('│   ├── Nicholas Bianchi (personal)');
+  console.log('│   │   ├── Lakeside Loft — 541 W Addison St #3S');
+  console.log('│   │   └── Cozy Castle — 550 W Surf St #504');
   console.log('│   └── ChittyCorp LLC (holding, pending)');
   console.log('\nUsers:');
-  console.log('├── Nicholas Bianchi (full access)');
-  console.log('└── Sharon E Jones (limited access)');
+  console.log('├── Nicholas Bianchi (full access, all 8 tenants)');
+  console.log('└── Sharon E Jones (limited access: ITCB, ARIBIA, APT ARLENE)');
 }
 
 // Run seed if called directly
