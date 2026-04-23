@@ -229,10 +229,11 @@ export interface PropertyMapping {
 // See: database/seeds/it-can-be-llc.ts for the canonical property definitions
 export const DEFAULT_PROPERTY_MAPPINGS: PropertyMapping[] = [
   // TurboTenant property codes from historical ledger exports
-  { code: '01', name: 'Lakeside Loft', tenantSlug: 'aribia-lakeside-loft', address: '541 W Addison St, Unit 3S, Chicago, IL' },
-  { code: '02', name: 'Cozy Castle', tenantSlug: 'aribia-cozy-castle', address: '550 W Surf St, Unit 504, Chicago, IL' },
+  { code: '01', name: 'Lakeside Loft', tenantSlug: 'nicholas-bianchi', address: '541 W Addison St, Unit 3S, Chicago, IL' },
+  { code: '02', name: 'Cozy Castle', tenantSlug: 'nicholas-bianchi', address: '550 W Surf St, Unit 504, Chicago, IL' },
   { code: '03', name: 'City Studio', tenantSlug: 'aribia-city-studio', address: '550 W Surf St, Unit C211, Chicago, IL' },
-  { code: '04', name: 'Morada Mami', tenantSlug: 'aribia-morada-mami', address: 'Carrera 76 A # 53-215, Medellin, Colombia' },
+  { code: '04', name: 'Morada Mami', tenantSlug: 'aribia-llc', address: 'Carrera 76 A # 53-215, Medellin, Colombia' },
+  { code: '05', name: 'Villa Vista', tenantSlug: 'aribia-apt-arlene', address: '4343 N Clarendon, Unit 1610, Chicago, IL' },
 ];
 
 // Build lookup map from property array
