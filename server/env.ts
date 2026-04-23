@@ -35,7 +35,7 @@ export interface Env {
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_PHONE_NUMBER?: string;
-  // SendGrid email
+  // SendGrid email (deprecated — replaced by Cloudflare Email Service binding)
   SENDGRID_API_KEY?: string;
   SENDGRID_FROM_EMAIL?: string;
   // ChittyID OAuth
@@ -48,6 +48,7 @@ export interface Env {
   FINANCE_KV: KVNamespace;
   FINANCE_R2: R2Bucket;
   ASSETS: Fetcher;
+  EMAIL?: SendEmail;
   // CF_AGENT: DurableObjectNamespace; // Disabled — DO being rebuilt
 }
 

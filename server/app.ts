@@ -38,6 +38,7 @@ import { leaseRoutes } from './routes/leases';
 import { chittyIdAuthRoutes } from './routes/chittyid-auth';
 import { allocationRoutes } from './routes/allocations';
 import { classificationRoutes } from './routes/classification';
+import { emailRoutes } from './routes/email';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -131,6 +132,7 @@ export function createApp() {
   app.route('/', taxRoutes);
   app.route('/', allocationRoutes);
   app.route('/', classificationRoutes);
+  app.route('/', emailRoutes);
   app.route('/', googleRoutes);
   app.route('/', commsRoutes);
   app.route('/', workflowRoutes);
