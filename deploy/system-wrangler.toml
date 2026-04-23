@@ -28,6 +28,17 @@ routes = [
   { pattern = "finance.chitty.cc/*", zone_name = "chitty.cc" }
 ]
 
+# Hyperdrive binding for fractal scope projection into ChittyOS-Core
+[[hyperdrive]]
+binding = "CHITTYOS_CORE_DB"
+id = "1d126444cff1416cb415447e6cc6d15a"
+
+# Cloudflare Email Service binding (beta, Workers Paid plan)
+# Domain: chitty.cc — onboard at dashboard → Email Sending
+[[send_email]]
+name = "EMAIL"
+allowed_sender_addresses = ["finance@chitty.cc", "noreply@chitty.cc"]
+
 [vars]
 MODE = "system"
 NODE_ENV = "production"
@@ -77,6 +88,9 @@ new_sqlite_classes = ["ChittyAgent"]
 [env.dev]
 name = "chittyfinance-dev"
 workers_dev = true
+
+[[env.dev.send_email]]
+name = "EMAIL"
 
 [env.dev.vars]
 MODE = "system"
@@ -143,6 +157,10 @@ workers_dev = false
 routes = [
   { pattern = "finance.chitty.cc/*", zone_name = "chitty.cc" }
 ]
+
+[[env.production.send_email]]
+name = "EMAIL"
+allowed_sender_addresses = ["finance@chitty.cc", "noreply@chitty.cc"]
 
 [env.production.vars]
 MODE = "system"
