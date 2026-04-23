@@ -171,7 +171,13 @@ webhookRoutes.put('/api/webhooks/mercury/:tenantId/secret', async (c) => {
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   if (!token || token !== expected) return c.json({ error: 'unauthorized' }, 401);
 
-  const { secret } = await c.req.json<{ secret: string }>();
+  let parsed: { secret?: string };
+  try {
+    parsed = await c.req.json<{ secret: string }>();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+  const { secret } = parsed;
   if (!secret) return c.json({ error: 'secret required' }, 400);
 
   const tenantId = c.req.param('tenantId');
@@ -230,7 +236,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const parsed = mercuryEventSchema.safeParse(body);
   if (!parsed.success) {
     // Unrecognized payload (e.g. Mercury verification ping) — ack without error
-    console.warn('[webhook:mercury] Unrecognized payload, acking', { tenantId, body });
+    console.warn('[webhook:mercury] Unrecognized payload, acking', { tenantId, keys: typeof body === 'object' && body ? Object.keys(body) : typeof body });
     return c.json({ received: true }, 200);
   }
 
