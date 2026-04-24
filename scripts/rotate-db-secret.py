@@ -200,7 +200,7 @@ print("[3] DATABASE_URL constructed (password URL-encoded)", file=sys.stderr)
 
 wrangler_config = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "deploy", "system-wrangler.toml",
+    "deploy", "system-wrangler.jsonc",
 )
 
 env_labels = [e or "top-level" for e in target_envs]

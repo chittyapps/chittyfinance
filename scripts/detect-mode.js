@@ -18,7 +18,7 @@ function detectMode() {
   // Check for system mode indicators
   const hasSystemDatabase = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('neon');
   const hasChittyIdToken = !!process.env.CHITTY_ID_SERVICE_TOKEN;
-  const hasSystemConfig = fs.existsSync(path.join(__dirname, '../deploy/system-wrangler.toml'));
+  const hasSystemConfig = fs.existsSync(path.join(__dirname, '../deploy/system-wrangler.jsonc')) || fs.existsSync(path.join(__dirname, '../deploy/system-wrangler.toml'));
 
   if (hasSystemDatabase || hasChittyIdToken || hasSystemConfig) {
     console.log('🔧 Auto-detected: SYSTEM mode (ChittyOS integration)');
