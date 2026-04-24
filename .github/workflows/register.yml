@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'deploy/registration/**'
-      - 'deploy/system-wrangler.toml'
+      - 'deploy/system-wrangler.jsonc'
       - '.github/workflows/register.yml'
   workflow_dispatch:
     inputs:
