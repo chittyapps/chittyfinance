@@ -149,15 +149,16 @@ chittyfinance/
 │   ├── worker.ts         # Cloudflare Workers entry point
 │   ├── index.ts          # Legacy Express entry (standalone dev)
 │   ├── routes.ts         # Legacy Express routes (reference only)
-│   ├── routes/            # Hono route modules (20 files)
+│   ├── routes/            # Hono route modules (22 files)
 │   │   ├── health.ts     # /health, /api/v1/status
 │   │   ├── docs.ts       # /api/v1/documentation (OpenAPI spec)
 │   │   ├── accounts.ts   # /api/accounts
 │   │   ├── summary.ts    # /api/summary
 │   │   ├── tenants.ts    # /api/tenants
 │   │   ├── properties.ts # /api/properties (CRUD + financials + rent roll + P&L)
-│   │   ├── transactions.ts # /api/transactions
+│   │   ├── transactions.ts # /api/transactions (+ CSV/OFX/QFX export)
 │   │   ├── integrations.ts # /api/integrations
+│   │   ├── allocations.ts # /api/allocations (inter-company rules + execution)
 │   │   ├── tasks.ts      # /api/tasks
 │   │   ├── ai.ts         # /api/ai-messages
 │   │   ├── mercury.ts    # /api/mercury (via ChittyConnect)
@@ -168,8 +169,9 @@ chittyfinance/
 │   │   ├── forensics.ts  # /api/forensics (21 endpoints)
 │   │   ├── valuation.ts  # /api/properties/:id/valuation (multi-source AVM)
 │   │   ├── session.ts    # /api/session (KV-backed cookie auth)
-│   │   ├── import.ts     # /api/import (TurboTenant CSV + Wave sync)
-│   │   └── webhooks.ts   # Stripe/Mercury webhooks
+│   │   ├── email.ts      # /api/email (Cloudflare Email Service)
+│   │   ├── import.ts     # /api/import (TurboTenant, Mercury, HD Pro, Amazon CSV + Wave sync)
+│   │   └── webhooks.ts   # Stripe/Mercury/Wave webhooks (per-tenant HMAC)
 │   ├── middleware/        # auth, tenant, error middleware
 │   ├── storage/           # SystemStorage (Drizzle queries)
 │   ├── db/                # connection.ts (Neon HTTP), schema.ts
@@ -192,7 +194,7 @@ chittyfinance/
 ├── shared/                # Shared types and schemas
 │   └── schema.ts         # Legacy schema with forensic tables (integer-ID)
 └── deploy/
-    └── system-wrangler.toml # Cloudflare Workers config
+    └── system-wrangler.jsonc # Cloudflare Workers config (JSONC)
 ```
 
 ## Database Architecture
@@ -879,57 +881,77 @@ VALUES ('demo', 'any_value', 'Demo User', 'demo@example.com', 'user');
 - ✅ Hierarchy-aware tenant switcher with consolidated portfolio view (PR #52)
 
 ### Phase 1.5: Hono Route Migration (COMPLETED)
-- ✅ All 17 route modules migrated from Express to Hono
+- ✅ All route modules migrated from Express to Hono (22 route files)
 - ✅ Edge-compatible: Web Crypto API, Neon HTTP driver, no Node.js dependencies
 - ✅ Per-prefix middleware registration (avoids blocking public routes)
 - ✅ Deployed to Cloudflare Workers at `finance.chitty.cc`
-- ✅ 30/30 tests passing
+- ✅ Dev server migrated to Hono (`server/dev.ts`), 15 legacy lib modules deleted (PR #81)
 
 ### Phase 2: ChittyConnect Integration (Partially Completed)
 - ✅ Mercury Bank via ChittyConnect backend (multi-account support)
 - ✅ Registered with ChittyRegistry (`did:chitty:REG-XE6835`, PR #49)
+- ✅ Log to ChittyChronicle (audit trail for classification + COA mutations, PR #92)
+- ✅ JWT session auth behind ChittyAuth (PR #96)
 - ⏳ Integrate with ChittyConnect MCP
-- ⏳ Log to ChittyChronicle
-- ⏳ Use ChittyAuth tokens
+- ⏳ Issue ChittyCert certificates for secure connections
 
 ### Phase 3: Real Third-Party Integrations (COMPLETED ✅)
 - ✅ **Wave Accounting** - OAuth 2.0 flow + GraphQL API (`server/lib/wave-api.ts`)
 - ✅ **Stripe** - Payment processing, checkout, webhooks (`server/lib/stripe.ts`)
 - ✅ **Mercury Bank** - Multi-account via ChittyConnect (static egress IP)
-- ✅ **OAuth Security** - CSRF-protected state tokens (`server/lib/oauth-state.ts`)
+- ✅ **Mercury Native Webhooks** - Per-tenant HMAC-SHA256 verification, 7 registrations (PR #99)
+- ✅ **OAuth Security** - CSRF-protected state tokens (`server/lib/oauth-state-edge.ts`)
 - ✅ **Integration Monitoring** - Config validation endpoint (`/api/integrations/status`)
-- ✅ **Webhook Infrastructure** - Idempotent event processing (`webhook_events` table)
-- ~~DoorLoop~~ - Sunset (mock code is cleanup candidate, not roadmap)
+- ✅ **Webhook Infrastructure** - Idempotent event processing (KV-based dedup, 7-day TTL)
+- ~~DoorLoop~~ - Sunset, all code removed (PR #78, -35K lines)
 
-### Phase 4: Property Financial API (Partially Completed)
+### Phase 3.5: COA Trust-Path + Classification (COMPLETED ✅)
+- ✅ Database-backed Chart of Accounts with 80 REI accounts seeded (PR #86)
+- ✅ L0→L4 trust-path enforcement with concurrency-safe reconciled lock (PR #86)
+- ✅ AI-assisted classification via GPT-4o-mini with defense-in-depth fallbacks (PR #87)
+- ✅ Classification review UI with bulk-accept guardrails (PR #88)
+- ✅ Admin COA editor with code-range validation (PR #89)
+- ✅ Mercury webhook real-time classification at ingest (PR #90)
+- ✅ Classification enhancements — bulk-accept opt-out, L3 audit trail, tenant settings (PR #94)
+- ✅ Schedule E tax workspace + line summary (PRs #91, #96)
+- ✅ 246+ tests passing
+
+### Phase 4: Property Financial API + Data Import (COMPLETED ✅)
 - ✅ `property_valuations` table in system schema
 - ✅ Property/unit/lease CRUD in SystemStorage
 - ✅ Financial aggregation methods (NOI, cap rate, cash-on-cash, occupancy, rent roll, P&L)
 - ✅ Property mutation + financial endpoints (10 new routes in `properties.ts`)
 - ✅ Multi-source valuation providers (Zillow, Redfin, HouseCanary, ATTOM, County)
-- ✅ Confidence-weighted valuation aggregation
-- ✅ Valuation routes (current, refresh, history)
+- ✅ Confidence-weighted valuation aggregation + valuation routes
 - ✅ TurboTenant CSV import with deduplication
+- ✅ Mercury CSV import with account auto-resolution (PR #101)
+- ✅ HD Pro CSV import (3K items, 24 job name normalizations) (PR #93)
+- ✅ Amazon Business import (2K items, returns dedup, payment card tracking) (PR #93)
 - ✅ Wave sync import endpoint
-- ✅ Valuation Tab component (`client/src/components/property/ValuationTab.tsx`) — generalized, takes `propertyId` prop
-- ✅ Deployed to Cloudflare Workers (35 tests passing)
-- ✅ Frontend property management UI (Add/Edit property, Add unit/lease dialogs, detail panel with 5 tabs)
-- ✅ Lease expiration notifications (cron trigger + API endpoint + action queue + dashboard widget)
+- ✅ Frontend property management UI (Add/Edit property, units, leases, 5-tab detail panel)
+- ✅ Lease expiration notifications (cron trigger + API + dashboard widget, PR #70)
 
 ### Phase 5: ChittyOS Ecosystem Integration (Partially Completed)
-- ✅ Replace demo auth with ChittyID (default login path with graceful email/password fallback)
-- ✅ Expose financial data as MCP resources
-- ✅ Log to ChittyChronicle (audit trail for classification + COA mutations)
+- ✅ Replace demo auth with ChittyID SSO via OAuth 2.0 PKCE (PR #72)
+- ✅ Expose financial data as MCP resources (PR #92)
+- ✅ Log to ChittyChronicle (PR #92)
+- ✅ ChittyDiscovery self-registration + heartbeat (PR #79)
+- ✅ Fractal scope projection via shared `@chittyos/schema/scope-projector` (PR #103)
+- ✅ Governance workflow gates (PR #95)
 - ⏳ Issue ChittyCert certificates for secure connections
+- ⏳ Integrate with ChittyConnect MCP
 
-### Phase 6: Advanced Features
+### Phase 6: Advanced Features (COMPLETED ✅)
 - ✅ Consolidated reporting across all entities (`server/lib/consolidated-reporting.ts`)
 - ✅ Multi-currency schema support (ISO 4217, PR #53)
-- Inter-company allocation automation
-- Tax optimization and reporting
-- Advanced AI forecasting (beyond GPT-4o)
-- Mobile app (React Native)
-- Export/import (CSV, QFX, OFX)
+- ✅ Inter-company allocation automation engine (PR #75) + management UI (PR #80)
+- ✅ Transaction export CSV/OFX/QFX (PR #76)
+- ✅ Complete ledger audit coverage across all financial mutations (PR #77)
+- ✅ Cloudflare Email Service integration (PR #102)
+- ✅ Wrangler config TOML → JSONC (PR #104)
+- ⏳ Tax optimization and reporting (Schedule E data classified, export page shipped)
+- ⏳ Advanced AI forecasting (beyond GPT-4o)
+- ⏳ Mobile app (React Native)
 
 ### Phase 7: furnished-condos.com (Planned)
 - Cooperative marketplace for small furnished rental operators (under 10 units)
