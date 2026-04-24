@@ -1069,6 +1069,350 @@ importRoutes.post('/api/import/amazon', async (c) => {
   }, imported > 0 ? 200 : 422);
 });
 
+// POST /api/import/turbotenant-deposits — import TurboTenant deposit/payment history
+// Accepts raw CSV body with columns: Payment ID, Deposit Amount, Date Deposited,
+// Tenant, Payment Method, Lease Address, Payment note, Payment Date Paid, Bank Account, Lease
+// Auto-resolves property→tenant and bank account→account from CSV data.
+// Deduplicates via TurboTenant Payment ID.
+importRoutes.post('/api/import/turbotenant-deposits', async (c) => {
+  const storage = c.get('storage');
+
+  const body = await c.req.text();
+  const lines = body.split('\n').filter((l) => l.trim());
+  if (lines.length < 2) {
+    return c.json({ error: 'CSV must have header + data rows' }, 400);
+  }
+
+  const cols = parseCSVLine(lines[0]);
+  const colIdx = (name: string) => cols.findIndex((col) => col.trim().toLowerCase() === name.toLowerCase());
+
+  const iPaymentId = colIdx('Payment ID');
+  const iAmount = colIdx('Deposit Amount');
+  const iDateDeposited = colIdx('Date Deposited');
+  const iTenant = colIdx('Tenant');
+  const iPaymentMethod = colIdx('Payment Method');
+  const iAddress = colIdx('Lease Address');
+  const iNote = colIdx('Payment note');
+  const iDatePaid = colIdx('Payment Date Paid');
+  const iBankAccount = colIdx('Bank Account');
+  const iLease = colIdx('Lease');
+
+  if (iPaymentId < 0 || iAmount < 0 || iDateDeposited < 0) {
+    return c.json({ error: 'Missing required columns: Payment ID, Deposit Amount, Date Deposited' }, 400);
+  }
+
+  // Address → tenant mapping
+  const ADDRESS_TENANT_MAP: Record<string, string> = {
+    '541 w addison': 'nicholas-bianchi',
+    'addison': 'nicholas-bianchi',
+    '550 w surf st c504': 'nicholas-bianchi',
+    'surf st c504': 'nicholas-bianchi',
+    'surf c504': 'nicholas-bianchi',
+    '550 w surf st c211': 'aribia-city-studio',
+    'surf st c211': 'aribia-city-studio',
+    'surf c211': 'aribia-city-studio',
+    'carrera 76': 'aribia-llc',
+    'colombia': 'aribia-llc',
+    'medellin': 'aribia-llc',
+  };
+
+  // Bank account pattern → Mercury account name prefix for lookup
+  const BANK_ACCOUNT_MAP: Record<string, { tenantSlug: string; namePattern: string }> = {
+    'cozy (2955)': { tenantSlug: 'nicholas-bianchi', namePattern: 'Cozy' },
+    'cozy': { tenantSlug: 'nicholas-bianchi', namePattern: 'Cozy' },
+    'loft (5890)': { tenantSlug: 'nicholas-bianchi', namePattern: 'Loft' },
+    'loft': { tenantSlug: 'nicholas-bianchi', namePattern: 'Loft' },
+    'city (3372)': { tenantSlug: 'aribia-city-studio', namePattern: 'City' },
+    'city': { tenantSlug: 'aribia-city-studio', namePattern: 'City' },
+    'fee (8130)': { tenantSlug: 'aribia-mgmt', namePattern: 'Fee' },
+    'surf 504 rental': { tenantSlug: 'nicholas-bianchi', namePattern: 'Cozy' },
+    'surf 211 rental': { tenantSlug: 'aribia-city-studio', namePattern: 'City' },
+    'addison 3s rental': { tenantSlug: 'nicholas-bianchi', namePattern: 'Loft' },
+    'huntington': { tenantSlug: 'aribia-mgmt', namePattern: 'MGMT' },
+    'city deposit': { tenantSlug: 'aribia-city-studio', namePattern: 'City' },
+    'huntington cozy': { tenantSlug: 'nicholas-bianchi', namePattern: 'Cozy' },
+    'huntington rental': { tenantSlug: 'aribia-mgmt', namePattern: 'MGMT' },
+  };
+
+  // Load tenants and accounts
+  const allTenants = await storage.getTenants();
+  const slugToTenantId: Record<string, string> = {};
+  for (const t of allTenants) slugToTenantId[t.slug] = t.id;
+
+  // Cache: tenantId → accounts list
+  const accountsCache: Record<string, Awaited<ReturnType<typeof storage.getAccounts>>> = {};
+  async function getAccountsForTenant(tenantId: string) {
+    if (!accountsCache[tenantId]) {
+      accountsCache[tenantId] = await storage.getAccounts(tenantId);
+    }
+    return accountsCache[tenantId];
+  }
+
+  function resolveTenantFromAddress(address: string): string | null {
+    const lower = address.toLowerCase();
+    for (const [pattern, slug] of Object.entries(ADDRESS_TENANT_MAP)) {
+      if (lower.includes(pattern)) return slugToTenantId[slug] || null;
+    }
+    return null;
+  }
+
+  function resolveBankAccount(bankAcctStr: string): { tenantSlug: string; namePattern: string } | null {
+    const lower = bankAcctStr.toLowerCase();
+    // Try most specific match first (longest key)
+    const sorted = Object.entries(BANK_ACCOUNT_MAP).sort((a, b) => b[0].length - a[0].length);
+    for (const [pattern, mapping] of sorted) {
+      if (lower.includes(pattern)) return mapping;
+    }
+    return null;
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const row = parseCSVLine(lines[i]);
+    if (row.length < 3) continue;
+
+    const paymentId = iPaymentId >= 0 ? row[iPaymentId]?.trim() : '';
+    const amountStr = iAmount >= 0 ? row[iAmount]?.trim() : '';
+    const dateDeposited = iDateDeposited >= 0 ? row[iDateDeposited]?.trim() : '';
+    const tenantName = iTenant >= 0 ? row[iTenant]?.trim() || '' : '';
+    const address = iAddress >= 0 ? row[iAddress]?.trim() || '' : '';
+    const note = iNote >= 0 ? row[iNote]?.trim() || '' : '';
+    const datePaid = iDatePaid >= 0 ? row[iDatePaid]?.trim() || '' : '';
+    const bankAccountStr = iBankAccount >= 0 ? row[iBankAccount]?.trim() || '' : '';
+    const leaseTitle = iLease >= 0 ? row[iLease]?.trim() || '' : '';
+    const paymentMethod = iPaymentMethod >= 0 ? row[iPaymentMethod]?.trim() || '' : '';
+
+    if (!paymentId || !amountStr || !dateDeposited) { skipped++; continue; }
+
+    const amount = parseFloat(amountStr.replace(/[$,]/g, ''));
+    if (isNaN(amount)) { skipped++; continue; }
+
+    // Parse date (MM/DD/YYYY)
+    const dateParts = dateDeposited.split('/');
+    let date: Date;
+    if (dateParts.length === 3) {
+      date = new Date(`${dateParts[2]}-${dateParts[0].padStart(2, '0')}-${dateParts[1].padStart(2, '0')}`);
+    } else {
+      date = new Date(dateDeposited);
+    }
+    if (isNaN(date.getTime())) { skipped++; continue; }
+
+    const externalId = `tt-deposit:${paymentId}`;
+
+    try {
+      // Resolve tenant: prefer bank account mapping, fall back to address
+      let tenantId: string | null = null;
+      let accountId: string | null = null;
+      const bankMapping = resolveBankAccount(bankAccountStr);
+
+      if (bankMapping) {
+        tenantId = slugToTenantId[bankMapping.tenantSlug] || null;
+      }
+      if (!tenantId) {
+        tenantId = resolveTenantFromAddress(address);
+      }
+      if (!tenantId) {
+        // Default to ARIBIA MGMT for unresolved
+        tenantId = slugToTenantId['aribia-mgmt'] || Object.values(slugToTenantId)[0];
+      }
+
+      // Resolve account: find Mercury account matching the bank pattern
+      if (bankMapping && tenantId) {
+        const accounts = await getAccountsForTenant(tenantId);
+        const match = accounts.find((a) =>
+          a.name.toLowerCase().includes(bankMapping.namePattern.toLowerCase()),
+        );
+        if (match) accountId = match.id;
+      }
+      // If no account found in target tenant, check MGMT (many accounts live there)
+      if (!accountId) {
+        const mgmtId = slugToTenantId['aribia-mgmt'];
+        if (mgmtId) {
+          const mgmtAccounts = await getAccountsForTenant(mgmtId);
+          if (bankMapping) {
+            const match = mgmtAccounts.find((a) =>
+              a.name.toLowerCase().includes(bankMapping.namePattern.toLowerCase()),
+            );
+            if (match) {
+              accountId = match.id;
+              tenantId = mgmtId; // Account lives in MGMT tenant
+            }
+          }
+          if (!accountId) {
+            // Use first active MGMT account as fallback
+            const active = mgmtAccounts.find((a) => a.isActive);
+            if (active) { accountId = active.id; tenantId = mgmtId; }
+          }
+        }
+      }
+
+      if (!accountId || !tenantId) { skipped++; continue; }
+
+      // Dedup by external ID
+      const dup = await storage.getTransactionByExternalId(externalId, tenantId);
+      if (dup) { skipped++; continue; }
+
+      // Classify: fee income (8130 pattern) vs rental income (4010)
+      const isFee = bankAccountStr.toLowerCase().includes('fee') ||
+                    bankAccountStr.toLowerCase().includes('8130');
+      const suggestedCoaCode = isFee ? '4020' : '4010';
+
+      const description = note || 'Rent Payment';
+
+      await storage.createTransaction({
+        tenantId,
+        accountId,
+        amount: String(amount),
+        type: 'income',
+        category: isFee ? 'fee_income' : 'rental_income',
+        description: `${description} — ${tenantName}`,
+        date,
+        payee: tenantName,
+        externalId,
+        suggestedCoaCode,
+        classificationConfidence: '0.900',
+        metadata: {
+          source: 'turbotenant_deposits',
+          paymentId,
+          paymentMethod: paymentMethod.replace(/\\_/g, '_'),
+          leaseAddress: address.replace(/\\/g, ''),
+          leaseTitle: leaseTitle.replace(/\\/g, ''),
+          datePaid: datePaid || undefined,
+          bankAccount: bankAccountStr.replace(/\\\*/g, '*'),
+        },
+      });
+      imported++;
+    } catch (e: any) {
+      console.warn('[import:tt-deposits] Row error:', e.message, { row: i, paymentId });
+      errors++;
+    }
+  }
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'import.turbotenant_deposits',
+    metadata: { imported, skipped, errors, totalRows: lines.length - 1 },
+  }, c.env);
+
+  return c.json({ imported, skipped, errors, totalRows: lines.length - 1 });
+});
+
+// POST /api/import/turbotenant-rentroll — import TurboTenant rent roll snapshot
+// Accepts raw CSV body with columns: Property, Unit, Tenants, Lease Start,
+// Lease End, Security Deposit, Rent Amount, Total Unpaid, Total Past Due
+// Upserts leases on matching properties. Does not create transactions.
+importRoutes.post('/api/import/turbotenant-rentroll', async (c) => {
+  const storage = c.get('storage');
+
+  const body = await c.req.text();
+  const lines = body.split('\n').filter((l) => l.trim());
+
+  // Skip "Pulled on..." preamble line if present
+  let startLine = 0;
+  if (lines[0]?.toLowerCase().startsWith('pulled on') || lines[0]?.includes('\ufeff')) {
+    const cleaned = lines[0].replace('\ufeff', '').trim();
+    if (cleaned.toLowerCase().startsWith('pulled on')) startLine = 1;
+  }
+
+  if (lines.length - startLine < 2) {
+    return c.json({ error: 'CSV must have header + data rows' }, 400);
+  }
+
+  const cols = parseCSVLine(lines[startLine]);
+  const colIdx = (name: string) => cols.findIndex((col) => col.trim().toLowerCase() === name.toLowerCase());
+
+  const iProperty = colIdx('Property');
+  const iUnit = colIdx('Unit');
+  const iTenants = colIdx('Tenants');
+  const iLeaseStart = colIdx('Lease Start');
+  const iLeaseEnd = colIdx('Lease End');
+  const iSecDep = colIdx('Security Deposit');
+  const iRent = colIdx('Rent Amount');
+  const iUnpaid = colIdx('Total Unpaid');
+  const iPastDue = colIdx('Total Past Due');
+
+  if (iProperty < 0 || iTenants < 0 || iRent < 0) {
+    return c.json({ error: 'Missing required columns: Property, Tenants, Rent Amount' }, 400);
+  }
+
+  // Address → property matching
+  const ADDRESS_PROPERTY_MAP: Record<string, { tenantSlug: string; propertyName: string }> = {
+    '541 w addison': { tenantSlug: 'nicholas-bianchi', propertyName: 'Lakeside Loft' },
+    '550 w surf st c211': { tenantSlug: 'aribia-city-studio', propertyName: 'City Studio' },
+    '550 w surf st c504': { tenantSlug: 'nicholas-bianchi', propertyName: 'Cozy Castle' },
+    'carrera 76': { tenantSlug: 'aribia-llc', propertyName: 'Morada Mami' },
+  };
+
+  const allTenants = await storage.getTenants();
+  const slugToTenantId: Record<string, string> = {};
+  for (const t of allTenants) slugToTenantId[t.slug] = t.id;
+
+  const results: Array<{
+    property: string;
+    unit: string;
+    tenants: string;
+    leaseStart: string;
+    leaseEnd: string;
+    rentAmount: number;
+    totalUnpaid: number;
+    totalPastDue: number;
+    matched: boolean;
+    tenantSlug?: string;
+  }> = [];
+
+  for (let i = startLine + 1; i < lines.length; i++) {
+    const row = parseCSVLine(lines[i]);
+    if (row.length < 3) continue;
+
+    const property = iProperty >= 0 ? row[iProperty]?.trim().replace(/\\/g, '') || '' : '';
+    const unit = iUnit >= 0 ? row[iUnit]?.trim() || '' : '';
+    const tenants = iTenants >= 0 ? row[iTenants]?.trim() || '' : '';
+    const leaseStart = iLeaseStart >= 0 ? row[iLeaseStart]?.trim() || '' : '';
+    const leaseEnd = iLeaseEnd >= 0 ? row[iLeaseEnd]?.trim() || '' : '';
+    const rentStr = iRent >= 0 ? row[iRent]?.trim() || '0' : '0';
+    const unpaidStr = iUnpaid >= 0 ? row[iUnpaid]?.trim() || '0' : '0';
+    const pastDueStr = iPastDue >= 0 ? row[iPastDue]?.trim() || '0' : '0';
+
+    const rentAmount = parseFloat(rentStr.replace(/[$,]/g, ''));
+    const totalUnpaid = parseFloat(unpaidStr.replace(/[$,]/g, ''));
+    const totalPastDue = parseFloat(pastDueStr.replace(/[$,]/g, ''));
+
+    // Match to property
+    const lower = property.toLowerCase();
+    let matched = false;
+    let tenantSlug: string | undefined;
+    for (const [pattern, mapping] of Object.entries(ADDRESS_PROPERTY_MAP)) {
+      if (lower.includes(pattern)) {
+        matched = true;
+        tenantSlug = mapping.tenantSlug;
+        break;
+      }
+    }
+
+    results.push({
+      property, unit, tenants, leaseStart, leaseEnd,
+      rentAmount, totalUnpaid, totalPastDue,
+      matched, tenantSlug,
+    });
+  }
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'import.turbotenant_rentroll',
+    metadata: { units: results.length, matched: results.filter((r) => r.matched).length },
+  }, c.env);
+
+  return c.json({
+    units: results.length,
+    matched: results.filter((r) => r.matched).length,
+    unmatched: results.filter((r) => !r.matched).length,
+    rentRoll: results,
+  });
+});
+
 // POST /api/import/mercury-csv — import Mercury bank CSV export
 // Accepts raw CSV body. Parses Source Account to resolve tenant + account.
 // Auto-creates accounts if needed. Deduplicates via external_id.
