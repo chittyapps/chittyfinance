@@ -1069,6 +1069,255 @@ importRoutes.post('/api/import/amazon', async (c) => {
   }, imported > 0 ? 200 : 422);
 });
 
+// POST /api/import/reihub — import REI Hub general ledger (TurboTenant accounting hub)
+// Accepts raw CSV or tab-delimited body with columns:
+//   Account, Date, Type, Description, Debit, Credit, Split Account,
+//   Scope, Property, Unit, Sub-Portfolio, Vendor, Fixed Asset, Additional Notes
+// Groups by Account category (Rent, Repairs, Cleaning, etc.)
+// Dedup via description hash + date + amount.
+importRoutes.post('/api/import/reihub', async (c) => {
+  const storage = c.get('storage');
+
+  const body = await c.req.text();
+  // REI Hub exports as pipe-delimited markdown table or CSV — detect format
+  const lines = body.split('\n').filter((l) => l.trim() && !l.trim().startsWith('| :-'));
+  if (lines.length < 2) {
+    return c.json({ error: 'No data rows found' }, 400);
+  }
+
+  // Parse header — handle both pipe-delimited (markdown table) and CSV
+  const isPipeDelimited = lines[0].includes('|');
+  function parseLine(line: string): string[] {
+    if (isPipeDelimited) {
+      return line.split('|').map((cell) => cell.trim()).filter((_, i, arr) => i > 0 && i < arr.length);
+    }
+    return parseCSVLine(line);
+  }
+
+  const headers = parseLine(lines[0]).map((h) => h.toLowerCase().trim());
+  const colIdx = (name: string) => headers.findIndex((h) => h === name.toLowerCase());
+
+  const iAccount = colIdx('account');
+  const iDate = colIdx('date');
+  const iType = colIdx('type');
+  const iDesc = colIdx('description');
+  const iDebit = colIdx('debit');
+  const iCredit = colIdx('credit');
+  const iSplitAccount = colIdx('split account');
+  const iScope = colIdx('scope');
+  const iProperty = colIdx('property');
+  const iUnit = colIdx('unit');
+  const iSubPortfolio = colIdx('sub-portfolio');
+  const iVendor = colIdx('vendor');
+  const iFixedAsset = colIdx('fixed asset');
+  const iNotes = colIdx('additional notes');
+
+  if (iAccount < 0 || iDate < 0 || iDesc < 0) {
+    return c.json({ error: 'Missing required columns: Account, Date, Description' }, 400);
+  }
+
+  // REI Hub Account category → COA code mapping
+  const ACCOUNT_COA_MAP: Record<string, string> = {
+    'rent': '4010',            // Rental income
+    'management fees': '6110', // Management expenses
+    'cleaning and maintenance': '5040', // Maintenance
+    'repairs': '5030',         // Repairs
+    'insurance': '5060',       // Insurance
+    'mortgage interest': '5080', // Mortgage interest
+    'property taxes': '5050',  // Property taxes
+    'utilities': '5070',       // Utilities
+    'supplies': '5040',        // Supplies (under maintenance)
+    'travel': '6050',          // Travel
+    'legal and professional': '6060', // Legal/professional
+    'advertising': '6020',     // Advertising
+    'auto balance': '9010',    // Opening balances → suspense
+    'owner funds': '3010',     // Owner equity
+    'depreciation': '5090',    // Depreciation
+    'capital expenditures': '1500', // Capital improvements
+  };
+
+  // Property address → tenant slug
+  const PROPERTY_TENANT_MAP: Record<string, string> = {
+    '541 w addison': 'nicholas-bianchi',
+    '550 w surf st c211': 'aribia-city-studio',
+    '550 w surf st c504': 'nicholas-bianchi',
+    'carrera 76': 'aribia-llc',
+  };
+
+  // Sub-portfolio → tenant slug
+  const PORTFOLIO_TENANT_MAP: Record<string, string> = {
+    'jean arlene venturing llc': 'jean-arlene-venturing',
+    'aribia llc - mgmt': 'aribia-mgmt',
+    'aribia llc': 'aribia-llc',
+    'chitty services': 'aribia-mgmt',
+    'it can be llc portfolio': 'it-can-be-llc',
+  };
+
+  const allTenants = await storage.getTenants();
+  const slugToTenantId: Record<string, string> = {};
+  for (const t of allTenants) slugToTenantId[t.slug] = t.id;
+
+  // Get a default account per tenant for transaction storage
+  const tenantDefaultAccount: Record<string, string> = {};
+  async function getDefaultAccount(tenantId: string): Promise<string | null> {
+    if (tenantDefaultAccount[tenantId]) return tenantDefaultAccount[tenantId];
+    const accounts = await storage.getAccounts(tenantId);
+    const active = accounts.find((a) => a.isActive);
+    if (active) {
+      tenantDefaultAccount[tenantId] = active.id;
+      return active.id;
+    }
+    return null;
+  }
+
+  function resolveTenantId(property: string, subPortfolio: string, scope: string): string | null {
+    // Try property address first
+    const propLower = property.toLowerCase();
+    for (const [pattern, slug] of Object.entries(PROPERTY_TENANT_MAP)) {
+      if (propLower.includes(pattern)) return slugToTenantId[slug] || null;
+    }
+    // Try sub-portfolio
+    const portfolioLower = subPortfolio.toLowerCase();
+    for (const [pattern, slug] of Object.entries(PORTFOLIO_TENANT_MAP)) {
+      if (portfolioLower.includes(pattern)) return slugToTenantId[slug] || null;
+    }
+    // Default to ARIBIA MGMT
+    return slugToTenantId['aribia-mgmt'] || null;
+  }
+
+  let currentAccountCategory = '';
+  let imported = 0;
+  let skipped = 0;
+  let errors = 0;
+  const categoryStats: Record<string, { imported: number; skipped: number }> = {};
+
+  for (let i = 1; i < lines.length; i++) {
+    const row = parseLine(lines[i]);
+    if (row.length < 4) continue;
+
+    const account = iAccount >= 0 ? row[iAccount]?.trim() || '' : '';
+    const dateStr = iDate >= 0 ? row[iDate]?.trim() || '' : '';
+    const type = iType >= 0 ? row[iType]?.trim() || '' : '';
+    const description = iDesc >= 0 ? row[iDesc]?.trim().replace(/\\\*/g, '*').replace(/\\_/g, '_').replace(/\\/g, '') || '' : '';
+    const debitStr = iDebit >= 0 ? row[iDebit]?.trim() || '' : '';
+    const creditStr = iCredit >= 0 ? row[iCredit]?.trim() || '' : '';
+    const splitAccount = iSplitAccount >= 0 ? row[iSplitAccount]?.trim() || '' : '';
+    const scope = iScope >= 0 ? row[iScope]?.trim() || '' : '';
+    const property = iProperty >= 0 ? row[iProperty]?.trim().replace(/\\/g, '') || '' : '';
+    const unit = iUnit >= 0 ? row[iUnit]?.trim() || '' : '';
+    const subPortfolio = iSubPortfolio >= 0 ? row[iSubPortfolio]?.trim() || '' : '';
+    const vendor = iVendor >= 0 ? row[iVendor]?.trim() || '' : '';
+    const fixedAsset = iFixedAsset >= 0 ? row[iFixedAsset]?.trim() || '' : '';
+    const notes = iNotes >= 0 ? row[iNotes]?.trim() || '' : '';
+
+    // Track current account category (REI Hub groups rows by account type)
+    if (account && !dateStr && !type) {
+      currentAccountCategory = account.toLowerCase();
+      continue;
+    }
+    // Skip empty separator rows
+    if (!dateStr || !description) continue;
+    // Use row-level account or current category
+    const effectiveCategory = account ? account.toLowerCase() : currentAccountCategory;
+
+    // Parse amounts
+    const debit = parseFloat(debitStr.replace(/[$,]/g, '')) || 0;
+    const credit = parseFloat(creditStr.replace(/[$,]/g, '')) || 0;
+    if (debit === 0 && credit === 0) { skipped++; continue; }
+
+    // Net amount: credits are income (positive), debits are expenses (negative for P&L)
+    const isIncome = credit > 0 && debit === 0;
+    const amount = isIncome ? credit : -debit;
+
+    // Parse date (YYYY-MM-DD or MM/DD/YYYY)
+    let date: Date;
+    if (dateStr.includes('-') && dateStr.length === 10) {
+      date = new Date(dateStr);
+    } else {
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        date = new Date(`${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`);
+      } else {
+        date = new Date(dateStr);
+      }
+    }
+    if (isNaN(date.getTime())) { skipped++; continue; }
+
+    // Extract TurboTenant Payment ID from description if present
+    const paymentMatch = description.match(/PAYMENT\s*#(\d+)/i);
+    const ttPaymentId = paymentMatch ? paymentMatch[1] : null;
+
+    // Build external ID for dedup
+    const descHash = description.slice(0, 40).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const externalId = ttPaymentId
+      ? `reihub:tt:${ttPaymentId}`
+      : `reihub:${dateStr}:${amount}:${descHash}`;
+
+    try {
+      const tenantId = resolveTenantId(property, subPortfolio, scope);
+      if (!tenantId) { skipped++; continue; }
+
+      const accountId = await getDefaultAccount(tenantId);
+      if (!accountId) { skipped++; continue; }
+
+      // Dedup
+      const dup = await storage.getTransactionByExternalId(externalId, tenantId);
+      if (dup) {
+        if (!categoryStats[effectiveCategory]) categoryStats[effectiveCategory] = { imported: 0, skipped: 0 };
+        categoryStats[effectiveCategory].skipped++;
+        skipped++;
+        continue;
+      }
+
+      // COA classification from REI Hub account category
+      const suggestedCoaCode = ACCOUNT_COA_MAP[effectiveCategory] || findAccountCode(description);
+      const confidence = ACCOUNT_COA_MAP[effectiveCategory] ? '0.900' : '0.700';
+
+      await storage.createTransaction({
+        tenantId,
+        accountId,
+        amount: String(Math.abs(amount)),
+        type: isIncome ? 'income' : 'expense',
+        category: effectiveCategory || type.toLowerCase(),
+        description,
+        date,
+        payee: vendor || null,
+        externalId,
+        suggestedCoaCode,
+        classificationConfidence: confidence,
+        metadata: {
+          source: 'reihub',
+          reihubAccount: account || currentAccountCategory,
+          reihubType: type,
+          splitAccount: splitAccount || undefined,
+          scope: scope || undefined,
+          property: property || undefined,
+          unit: unit || undefined,
+          subPortfolio: subPortfolio || undefined,
+          fixedAsset: fixedAsset || undefined,
+          notes: notes || undefined,
+          ttPaymentId: ttPaymentId || undefined,
+        },
+      });
+
+      if (!categoryStats[effectiveCategory]) categoryStats[effectiveCategory] = { imported: 0, skipped: 0 };
+      categoryStats[effectiveCategory].imported++;
+      imported++;
+    } catch (e: any) {
+      console.warn('[import:reihub] Row error:', e.message, { row: i });
+      errors++;
+    }
+  }
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'import.reihub',
+    metadata: { imported, skipped, errors, totalRows: lines.length - 1, categoryStats },
+  }, c.env);
+
+  return c.json({ imported, skipped, errors, totalRows: lines.length - 1, categoryStats });
+});
+
 // POST /api/import/turbotenant-deposits — import TurboTenant deposit/payment history
 // Accepts raw CSV body with columns: Payment ID, Deposit Amount, Date Deposited,
 // Tenant, Payment Method, Lease Address, Payment note, Payment Date Paid, Bank Account, Lease
