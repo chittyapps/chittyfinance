@@ -28,7 +28,8 @@
 
   // Hyperdrive binding for fractal scope projection into ChittyOS-Core
   "hyperdrive": [
-    { "binding": "CHITTYOS_CORE_DB", "id": "1d126444cff1416cb415447e6cc6d15a" }
+    { "binding": "CHITTYOS_CORE_DB", "id": "1d126444cff1416cb415447e6cc6d15a" },
+    { "binding": "SERVICE_SCOPE_DB", "id": "89158b50e55a4d5d9279b5d5c890ea7b" }
   ],
 
   // Cloudflare Email Service binding (beta, Workers Paid plan)
@@ -168,6 +169,10 @@
       ],
       "r2_buckets": [
         { "binding": "FINANCE_R2", "bucket_name": "chittyfinance-storage" }
+      ],
+      "hyperdrive": [
+        { "binding": "CHITTYOS_CORE_DB", "id": "1d126444cff1416cb415447e6cc6d15a" },
+        { "binding": "SERVICE_SCOPE_DB", "id": "89158b50e55a4d5d9279b5d5c890ea7b" }
       ],
       "durable_objects": {
         "bindings": [
