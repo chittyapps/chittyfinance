@@ -41,3 +41,14 @@ generated-icon.png
 
 # One-off patches and scripts
 *.patch
+
+# Personal tax-prep documents — NEVER commit (PII, SSNs, financial details)
+docs/*tax-prep*
+docs/*sergio-perez-lpa*
+docs/*tas-chicago*
+docs/corrective-2024-*
+docs/*-1040-*
+docs/*-1065-*
+docs/*-form-911*
+docs/*personal-tax*
+private-tax-prep/
