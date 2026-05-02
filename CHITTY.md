@@ -1,7 +1,7 @@
 ---
-uri: chittycanon://docs/ops/summary/chittyfinance
+uri: chittycanon://docs/ops/architecture/chittyfinance
 namespace: chittycanon://docs/ops
-type: summary
+type: architecture
 version: 2.0.0
 status: COMPATIBLE
 registered_with: chittycanon://core/services/canon
@@ -20,16 +20,17 @@ Full-stack financial management platform providing intelligent tracking, AI-powe
 
 ## Architecture
 
-Dual-mode: Hono on Cloudflare Workers (production) with Neon PostgreSQL multi-tenant, or Express with SQLite (local dev). React frontend with Vite.
+Dual-mode: Hono on Cloudflare Workers (production) with Neon PostgreSQL multi-tenant, or Hono via `@hono/node-server` with SQLite (local dev). React frontend with Vite.
 
 ### Stack
-- **Runtime**: Cloudflare Workers + Hono (production) / Express (dev)
+- **Runtime**: Cloudflare Workers + Hono (production) / Hono node-server (dev) / Express (legacy `dev:legacy` fallback)
 - **Frontend**: React 18 + Vite + shadcn/ui + TanStack Query
-- **Database**: Neon PostgreSQL with Drizzle ORM (system) / SQLite (standalone)
-- **AI**: OpenAI GPT-4o (financial advice)
+- **Database**: Neon PostgreSQL with Drizzle ORM (system) via Hyperdrive `chittyfinance-db` / SQLite (standalone)
+- **AI**: OpenAI GPT-4o (advice) + GPT-4o-mini (transaction classification)
 - **Payments**: Stripe (checkout, webhooks)
-- **Banking**: Mercury Bank (via ChittyConnect proxy)
+- **Banking**: Mercury Bank (direct webhooks + ChittyConnect proxy with static egress IP)
 - **Accounting**: Wave Accounting (OAuth 2.0 + GraphQL)
+- **Email**: Cloudflare Email Service (inbound `finance@chitty.cc` + outbound)
 
 ### Dual-Mode Operation
 | Mode | Database | Tenancy | Deployment |
@@ -52,39 +53,58 @@ Source: `chittycanon://gov/governance#three-aspects`
 ### Certification
 - **Badge**: ChittyOS Compatible
 - **Certifier**: ChittyCertify (`chittycanon://core/services/chittycertify`)
-- **Last Certified**: --
+- **Registered**: 2026-02-22 (`did:chitty:REG-XE6835`)
 
 ### ChittyDNA
-- **ChittyID**: --
+- **ChittyID**: `did:chitty:REG-XE6835`
 - **DNA Hash**: --
 - **Lineage**: root (financial management)
 
 ### Dependencies
-| Service | Purpose |
-|---------|---------|
-| ChittyAuth | Token validation |
-| ChittyConnect | Mercury Bank proxy |
-| Mercury Bank | Banking integration |
-| Wave Accounting | Accounting integration (OAuth) |
-| Stripe | Payment processing |
-| OpenAI | AI financial advice (GPT-4o) |
-| Neon PostgreSQL | Primary database |
+| Service | Status | Purpose |
+|---------|--------|---------|
+| ChittyAuth | Live | Token validation |
+| ChittyID | Live (PR #72) | OAuth 2.0 PKCE SSO |
+| ChittyConnect | Live | Mercury Bank proxy (static egress IP) |
+| ChittyDiscovery | Live (PR #79) | Service self-registration + heartbeat |
+| ChittySchema | Live | Schema registry (advisory, fall-open client) |
+| ChittyChronicle | Partial | Audit log writes succeed; API endpoints (cases/timeline/search) return 404 — read-side blocked |
+| Mercury Bank | Live | Banking integration (7 per-tenant HMAC webhooks) |
+| Wave Accounting | Live | Accounting integration (OAuth 2.0 + GraphQL) |
+| Stripe | Live | Payment processing |
+| OpenAI | Live | GPT-4o advice + GPT-4o-mini classification |
+| Neon PostgreSQL | Live | Primary database (project `solitary-rice-14149088`) |
+| ChittyCert | Pending | Certificate issuance (Phase 5 remaining) |
+| ChittyConnect MCP | Pending | MCP integration (Phase 2 remaining) |
 
 ### Endpoints
-| Path | Method | Auth | Purpose |
-|------|--------|------|---------|
-| `/health` | GET | No | Health check |
-| `/api/financial-summary` | GET | Bearer | Financial summary |
-| `/api/transactions` | GET | Bearer | Transaction list |
-| `/api/recurring-charges` | GET | Bearer | Recurring charges |
-| `/api/recurring-charges/:id/optimizations` | GET | Bearer | AI optimization suggestions |
-| `/api/integrations/status` | GET | Bearer | Integration config status |
-| `/api/integrations/wave/authorize` | GET | Bearer | Wave OAuth flow |
-| `/api/integrations/stripe/connect` | POST | Bearer | Stripe customer setup |
-| `/api/integrations/stripe/webhook` | POST | No | Stripe webhook receiver |
-| `/api/mercury/accounts` | GET | Bearer | Mercury accounts via ChittyConnect |
-| `/api/ai/advice` | POST | Bearer | AI financial advice |
-| `/api/ai/message` | POST | Bearer | Conversational AI |
+
+Surfaced by 33 route modules under `server/routes/`. Categorized below; full reference in [CHARTER.md](CHARTER.md) and [CLAUDE.md](CLAUDE.md).
+
+| Category | Sample Paths | Auth |
+|----------|--------------|------|
+| Health/Docs | `/health`, `/api/v1/status`, `/api/v1/documentation` | No |
+| Session | `/api/session` (GET/POST/DELETE) | No (sets cookie) |
+| ChittyID SSO | `/api/auth/chittyid/{authorize,callback}` | No |
+| Tenants | `/api/tenants`, `/api/tenants/:id/settings` | Hybrid |
+| Accounts | `/api/accounts` | Hybrid |
+| Transactions | `/api/transactions`, `/api/transactions/export?format=csv\|ofx\|qfx` | Hybrid |
+| Properties | `/api/properties` (CRUD), `/api/properties/:id/{financials,rent-roll,pnl,valuation}` | Hybrid |
+| Leases | `/api/leases/expiring`, `/api/properties/:id/leases` | Hybrid |
+| Allocations | `/api/allocations/{rules,preview,execute,runs}` | Hybrid |
+| Classification | `/api/classification/{queue,suggest,classify,bulk-accept}` | Hybrid |
+| COA Admin | `/api/chart-of-accounts` (L4 owner/admin) | Hybrid |
+| Tax | `/api/tax/schedule-e`, `/api/tax/line-summary` | Hybrid |
+| Reports | `/api/reports/consolidated`, `/api/portfolio` | Hybrid |
+| Imports | `/api/import/{turbotenant,mercury,hd-pro,amazon,wave-sync,rei-hub}` | Hybrid |
+| Forensics | `/api/forensics/*` (21 endpoints) | Hybrid |
+| AI | `/api/ai/{advice,cost-reduction,message}` | Hybrid |
+| Integrations | `/api/integrations`, `/api/integrations/status`, `/api/integrations/wave/{authorize,callback,refresh}`, `/api/integrations/stripe/{connect,checkout,webhook}` | Mixed |
+| Mercury | `/api/mercury/{accounts,select-accounts}` | Hybrid |
+| Webhooks | `/api/integrations/{stripe,mercury,wave}/webhook` | Signature-verified |
+| Email | `/api/email/*`, inbound handler for `finance@chitty.cc` | Hybrid |
+| MCP | `/api/mcp/*` | Bearer |
+| Tasks | `/api/tasks` | Hybrid |
 
 ## Document Triad
 
