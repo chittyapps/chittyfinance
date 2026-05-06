@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShieldCheck, CheckCircle2, AlertTriangle, AlertCircle, HelpCircle, FileText, Download, ChevronDown, ChevronRight, Menu } from 'lucide-react';
-import { initialData, Section, AuditItem, ConfidenceLevel } from './lib/data';
+import { ShieldCheck, AlertTriangle, AlertCircle, HelpCircle, FileText, Download, Menu, Paperclip, Plus, X, Scale } from 'lucide-react';
+import { initialData, Section, AuditItem, ConfidenceLevel, Classification, AuditDocument } from './lib/data';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,17 +20,37 @@ const formatCurrency = (val: number) => {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 };
 
+const CLASS_META: Record<Classification, { label: string; short: string; color: string; bg: string; ring: string; stripe: string; chip: string }> = {
+  Unclassified: { label: 'Unclassified', short: 'U', color: '#64748b', bg: 'bg-slate-100 dark:bg-slate-800', ring: 'ring-slate-300', stripe: 'bg-slate-300', chip: 'bg-slate-200 text-slate-700' },
+  NonMarital:   { label: 'Non-Marital', short: 'NM', color: '#10b981', bg: 'bg-emerald-50 dark:bg-emerald-950/40', ring: 'ring-emerald-300', stripe: 'bg-emerald-500', chip: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+  Marital:      { label: 'Marital', short: 'M', color: '#0ea5e9', bg: 'bg-sky-50 dark:bg-sky-950/40', ring: 'ring-sky-300', stripe: 'bg-sky-500', chip: 'bg-sky-100 text-sky-800 border border-sky-200' },
+  Disputed:     { label: 'Disputed', short: 'D', color: '#f59e0b', bg: 'bg-amber-50 dark:bg-amber-950/40', ring: 'ring-amber-300', stripe: 'bg-amber-500', chip: 'bg-amber-100 text-amber-900 border border-amber-200' },
+};
+
+const CLASS_ORDER: Classification[] = ['NonMarital', 'Marital', 'Disputed', 'Unclassified'];
+
+function normalizeSections(secs: Section[]): Section[] {
+  return secs.map(sec => ({
+    ...sec,
+    items: sec.items.map(item => ({
+      ...item,
+      classification: item.classification ?? 'Unclassified',
+      documents: item.documents ?? [],
+    })),
+  }));
+}
+
 export default function App() {
   const [sections, setSections] = useState<Section[]>(() => {
     const saved = localStorage.getItem('chitty-finance-audit-state');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        return normalizeSections(JSON.parse(saved));
       } catch (e) {
         console.error("Failed to parse saved state", e);
       }
     }
-    return initialData;
+    return normalizeSections(initialData);
   });
 
   const [activeSectionId, setActiveSectionId] = useState(initialData[0].id);
@@ -70,14 +90,17 @@ export default function App() {
   };
 
   // Stats
-  const { totalItems, checkedItems, discrepancyCount } = useMemo(() => {
+  const { totalItems, checkedItems, discrepancyCount, classCounts } = useMemo(() => {
     let total = 0;
     let checked = 0;
     let discrepancies = 0;
+    const counts: Record<Classification, number> = { NonMarital: 0, Marital: 0, Disputed: 0, Unclassified: 0 };
 
     sections.forEach(sec => {
       sec.items.forEach(item => {
         total++;
+        const cls = (item.classification ?? 'Unclassified') as Classification;
+        counts[cls]++;
         if (item.confidence !== 'Unverified') checked++;
 
         if (item.confidence !== 'Unverified') {
@@ -92,10 +115,12 @@ export default function App() {
       });
     });
 
-    return { totalItems: total, checkedItems: checked, discrepancyCount: discrepancies };
+    return { totalItems: total, checkedItems: checked, discrepancyCount: discrepancies, classCounts: counts };
   }, [sections]);
 
   const progressPercent = totalItems > 0 ? Math.round((checkedItems / totalItems) * 100) : 0;
+  const classifiedCount = totalItems - classCounts.Unclassified;
+  const classifiedPercent = totalItems > 0 ? Math.round((classifiedCount / totalItems) * 100) : 0;
 
   const activeSection = sections.find(s => s.id === activeSectionId) || sections[0];
 
@@ -117,11 +142,11 @@ export default function App() {
             <div className="text-xs font-mono text-sidebar-foreground/60 mb-1">MODE</div>
             <div className="font-semibold text-sm flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#f59e0b] animate-pulse"></span>
-              Primary Source Tracing
+              Source Tracing & Classification
             </div>
           </div>
 
-          <div className="mb-6">
+          <div className="mb-5">
             <div className="flex justify-between text-xs font-mono mb-2">
               <span className="text-sidebar-foreground/70">VERIFICATION</span>
               <span className="font-semibold text-[#10b981]">{progressPercent}%</span>
@@ -136,9 +161,33 @@ export default function App() {
               )}
             </div>
           </div>
+
+          <div className="mb-2">
+            <div className="flex justify-between text-xs font-mono mb-2">
+              <span className="text-sidebar-foreground/70">CLASSIFICATION</span>
+              <span className="font-semibold text-sidebar-foreground/90">{classifiedPercent}%</span>
+            </div>
+            <div className="flex h-2 w-full rounded-full overflow-hidden bg-sidebar-accent">
+              {(['NonMarital','Marital','Disputed'] as Classification[]).map(c => {
+                const pct = totalItems > 0 ? (classCounts[c] / totalItems) * 100 : 0;
+                return <div key={c} style={{ width: `${pct}%`, backgroundColor: CLASS_META[c].color }} />;
+              })}
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-3 text-[11px]">
+              {(['NonMarital','Marital','Disputed'] as Classification[]).map(c => (
+                <div key={c} className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: CLASS_META[c].color }} />
+                    <span className="text-sidebar-foreground/70">{CLASS_META[c].label}</span>
+                  </div>
+                  <span className="font-semibold text-sm font-mono ml-3.5 text-sidebar-foreground">{classCounts[c]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
+        <div className="flex-1 overflow-y-auto px-4 pb-4 mt-2">
           <div className="text-xs font-mono text-sidebar-foreground/50 mb-3 px-2">SECTIONS</div>
           <nav className="flex flex-col gap-1">
             {sections.map(sec => (
@@ -209,7 +258,7 @@ export default function App() {
         <header className="px-6 py-8 border-b border-border/50 bg-white/50 dark:bg-card/50 backdrop-blur-sm sticky top-0 z-10">
           <h2 className="text-2xl font-serif font-semibold text-primary mb-2">{activeSection.title}</h2>
           <p className="text-sm text-muted-foreground flex items-center gap-2">
-            <HelpCircle className="w-4 h-4" /> Trace each working figure to its primary source and log exact references.
+            <HelpCircle className="w-4 h-4" /> Attach primary-source documents and classify each item as Non-Marital, Marital, or Disputed.
           </p>
         </header>
 
@@ -254,11 +303,10 @@ function VerificationCard({ item, sectionId, updateItem, className, style }: {
   const vNum = parseNumeric(item.verifiedFig);
   
   let status = "Pending Verification";
-  let statusColor = "bg-[#64748b] text-white"; // slate
+  let statusColor = "bg-[#64748b] text-white";
   let isDiscrepancy = false;
-  let discrepancyAmt = 0;
 
-  if (item.confidence === 'Unverified' || (!item.verifiedFig && item.confidence === 'Unverified')) {
+  if (item.confidence === 'Unverified') {
     status = "Pending Verification";
     statusColor = "bg-[#64748b] text-white";
   } else {
@@ -266,31 +314,56 @@ function VerificationCard({ item, sectionId, updateItem, className, style }: {
       const delta = vNum - wNum;
       if (Math.abs(delta) < 0.01) {
         status = "Verified Match";
-        statusColor = "bg-[#10b981] text-white"; // emerald
+        statusColor = "bg-[#10b981] text-white";
       } else {
         isDiscrepancy = true;
-        discrepancyAmt = delta;
         status = `Discrepancy: ${delta > 0 ? '+' : ''}${formatCurrency(delta)}`;
-        statusColor = "bg-[#e11d48] text-white"; // rose
+        statusColor = "bg-[#e11d48] text-white";
       }
     } else if (wNum === null && vNum === null) {
       status = "Source Confirmed";
       statusColor = "bg-[#10b981] text-white";
     } else {
       status = "Needs Numeric Check";
-      statusColor = "bg-[#f59e0b] text-black"; // amber
+      statusColor = "bg-[#f59e0b] text-black";
     }
   }
 
+  const classification = (item.classification ?? 'Unclassified') as Classification;
+  const cMeta = CLASS_META[classification];
+  const documents = item.documents ?? [];
   const needsSourcePrompt = item.confidence === 'Confirmed' && !item.sourceId.trim();
 
+  const setClassification = (c: Classification) => updateItem(sectionId, item.id, { classification: c });
+
+  const addDocument = (name: string, ref: string, bucket: Classification) => {
+    if (!name.trim()) return;
+    const newDoc: AuditDocument = {
+      id: `${item.id}-doc-${Date.now()}`,
+      name: name.trim(),
+      ref: ref.trim(),
+      bucket,
+    };
+    updateItem(sectionId, item.id, { documents: [...documents, newDoc] });
+  };
+
+  const removeDocument = (docId: string) => {
+    updateItem(sectionId, item.id, { documents: documents.filter(d => d.id !== docId) });
+  };
+
+  const setDocumentBucket = (docId: string, bucket: Classification) => {
+    updateItem(sectionId, item.id, { documents: documents.map(d => d.id === docId ? { ...d, bucket } : d) });
+  };
+
   return (
-    <Card className={`overflow-hidden transition-all duration-200 border border-border shadow-sm hover:shadow-md focus-within:ring-2 focus-within:ring-primary/20 ${className}`} style={style}>
-      <div className="bg-card">
+    <Card className={`overflow-hidden transition-all duration-200 border border-border shadow-sm hover:shadow-md focus-within:ring-2 focus-within:ring-primary/20 relative ${className}`} style={style}>
+      {/* Classification stripe */}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${cMeta.stripe} transition-colors`} />
+      <div className="bg-card pl-1">
         {/* Header */}
         <div className="p-4 border-b border-border/50 bg-secondary/30 flex flex-wrap gap-3 justify-between items-start">
           <div className="flex-1 min-w-[200px]">
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <Badge variant="outline" className="font-mono text-xs bg-white dark:bg-black font-semibold text-primary">
                 {item.id}
               </Badge>
@@ -299,6 +372,9 @@ function VerificationCard({ item, sectionId, updateItem, className, style }: {
                   Court Filing Block
                 </Badge>
               )}
+              <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${cMeta.chip}`}>
+                {cMeta.label}
+              </span>
             </div>
             <h3 className="font-bold text-base text-foreground leading-tight">{item.q}</h3>
             <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground font-medium">
@@ -318,6 +394,31 @@ function VerificationCard({ item, sectionId, updateItem, className, style }: {
             <span className="font-medium">{item.logicNote}</span>
           </div>
         )}
+
+        {/* Classification Bar */}
+        <div className="px-5 py-3 border-b border-border/50 bg-background/40 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground font-semibold uppercase tracking-wider">
+            <Scale className="w-3.5 h-3.5" /> Classify
+          </div>
+          <div className="inline-flex rounded-md overflow-hidden border border-border bg-white dark:bg-black">
+            {(['NonMarital','Marital','Disputed','Unclassified'] as Classification[]).map(c => {
+              const m = CLASS_META[c];
+              const active = classification === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setClassification(c)}
+                  className={`px-3 py-1.5 text-xs font-semibold transition-colors border-r last:border-r-0 border-border ${
+                    active ? 'text-white' : 'text-muted-foreground hover:bg-muted'
+                  }`}
+                  style={active ? { backgroundColor: m.color } : undefined}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Body */}
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -381,7 +482,160 @@ function VerificationCard({ item, sectionId, updateItem, className, style }: {
             </div>
           </div>
         </div>
+
+        {/* Documents */}
+        <DocumentsPanel
+          documents={documents}
+          itemClassification={classification}
+          onAdd={addDocument}
+          onRemove={removeDocument}
+          onSetBucket={setDocumentBucket}
+        />
       </div>
     </Card>
+  );
+}
+
+function DocumentsPanel({
+  documents,
+  itemClassification,
+  onAdd,
+  onRemove,
+  onSetBucket,
+}: {
+  documents: AuditDocument[];
+  itemClassification: Classification;
+  onAdd: (name: string, ref: string, bucket: Classification) => void;
+  onRemove: (id: string) => void;
+  onSetBucket: (id: string, bucket: Classification) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [ref, setRef] = useState('');
+  const [bucket, setBucket] = useState<Classification>(itemClassification === 'Unclassified' ? 'NonMarital' : itemClassification);
+
+  const submit = () => {
+    if (!name.trim()) return;
+    onAdd(name, ref, bucket);
+    setName('');
+    setRef('');
+    setAdding(false);
+  };
+
+  // Group docs by bucket
+  const grouped: Record<Classification, AuditDocument[]> = { NonMarital: [], Marital: [], Disputed: [], Unclassified: [] };
+  documents.forEach(d => grouped[d.bucket].push(d));
+
+  return (
+    <div className="border-t border-border/50 bg-background/40">
+      <div className="px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground font-semibold uppercase tracking-wider">
+          <Paperclip className="w-3.5 h-3.5" /> Documents
+          <span className="text-foreground/70 ml-1">({documents.length})</span>
+        </div>
+        {!adding && (
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setAdding(true)}>
+            <Plus className="w-3.5 h-3.5" /> Add document
+          </Button>
+        )}
+      </div>
+
+      {adding && (
+        <div className="px-5 pb-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+          <div className="md:col-span-5">
+            <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Name</label>
+            <Input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="USAA Wire Confirmation 10/15/2015"
+              className="text-sm bg-white dark:bg-black h-9"
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }}
+            />
+          </div>
+          <div className="md:col-span-3">
+            <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Ref</label>
+            <Input
+              value={ref}
+              onChange={e => setRef(e.target.value)}
+              placeholder="#9921 / Bates 00123"
+              className="font-mono text-sm bg-white dark:bg-black h-9"
+              onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false); }}
+            />
+          </div>
+          <div className="md:col-span-3">
+            <label className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Bucket</label>
+            <Select value={bucket} onValueChange={(v: Classification) => setBucket(v)}>
+              <SelectTrigger className="bg-white dark:bg-black font-medium h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="NonMarital">Non-Marital</SelectItem>
+                <SelectItem value="Marital">Marital</SelectItem>
+                <SelectItem value="Disputed">Disputed</SelectItem>
+                <SelectItem value="Unclassified">Unclassified</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="md:col-span-1 flex gap-1">
+            <Button size="sm" className="h-9 px-3" onClick={submit}>Add</Button>
+            <Button size="sm" variant="ghost" className="h-9 px-2" onClick={() => { setAdding(false); setName(''); setRef(''); }}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {documents.length > 0 && (
+        <div className="px-5 pb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+          {(['NonMarital', 'Marital', 'Disputed'] as Classification[]).map(b => {
+            const m = CLASS_META[b];
+            const list = grouped[b];
+            return (
+              <div key={b} className={`rounded-md border ${m.bg} border-border/60 p-2.5 min-h-[64px]`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider font-bold" style={{ color: m.color }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.color }} />
+                    {m.label}
+                  </div>
+                  <span className="text-[10px] font-mono font-semibold text-muted-foreground">{list.length}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {list.length === 0 && (
+                    <div className="text-[11px] text-muted-foreground/60 italic px-1">No documents</div>
+                  )}
+                  {list.map(d => (
+                    <div key={d.id} className="bg-white dark:bg-black/40 rounded border border-border/60 px-2 py-1.5 text-xs flex items-start gap-1.5 group">
+                      <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-foreground truncate">{d.name}</div>
+                        {d.ref && <div className="font-mono text-[10px] text-muted-foreground truncate">{d.ref}</div>}
+                      </div>
+                      <Select value={d.bucket} onValueChange={(v: Classification) => onSetBucket(d.id, v)}>
+                        <SelectTrigger className="h-6 px-1.5 text-[10px] w-auto border-0 bg-transparent shadow-none opacity-0 group-hover:opacity-100 transition-opacity">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="NonMarital">Non-Marital</SelectItem>
+                          <SelectItem value="Marital">Marital</SelectItem>
+                          <SelectItem value="Disputed">Disputed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <button
+                        onClick={() => onRemove(d.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-[#e11d48]"
+                        aria-label="Remove document"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

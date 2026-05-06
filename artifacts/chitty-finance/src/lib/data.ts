@@ -1,4 +1,12 @@
 export type ConfidenceLevel = 'Unverified' | 'Probable' | 'Confirmed';
+export type Classification = 'Unclassified' | 'NonMarital' | 'Marital' | 'Disputed';
+
+export interface AuditDocument {
+  id: string;
+  name: string;
+  ref: string;
+  bucket: Classification;
+}
 
 export interface AuditItem {
   id: string;
@@ -13,6 +21,8 @@ export interface AuditItem {
   confidence: ConfidenceLevel;
   sourceId: string;
   notes: string;
+  classification?: Classification;
+  documents?: AuditDocument[];
 }
 
 export interface Section {
