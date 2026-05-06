@@ -7,7 +7,7 @@ export interface AuditItem {
   targetSources: string;
   isCritical?: boolean;
   logicNote?: string;
-  
+
   // User state
   verifiedFig: string;
   confidence: ConfidenceLevel;
@@ -24,11 +24,11 @@ export interface Section {
 export const initialData: Section[] = [
   {
     id: "A",
-    title: "A. Marital Estate Summary",
+    title: "A. Estate Summary",
     items: [
       {
         id: "A-01",
-        q: "Total Marital Assets (Working Draft)",
+        q: "Total Assets (Working Draft)",
         workingFig: "$14,250,000.00",
         targetSources: "Master Asset Schedule, Consolidated Brokerage Statements",
         verifiedFig: "",
@@ -39,7 +39,7 @@ export const initialData: Section[] = [
       },
       {
         id: "A-02",
-        q: "Total Marital Liabilities",
+        q: "Total Liabilities",
         workingFig: "$3,125,450.00",
         targetSources: "Credit Reports, Mortgage Statements",
         verifiedFig: "",
@@ -49,7 +49,7 @@ export const initialData: Section[] = [
       },
       {
         id: "A-03",
-        q: "Joint Account Balance (Chase x8892)",
+        q: "Primary Operating Account Balance (Chase x8892)",
         workingFig: "$245,100.50",
         targetSources: "Chase Bank Statement (Dec 2022)",
         verifiedFig: "",
@@ -59,14 +59,14 @@ export const initialData: Section[] = [
       },
       {
         id: "A-04",
-        q: "Date of Separation / Valuation Cutoff",
+        q: "Valuation Cutoff Date",
         workingFig: "11/14/2022",
-        targetSources: "Court Order, Mediated Agreement",
+        targetSources: "Engagement Letter, Court Order",
         verifiedFig: "",
         confidence: "Unverified",
         sourceId: "",
         notes: "",
-        logicNote: "Check if alternative separation date of 12/01/2022 is supported by filing."
+        logicNote: "Confirm whether an alternative cutoff of 12/01/2022 is supported by the filing."
       }
     ]
   },
@@ -87,7 +87,7 @@ export const initialData: Section[] = [
       {
         id: "B-02",
         q: "Down Payment Source",
-        workingFig: "Joint Savings",
+        workingFig: "Operating Account",
         targetSources: "Wire Confirmation, Bank Statements",
         verifiedFig: "",
         confidence: "Unverified",
@@ -145,14 +145,14 @@ export const initialData: Section[] = [
       {
         id: "D-02",
         q: "Down Payment Source",
-        workingFig: "Separate Inheritance",
+        workingFig: "Trust Distribution",
         targetSources: "Wire Confirmation, Trust Documents",
         verifiedFig: "",
         confidence: "Unverified",
         sourceId: "",
         notes: "",
         isCritical: true,
-        logicNote: "Crucial to trace back to separate property trust to exclude from marital estate."
+        logicNote: "Trace funds to originating trust to establish source-of-funds classification."
       },
       {
         id: "D-03",
@@ -193,7 +193,7 @@ export const initialData: Section[] = [
       {
         id: "E-02",
         q: "Down Payment Source",
-        workingFig: "Joint Investment Acct",
+        workingFig: "Investment Account",
         targetSources: "Wire Confirmation",
         verifiedFig: "",
         confidence: "Unverified",
@@ -258,8 +258,8 @@ export const initialData: Section[] = [
       },
       {
         id: "F-04",
-        q: "Title Holder",
-        workingFig: "Petitioner (Sole)",
+        q: "Title Holder of Record",
+        workingFig: "Subject (Sole)",
         targetSources: "Certificado de Tradición",
         verifiedFig: "",
         confidence: "Unverified",
@@ -276,13 +276,13 @@ export const initialData: Section[] = [
         confidence: "Unverified",
         sourceId: "",
         notes: "",
-        logicNote: "Alleged cash payments off-books. High scrutiny required."
+        logicNote: "Alleged off-book cash payments. High scrutiny required."
       }
     ]
   },
   {
     id: "I",
-    title: "I. Petitioner Alleged Misconduct",
+    title: "I. Subject Alleged Misconduct",
     items: [
       {
         id: "I-01",
