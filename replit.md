@@ -1,6 +1,6 @@
-# [Project name]
+# ChittyFinance Auditor Engine
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+An interactive forensic-auditing workspace where a legal/financial auditor traces working-draft figures back to primary sources, logs verified amounts and source IDs, and exports a verified audit log.
 
 ## Run & Operate
 
