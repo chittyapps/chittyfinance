@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "type": "module",
   "license": "MIT",
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/dev.ts",
     "build": "vite build && esbuild server/dev.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",

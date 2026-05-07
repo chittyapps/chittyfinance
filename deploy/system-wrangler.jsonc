@@ -52,7 +52,7 @@
   ],
 
   "build": {
-    "command": "npx vite build --outDir dist/public"
+    "command": "pnpm install --frozen-lockfile && pnpm exec vite build --outDir dist/public"
   },
 
   "assets": {
