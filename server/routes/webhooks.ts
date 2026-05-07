@@ -615,10 +615,14 @@ async function verifyWaveSignature(
 
   if (!timestamp || !signature) return false;
 
-  // 5-minute replay window
+  // Asymmetric replay window: tolerate 5 min of past skew, only 60s of future skew.
+  // Future-dated timestamps shouldn't occur from Wave's signers and indicate
+  // either clock drift or tampering — keep that window tight.
   const tsSeconds = Number(timestamp);
   if (!Number.isFinite(tsSeconds)) return false;
-  if (Math.abs(Math.floor(nowMs / 1000) - tsSeconds) > 300) return false;
+  const nowSec = Math.floor(nowMs / 1000);
+  if (nowSec - tsSeconds > 300) return false;
+  if (tsSeconds - nowSec > 60) return false;
 
   const signedPayload = `${timestamp}.${rawBody}`;
   const encoder = new TextEncoder();
@@ -736,41 +740,82 @@ webhookRoutes.post('/api/webhooks/wave/:tenantId/:businessId', async (c) => {
   const secret = await kv.get(waveSecretKey(tenantId, businessId));
   const signatureHeader = c.req.header('x-wave-signature') ?? '';
 
-  if (secret) {
-    if (!signatureHeader || !(await verifyWaveSignature(rawBody, signatureHeader, secret))) {
-      return c.json({ error: 'invalid_signature' }, 401);
-    }
-  } else {
-    console.warn('[webhook:wave] No secret stored for', { tenantId, businessId }, '— signature verification skipped');
+  const sigVerified = secret
+    ? signatureHeader.length > 0 && (await verifyWaveSignature(rawBody, signatureHeader, secret))
+    : false;
+
+  if (secret && !sigVerified) {
+    return c.json({ error: 'invalid_signature' }, 401);
   }
 
-  // Parse JSON; empty/non-JSON body → ack as setup ping
+  // Parse JSON; empty/non-JSON body is treated as a setup ping (Wave dashboard
+  // sends a probe when the operator first saves the URL).
   let body: unknown;
+  let parseFailed = false;
   try {
-    body = JSON.parse(rawBody);
+    body = rawBody.length === 0 ? null : JSON.parse(rawBody);
   } catch {
+    parseFailed = true;
+  }
+
+  if (parseFailed) {
+    if (sigVerified) {
+      // Signed by Wave but unparseable — surface to the audit trail rather
+      // than silently 200ing.
+      ledgerLog(
+        c,
+        {
+          entityType: 'audit',
+          action: 'webhook.wave.parse_error',
+          metadata: { tenantId, businessId, bodyBytes: rawBody.length },
+        },
+        c.env,
+      );
+    }
     return c.json({ received: true }, 200);
   }
 
-  const parsed = waveNativeEventSchema.safeParse(body);
+  const parsed = body == null ? { success: false as const } : waveNativeEventSchema.safeParse(body);
   if (!parsed.success) {
-    console.warn('[webhook:wave] Unrecognized payload, acking', {
-      tenantId,
-      businessId,
-      keys: typeof body === 'object' && body ? Object.keys(body as object) : typeof body,
-    });
+    if (sigVerified) {
+      // Signed Wave payload that doesn't match the documented envelope —
+      // schema drift. Audit-log so it shows up in the ledger instead of
+      // disappearing into stderr.
+      ledgerLog(
+        c,
+        {
+          entityType: 'audit',
+          action: 'webhook.wave.unrecognized',
+          metadata: {
+            tenantId,
+            businessId,
+            shape: typeof body === 'object' && body ? Object.keys(body as object).slice(0, 10) : typeof body,
+          },
+        },
+        c.env,
+      );
+    }
     return c.json({ received: true }, 200);
   }
 
   const event = parsed.data;
+
+  // No secret stored, but the body looks like a real Wave event. Reject —
+  // someone learning the URL must not be able to inject ledger entries.
+  // The setup-ping bypass is reserved for non-event probe shapes.
+  if (!secret) {
+    return c.json({ error: 'webhook_not_configured' }, 401);
+  }
 
   // URL-vs-payload business binding check (defense in depth)
   if (event.business_id !== businessId) {
     return c.json({ error: 'business_id_mismatch', expected: businessId, got: event.business_id }, 400);
   }
 
-  // KV idempotency — 7-day dedup window keyed on event_id
-  const dedupKey = `webhook:wave:dedup:${event.event_id}`;
+  // KV idempotency — 7-day dedup window keyed on (tenant, business, event_id).
+  // Scoping prevents cross-business event_id collisions (Wave's event_ids are
+  // unique per business, not globally).
+  const dedupKey = `webhook:wave:dedup:${tenantId}:${businessId}:${event.event_id}`;
   if (await kv.get(dedupKey)) {
     return c.json({ received: true, duplicate: true, eventId: event.event_id }, 202);
   }
