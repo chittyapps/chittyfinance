@@ -710,6 +710,43 @@ webhookRoutes.delete('/api/webhooks/wave/:tenantId/:businessId/secret', async (c
   return c.json({ deleted: true, tenantId, businessId });
 });
 
+/**
+ * Sanitize webhook data before logging to ledger.
+ * Extracts safe identifiers and masks sensitive information.
+ */
+function sanitizeWebhookData(data: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+
+  // Whitelist of safe fields to include
+  const safeFields = ['invoiceId', 'customerId', 'amount', 'status', 'id', 'type'];
+
+  for (const field of safeFields) {
+    if (field in data) {
+      sanitized[field] = data[field];
+    }
+  }
+
+  // Mask account numbers (any field containing 'account' and looking like a number)
+  for (const [key, value] of Object.entries(data)) {
+    if (key.toLowerCase().includes('account') && typeof value === 'string') {
+      if (/^\d+$/.test(value) && value.length >= 4) {
+        sanitized[key] = `***${value.slice(-4)}`;
+      }
+    }
+  }
+
+  // Generate a short summary of available keys (for debugging)
+  const allKeys = Object.keys(data);
+  if (allKeys.length > 0) {
+    sanitized._keys = allKeys.slice(0, 10); // First 10 keys only
+    if (allKeys.length > 10) {
+      sanitized._keysOmitted = allKeys.length - 10;
+    }
+  }
+
+  return sanitized;
+}
+
 // POST /api/webhooks/wave/:tenantId/:businessId — Wave native webhook receiver
 //
 // Auth: x-wave-signature HMAC-SHA256 verified against per-(tenant, business)
@@ -831,7 +868,7 @@ webhookRoutes.post('/api/webhooks/wave/:tenantId/:businessId', async (c) => {
         businessId,
         eventId: event.event_id,
         eventType: event.event_type,
-        data: event.data,
+        data: sanitizeWebhookData(event.data),
       },
     },
     c.env,
