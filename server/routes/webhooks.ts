@@ -560,3 +560,328 @@ webhookRoutes.post('/api/webhooks/wave', async (c) => {
     schemaAdvisory: schemaResult.advisory,
   }, 201);
 });
+
+// ─── Wave per-(tenant, business) webhook secret storage ───
+//
+// Wave webhooks are scoped to a (tenant, business) pair because a single
+// tenant can connect multiple Wave businesses (different LLCs sharing one
+// chittyfinance tenant). Secrets are issued by Wave when a webhook
+// subscription is created and must be supplied to the verification step
+// of the receiver (added in a follow-up PR once Wave's signature schema
+// is verified).
+//
+// KV layout:
+//   webhook:wave:secret:<tenantId>:<businessId>     → HMAC secret (string)
+//   webhook:wave:dedup:<eventId>                    → 7d TTL idempotency marker (set by receiver, not here)
+
+function waveSecretKey(tenantId: string, businessId: string): string {
+  return `webhook:wave:secret:${tenantId}:${businessId}`;
+}
+
+function isAuthorizedWaveSecretCaller(env: { CHITTY_AUTH_SERVICE_TOKEN?: string }, authHeader: string): boolean {
+  const expected = env.CHITTY_AUTH_SERVICE_TOKEN;
+  if (!expected) return false;
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  return token.length > 0 && token === expected;
+}
+
+/**
+ * Verify Wave's webhook signature.
+ *
+ * Per Wave's Webhooks Setup Guide:
+ *   - Header: x-wave-signature: t=<unix_timestamp>,v1=<hex_hmac_sha256>
+ *   - Signed payload: <timestamp>.<raw_body>      (raw body, do not re-serialize)
+ *   - Replay window: reject if |now - timestamp| > 300 seconds (5 min)
+ *
+ * Algorithm matches Mercury's signature scheme; kept as a separate function
+ * so the two integrations can diverge independently as Wave's docs evolve.
+ */
+async function verifyWaveSignature(
+  rawBody: string,
+  signatureHeader: string,
+  secret: string,
+  nowMs: number = Date.now(),
+): Promise<boolean> {
+  const parts = signatureHeader.split(',');
+  let timestamp: string | undefined;
+  let signature: string | undefined;
+
+  for (const part of parts) {
+    const [key, ...rest] = part.split('=');
+    const value = rest.join('=');
+    if (key === 't') timestamp = value;
+    if (key === 'v1') signature = value;
+  }
+
+  if (!timestamp || !signature) return false;
+
+  // Asymmetric replay window: tolerate 5 min of past skew, only 60s of future skew.
+  // Future-dated timestamps shouldn't occur from Wave's signers and indicate
+  // either clock drift or tampering — keep that window tight.
+  const tsSeconds = Number(timestamp);
+  if (!Number.isFinite(tsSeconds)) return false;
+  const nowSec = Math.floor(nowMs / 1000);
+  if (nowSec - tsSeconds > 300) return false;
+  if (tsSeconds - nowSec > 60) return false;
+
+  const signedPayload = `${timestamp}.${rawBody}`;
+  const encoder = new TextEncoder();
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+
+  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(signedPayload));
+  const expected = Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, '0')).join('');
+
+  if (expected.length !== signature.length) return false;
+  let result = 0;
+  for (let i = 0; i < expected.length; i++) {
+    result |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+/** Wave native webhook event envelope. Matches the format documented in Wave's Webhooks Setup Guide. */
+const waveNativeEventSchema = z.object({
+  event_id: z.string(),
+  event_type: z.string(), // e.g. 'invoice.overdue', 'invoice.viewed', 'invoice.approved'
+  business_id: z.string(),
+  data: z.record(z.unknown()),
+});
+
+// PUT /api/webhooks/wave/:tenantId/:businessId/secret — store per-(tenant, business) webhook secret
+// Auth: service token (internal use only)
+webhookRoutes.put('/api/webhooks/wave/:tenantId/:businessId/secret', async (c) => {
+  if (!c.env.CHITTY_AUTH_SERVICE_TOKEN) return c.json({ error: 'auth_not_configured' }, 500);
+  if (!isAuthorizedWaveSecretCaller(c.env, c.req.header('authorization') ?? '')) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  let parsed: { secret?: unknown };
+  try {
+    parsed = await c.req.json<{ secret: unknown }>();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+  const { secret } = parsed;
+  if (typeof secret !== 'string' || secret.length === 0) {
+    return c.json({ error: 'secret required' }, 400);
+  }
+
+  const tenantId = c.req.param('tenantId');
+  const businessId = c.req.param('businessId');
+  await c.env.FINANCE_KV.put(waveSecretKey(tenantId, businessId), secret);
+
+  return c.json({ stored: true, tenantId, businessId });
+});
+
+// GET /api/webhooks/wave/:tenantId/:businessId/secret/exists — existence check (never returns the secret)
+// Auth: service token (internal use only)
+webhookRoutes.get('/api/webhooks/wave/:tenantId/:businessId/secret/exists', async (c) => {
+  if (!c.env.CHITTY_AUTH_SERVICE_TOKEN) return c.json({ error: 'auth_not_configured' }, 500);
+  if (!isAuthorizedWaveSecretCaller(c.env, c.req.header('authorization') ?? '')) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const tenantId = c.req.param('tenantId');
+  const businessId = c.req.param('businessId');
+  const value = await c.env.FINANCE_KV.get(waveSecretKey(tenantId, businessId));
+
+  return c.json({ exists: value !== null, tenantId, businessId });
+});
+
+// DELETE /api/webhooks/wave/:tenantId/:businessId/secret — remove stored secret
+// Auth: service token (internal use only)
+webhookRoutes.delete('/api/webhooks/wave/:tenantId/:businessId/secret', async (c) => {
+  if (!c.env.CHITTY_AUTH_SERVICE_TOKEN) return c.json({ error: 'auth_not_configured' }, 500);
+  if (!isAuthorizedWaveSecretCaller(c.env, c.req.header('authorization') ?? '')) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const tenantId = c.req.param('tenantId');
+  const businessId = c.req.param('businessId');
+  await c.env.FINANCE_KV.delete(waveSecretKey(tenantId, businessId));
+
+  return c.json({ deleted: true, tenantId, businessId });
+});
+
+/**
+ * Sanitize webhook data before logging to ledger.
+ * Extracts safe identifiers and masks sensitive information.
+ */
+function sanitizeWebhookData(data: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+
+  // Whitelist of safe fields to include
+  const safeFields = ['invoiceId', 'customerId', 'amount', 'status', 'id', 'type'];
+
+  for (const field of safeFields) {
+    if (field in data) {
+      sanitized[field] = data[field];
+    }
+  }
+
+  // Mask account numbers (any field containing 'account' and looking like a number)
+  for (const [key, value] of Object.entries(data)) {
+    if (key.toLowerCase().includes('account') && typeof value === 'string') {
+      if (/^\d+$/.test(value) && value.length >= 4) {
+        sanitized[key] = `***${value.slice(-4)}`;
+      }
+    }
+  }
+
+  // Generate a short summary of available keys (for debugging)
+  const allKeys = Object.keys(data);
+  if (allKeys.length > 0) {
+    sanitized._keys = allKeys.slice(0, 10); // First 10 keys only
+    if (allKeys.length > 10) {
+      sanitized._keysOmitted = allKeys.length - 10;
+    }
+  }
+
+  return sanitized;
+}
+
+// POST /api/webhooks/wave/:tenantId/:businessId — Wave native webhook receiver
+//
+// Auth: x-wave-signature HMAC-SHA256 verified against per-(tenant, business)
+//       secret stored in KV. Skipped if no secret stored (allows initial
+//       dashboard configuration ping).
+//
+// Configuration: Wave webhook subscriptions are configured per-business in
+// the Wave dashboard (no programmatic API). Operators paste this URL into
+// the Wave Webhooks page for each connected business:
+//
+//   https://finance.chitty.cc/api/webhooks/wave/<tenantId>/<businessId>
+//
+// Then store the secret Wave reveals via:
+//   PUT /api/webhooks/wave/<tenantId>/<businessId>/secret { secret: "..." }
+//
+// Currently supported event types (per Wave's Webhooks Setup Guide):
+//   invoice.overdue, invoice.viewed, invoice.approved
+// "More supported events will be available soon" — handler audit-logs all
+// recognized events; specific business logic is added as Wave expands the
+// event surface.
+webhookRoutes.post('/api/webhooks/wave/:tenantId/:businessId', async (c) => {
+  const tenantId = c.req.param('tenantId');
+  const businessId = c.req.param('businessId');
+
+  // Raw body must be read once and used as-is for HMAC verification (per Wave docs).
+  const rawBody = await c.req.text();
+  const kv = c.env.FINANCE_KV;
+  const secret = await kv.get(waveSecretKey(tenantId, businessId));
+  const signatureHeader = c.req.header('x-wave-signature') ?? '';
+
+  const sigVerified = secret
+    ? signatureHeader.length > 0 && (await verifyWaveSignature(rawBody, signatureHeader, secret))
+    : false;
+
+  if (secret && !sigVerified) {
+    return c.json({ error: 'invalid_signature' }, 401);
+  }
+
+  // Parse JSON; empty/non-JSON body is treated as a setup ping (Wave dashboard
+  // sends a probe when the operator first saves the URL).
+  let body: unknown;
+  let parseFailed = false;
+  try {
+    body = rawBody.length === 0 ? null : JSON.parse(rawBody);
+  } catch {
+    parseFailed = true;
+  }
+
+  if (parseFailed) {
+    if (sigVerified) {
+      // Signed by Wave but unparseable — surface to the audit trail rather
+      // than silently 200ing.
+      ledgerLog(
+        c,
+        {
+          entityType: 'audit',
+          action: 'webhook.wave.parse_error',
+          metadata: { tenantId, businessId, bodyBytes: rawBody.length },
+        },
+        c.env,
+      );
+    }
+    return c.json({ received: true }, 200);
+  }
+
+  const parsed = body == null ? { success: false as const } : waveNativeEventSchema.safeParse(body);
+  if (!parsed.success) {
+    if (sigVerified) {
+      // Signed Wave payload that doesn't match the documented envelope —
+      // schema drift. Audit-log so it shows up in the ledger instead of
+      // disappearing into stderr.
+      ledgerLog(
+        c,
+        {
+          entityType: 'audit',
+          action: 'webhook.wave.unrecognized',
+          metadata: {
+            tenantId,
+            businessId,
+            shape: typeof body === 'object' && body ? Object.keys(body as object).slice(0, 10) : typeof body,
+          },
+        },
+        c.env,
+      );
+    }
+    return c.json({ received: true }, 200);
+  }
+
+  const event = parsed.data;
+
+  // No secret stored, but the body looks like a real Wave event. Reject —
+  // someone learning the URL must not be able to inject ledger entries.
+  // The setup-ping bypass is reserved for non-event probe shapes.
+  if (!secret) {
+    return c.json({ error: 'webhook_not_configured' }, 401);
+  }
+
+  // URL-vs-payload business binding check (defense in depth)
+  if (event.business_id !== businessId) {
+    return c.json({ error: 'business_id_mismatch', expected: businessId, got: event.business_id }, 400);
+  }
+
+  // KV idempotency — 7-day dedup window keyed on (tenant, business, event_id).
+  // Scoping prevents cross-business event_id collisions (Wave's event_ids are
+  // unique per business, not globally).
+  const dedupKey = `webhook:wave:dedup:${tenantId}:${businessId}:${event.event_id}`;
+  if (await kv.get(dedupKey)) {
+    return c.json({ received: true, duplicate: true, eventId: event.event_id }, 202);
+  }
+  await kv.put(dedupKey, '1', { expirationTtl: 604800 });
+
+  ledgerLog(
+    c,
+    {
+      entityType: 'audit',
+      action: `webhook.wave.${event.event_type.replace(/[^a-z0-9_]/gi, '_')}`,
+      metadata: {
+        tenantId,
+        businessId,
+        eventId: event.event_id,
+        eventType: event.event_type,
+        data: sanitizeWebhookData(event.data),
+      },
+    },
+    c.env,
+  );
+
+  return c.json(
+    {
+      received: true,
+      eventId: event.event_id,
+      eventType: event.event_type,
+      tenantId,
+      businessId,
+    },
+    202,
+  );
+});
