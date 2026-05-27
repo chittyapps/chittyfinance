@@ -49,11 +49,13 @@ All paths are under `https://finance.chitty.cc`. Auth: ChittyAuth Bearer token. 
 
 ChittyBooks reads ChittyLedger-Finance projection tables via `ChittyFinance` aggregator endpoints — it does not query ChittyLedger directly. This preserves the substrate boundary: ChittyLedger does not know about ChittyBooks.
 
-## Deploy decision (DECISION, 2026-05-27)
+## Deploy decision (2026-05-27)
 
-**Chosen: retire `chittybooks.chitty.cc` as a separate deployable. ChittyBooks becomes a UI surface served by ChittyFinance.**
+**Retired: the assumption that `chittybooks.chitty.cc` is a live API.** The domain does not resolve and no Worker exists. Code paths that target it MUST be disabled or guarded (see `docs/proposals/ch1tty-connector-revision.md`).
 
-Proof from repo files (no inference):
+**Not yet decided: the actual ChittyBooks deploy path.** That decision is an explicit operator gate. Until the operator chooses container / worker-port / merged-into-finance, ChittyBooks stays as repo-only — a candidate UI/workflow surface, not a runtime.
+
+Proof from repo files for the fake-domain retirement (no inference):
 
 | Evidence | Source | What it proves |
 |---|---|---|
@@ -64,16 +66,16 @@ Proof from repo files (no inference):
 | Bookkeeping engine already complete in ChittyFinance | `CHITTYAPPS/chittyfinance/server/routes/{allocations,classification,reports,tax,portfolio,charges}.ts` | No engine gap requires a second service |
 | Per-tenant `tenantId NOT NULL` at schema | `database/system.schema.ts:103` | Multi-tenant boundary is in ChittyFinance, not in ChittyBooks |
 
-Options NOT chosen:
-- **Option A (Cloud Run container)** — would resurrect the Python skeleton against a duplicate of ChittyFinance's bookkeeping engine. Creates competing source of truth. Rejected.
-- **Option B (Worker rewrite)** — same competition problem plus weeks of rewrite work. Rejected.
+Options preserved for the operator (deploy gate — not decided here):
+- **Option A — Cloud Run container.** Matches existing `.replit` config. Justification gap: ChittyFinance already owns bookkeeping engine; risk of competing source of truth.
+- **Option B — Worker rewrite.** Same competition risk + significant rewrite cost.
+- **Option C — Merged UI surface served by ChittyFinance.** Lowest cost, no new runtime. Default if no operator decision is made.
 
-## Followup actions (require user approval before merge)
+## Followup actions (operator-gated, not auto-merged)
 
-1. `CHITTYAPPS/chittybooks/CHARTER.md` — change "Cloudflare Worker at chittybooks.chitty.cc" to "UI surface served by ChittyFinance. No standalone deploy."
-2. `CHITTYAPPS/chittybooks/CHITTY.md` — same correction.
-3. Archive `CHITTYAPPS/chittybooks` repo or convert to a `client/` package in `CHITTYAPPS/chittyfinance`. (Org-owner action.)
-4. Remove `CHITTYBOOKS_URL` env reference from `CHITTYOS/chittycommand` (see `docs/proposals/ch1tty-connector-revision.md`).
+1. Pick A/B/C above. Each requires explicit approval.
+2. Reconcile `CHITTYAPPS/chittybooks/CHARTER.md` and `CHITTY.md` once the choice is made (currently both claim a Worker at `chittybooks.chitty.cc`, which is false).
+3. Patch `CHITTYOS/chittycommand` so its `booksClient` does not call the dead `CHITTYBOOKS_URL` (see `docs/proposals/ch1tty-connector-revision.md`). This is the only auto-mergeable action in this branch.
 
 ## Deploy gates
 
