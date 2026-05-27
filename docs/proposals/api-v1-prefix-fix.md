@@ -1,40 +1,32 @@
-# API path prefix: docs say `/api/v1`, code mounts `/api` — fix proposal
+# API path prefix — RESOLVED as non-issue
 
-## Symptom
+## Original report
 
-`https://finance.chitty.cc/api/v1/entities` → `404`.
-`https://finance.chitty.cc/api/accounts` → `401` (auth working as designed).
-`https://finance.chitty.cc/api/v1/documentation` → `200` (OpenAPI spec).
+> `https://finance.chitty.cc/api/v1/entities` → `404`. Docs imply `/api/v1/*` everywhere.
 
-CLAUDE.md and CHARTER.md advertise `/api/v1/*`. Only the OpenAPI spec route uses `/api/v1`. All data routes are mounted at `/api/*`.
+## Investigation (2026-05-27)
 
-## Evidence
+Two route families exist by design:
 
-- `server/app.ts:74-118` — every `app.route('/', xxxRoutes)`. Each route module defines `/api/<resource>` internally (no `/v1` segment).
-- `server/routes/docs.ts:7` — `docRoutes.get('/api/v1/documentation', ...)` — only route under `/api/v1`.
-- Probe: 8/8 `/api/v1/*` data paths return 404; the 8 `/api/*` data paths return 401 (auth required, route exists).
+| Family | Mount | Examples | Verified |
+|---|---|---|---|
+| **Operational/meta** | `/api/v1/*` | `/api/v1/status`, `/api/v1/metrics`, `/api/v1/documentation` | `server/routes/health.ts:21,38`; `server/routes/docs.ts:7`. All return `200`. |
+| **Resource data** | `/api/*` | `/api/accounts`, `/api/transactions`, `/api/properties`, `/api/tenants`, `/api/integrations/*`, `/api/reports/*`, etc. | `server/app.ts:74-118`; each route module under `server/routes/`. All return `401` (auth) — routes exist. |
 
-## Two fixes, choose one
+`/api/v1/entities` returns `404` because **there is no `entities` resource**, not because of a path mismatch. The original concern came from assuming the `/api/v1` prefix applied to data routes; it does not.
 
-### Option 1 — Fix the docs (recommended, zero risk)
+## Decision: no code change
 
-- Change `CLAUDE.md` and any service consumers (notably `CHITTYOS/chittycommand/src/lib/integrations.ts:230` `financeClient`) to point at `/api/*`, not `/api/v1/*`.
-- Keep `/api/v1/documentation` as-is (it is the OpenAPI alias, harmless).
-- Update OpenAPI `servers[0].url` if downstream tooling expects `/api/v1` — it currently emits `https://finance.chitty.cc` with paths starting `/api/`, which is consistent. **Verify before committing.**
-- Estimated diff: 1 markdown line per consumer + audit.
+- The split (meta under `/v1`, resources unprefixed) is intentional and consistent with the OpenAPI spec at `/api/v1/documentation` which lists `paths` correctly.
+- All 5 in-repo references to `/api/v1` (`.github/workflows/register.yml`, `deploy/registration/chittyfinance.registration.json`, `client/src/pages/Landing.tsx:342`, `.claude/commands/quick-deploy.md:28`, plans) point at real endpoints. **Nothing to fix.**
+- All 2 cross-org consumer references (`chittycommand/src/lib/integrations.ts:249`, `chittyregistry/src/routes/notion-webhooks.ts`) target `/api/<resource>` — correct.
 
-### Option 2 — Rename routes to `/api/v1/*` (breaking)
+## Documentation patch (the only action)
 
-- Add `const apiV1 = new Hono().basePath('/api/v1');` and remount under it.
-- Touches every route file (~30 files).
-- Breaks every existing consumer simultaneously. Requires coordinated cutover with ChittyCommand, ChittyBooks (when it ships), and any external integrators.
-- Estimated diff: ~30 files + migration plan.
+Add a single sentence to `CLAUDE.md` under "Where Things Live" → routes section:
 
-## Recommendation
+> Resource routes are mounted at `/api/<resource>` (no `/v1` prefix). Only operational/meta routes (`status`, `metrics`, `documentation`) live under `/api/v1/`. The OpenAPI spec at `/api/v1/documentation` is authoritative.
 
-Option 1. There is no benefit to `/v1` versioning until a v2 is on the horizon, and we are not designing one. The current `/api/<resource>` shape is already the de facto contract.
+## Deploy gates
 
-## Deploy gate
-
-- [ ] Approval before any route remount.
-- [ ] If Option 1: search every CHITTYOS/CHITTYFOUNDATION/CHITTYAPPS repo for `finance.chitty.cc/api/v1` and confirm zero consumers depend on it. Verified consumers today: ChittyCommand uses `financeClient` — must check path it calls.
+- None. No routing or worker change.

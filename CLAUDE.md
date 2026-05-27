@@ -32,7 +32,7 @@ server/
   app.ts         Hono factory
   worker.ts      CF Workers entry (prod)
   index.ts       Legacy Express entry (standalone dev — kept for reference)
-  routes/        22 resource-per-file modules. OpenAPI at /api/v1/documentation
+  routes/        22 resource-per-file modules. Resource routes are mounted at /api/<resource> (no /v1 prefix). Only operational/meta routes (status, metrics, documentation) live under /api/v1/. OpenAPI spec at /api/v1/documentation is authoritative.
   middleware/    auth (hybridAuth), tenant, error
   storage/       SystemStorage — single source of DB access
   db/            Neon HTTP connection

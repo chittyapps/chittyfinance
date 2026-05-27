@@ -49,15 +49,31 @@ All paths are under `https://finance.chitty.cc`. Auth: ChittyAuth Bearer token. 
 
 ChittyBooks reads ChittyLedger-Finance projection tables via `ChittyFinance` aggregator endpoints — it does not query ChittyLedger directly. This preserves the substrate boundary: ChittyLedger does not know about ChittyBooks.
 
-## Deploy decision
+## Deploy decision (DECISION, 2026-05-27)
 
-Three options were considered. Recommendation: **Option C** — retire `chittybooks.chitty.cc` as a separate deployable; keep ChittyBooks as a UI app served from a subpath under ChittyFinance (`finance.chitty.cc/books`) or as a static SPA pointing at the ChittyFinance API. Rationale:
+**Chosen: retire `chittybooks.chitty.cc` as a separate deployable. ChittyBooks becomes a UI surface served by ChittyFinance.**
 
-1. ChittyFinance already has the full bookkeeping surface (allocations, classification, COA L0-L4, reports, tax).
-2. ChittyBooks repo is a stale Python skeleton (last meaningful update 2026-03-28, surface ≈ 43KB `main.py`). Rewriting as a Worker is unjustified.
-3. "ChittyBooks as bookkeeping UI/app" (not engine) is the canonical position.
+Proof from repo files (no inference):
 
-Option A (Cloud Run container) and Option B (Worker rewrite) remain technically possible but require justification ChittyBooks does not currently have.
+| Evidence | Source | What it proves |
+|---|---|---|
+| Repo is Python Flask, not Worker | `CHITTYAPPS/chittybooks/main.py` (43 KB), `Dockerfile`, `pyproject.toml`, `wsgi.py` | Charter ↔ code mismatch |
+| Replit config targets Cloud Run, not CF | `CHITTYAPPS/chittybooks/.replit` lines `deploymentTarget = "cloudrun"` and `[[ports]] localPort = 5000 externalPort = 80` | Never built as a Worker |
+| No `wrangler.toml`/`wrangler.jsonc` in repo | `find CHITTYAPPS/chittybooks -maxdepth 2 -name 'wrangler*'` returns empty | No CF deploy path exists |
+| No DNS for the claimed domain | `dig chittybooks.chitty.cc` and `dig books.chitty.cc` → NXDOMAIN (verified via `curl: Could not resolve host`) | Charter URL is aspirational |
+| Bookkeeping engine already complete in ChittyFinance | `CHITTYAPPS/chittyfinance/server/routes/{allocations,classification,reports,tax,portfolio,charges}.ts` | No engine gap requires a second service |
+| Per-tenant `tenantId NOT NULL` at schema | `database/system.schema.ts:103` | Multi-tenant boundary is in ChittyFinance, not in ChittyBooks |
+
+Options NOT chosen:
+- **Option A (Cloud Run container)** — would resurrect the Python skeleton against a duplicate of ChittyFinance's bookkeeping engine. Creates competing source of truth. Rejected.
+- **Option B (Worker rewrite)** — same competition problem plus weeks of rewrite work. Rejected.
+
+## Followup actions (require user approval before merge)
+
+1. `CHITTYAPPS/chittybooks/CHARTER.md` — change "Cloudflare Worker at chittybooks.chitty.cc" to "UI surface served by ChittyFinance. No standalone deploy."
+2. `CHITTYAPPS/chittybooks/CHITTY.md` — same correction.
+3. Archive `CHITTYAPPS/chittybooks` repo or convert to a `client/` package in `CHITTYAPPS/chittyfinance`. (Org-owner action.)
+4. Remove `CHITTYBOOKS_URL` env reference from `CHITTYOS/chittycommand` (see `docs/proposals/ch1tty-connector-revision.md`).
 
 ## Deploy gates
 

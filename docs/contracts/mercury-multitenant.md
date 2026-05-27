@@ -51,8 +51,20 @@ Conflicts surface as `reconciliation_conflicts` in ChittyLedger-Finance (see `do
 - ChittyBooks may **not** create Wave invoices/sales directly — those route through ChittyFinance.
 - Credential rotation is owned by ChittyConnect concierge. ChittyBooks never sees a Mercury or Wave token.
 
+## Adversarial findings (2026-05-27 verification)
+
+**CRITICAL — schema gap.** `legal_person_chittyid` column is **NOT present** on `accounts` in `database/system.schema.ts` (verified at lines 101-103; only `id`, `tenantId`, and downstream columns exist). The Legal Person binding is therefore not enforceable at the database level today. Two remediation paths:
+
+- **Path A (schema migration)** — add `legal_person_chittyid TEXT NOT NULL` to `accounts` with a backfill plan. Coordinated cutover required (no migrations in this repo per CLAUDE.md "Schema Changes"; `drizzle-kit push` is destructive).
+- **Path B (interim metadata)** — store the binding in `accounts.metadata->>'legal_person_chittyid'` until Path A is ready. Adds a runtime check at the storage layer.
+
+Until one of these lands, the Mercury multitenant contract is **partially enforced** (tenant_id yes, legal_person no). Reconciliation reports MUST flag this in their output until the gap closes.
+
+**Verified OK.** `tenant_id` is `NOT NULL` on `accounts`, `transactions`, `properties`, `integrations` (`database/system.schema.ts`), so any insert missing `tenantId` fails at the database. The 18 inserts in `server/storage/system.ts` rely on the caller's `data` containing `tenantId`; the schema constraint provides defense-in-depth. No write path can bypass it.
+
 ## Deploy gates
 
+- [ ] **BLOCKER**: `legal_person_chittyid` column or metadata interim must exist before reconciliation reports reference it. Until then, the column is contract-only.
 - [ ] `legal_person_chittyid` column present on `accounts` (verify in `database/system.schema.ts` before reconciliation reports go live).
 - [ ] Per-business Mercury webhook secret in place (already shipped — PR #113).
 - [ ] No code path can write a Mercury-derived row with `tenant_id = NULL`. Enforce at the SystemStorage layer, not at the route layer.
