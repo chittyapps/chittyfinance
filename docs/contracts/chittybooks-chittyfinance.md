@@ -7,7 +7,7 @@
 | Surface | Repo | Deploy | Health |
 |---|---|---|---|
 | ChittyFinance (engine) | `CHITTYAPPS/chittyfinance` | Hono on CF Workers at `finance.chitty.cc` | `200 ok` |
-| ChittyBooks (UI/app) | `CHITTYAPPS/chittybooks` | Python Flask, `main.py`, Dockerfile, `.replit` → `cloudrun` | **Not deployed**. `books.chitty.cc` and `books.chitty.cc` do not resolve. |
+| ChittyBooks (UI/app) | `CHITTYAPPS/chittybooks` | Python Flask, `main.py`, Dockerfile, `.replit` → `cloudrun` | **Not deployed**. `books.chitty.cc` does not resolve. |
 | ChittyLedger (substrate) | `CHITTYFOUNDATION/chittyledger` | Worker at `ledger.chitty.cc` | `200 ok` |
 | ChittyLedger (legacy fork) | `CHITTYOS/chittybooks` | Express + React, in-memory, not deployed | n/a — DUPLICATE, candidate for retirement or repurpose as ChittyLedger-Evidence seed |
 
@@ -62,7 +62,7 @@ Proof from repo files for the fake-domain retirement (no inference):
 | Repo is Python Flask, not Worker | `CHITTYAPPS/chittybooks/main.py` (43 KB), `Dockerfile`, `pyproject.toml`, `wsgi.py` | Charter ↔ code mismatch |
 | Replit config targets Cloud Run, not CF | `CHITTYAPPS/chittybooks/.replit` lines `deploymentTarget = "cloudrun"` and `[[ports]] localPort = 5000 externalPort = 80` | Never built as a Worker |
 | No `wrangler.toml`/`wrangler.jsonc` in repo | `find CHITTYAPPS/chittybooks -maxdepth 2 -name 'wrangler*'` returns empty | No CF deploy path exists |
-| No DNS for the claimed domain | `dig books.chitty.cc` and `dig books.chitty.cc` → NXDOMAIN (verified via `curl: Could not resolve host`) | Charter URL is aspirational |
+| No DNS for the claimed domain | `dig books.chitty.cc` → NXDOMAIN (verified via `curl: Could not resolve host`) | Charter URL is aspirational |
 | Bookkeeping engine already complete in ChittyFinance | `CHITTYAPPS/chittyfinance/server/routes/{allocations,classification,reports,tax,portfolio,charges}.ts` | No engine gap requires a second service |
 | Per-tenant `tenantId NOT NULL` at schema | `database/system.schema.ts:103` | Multi-tenant boundary is in ChittyFinance, not in ChittyBooks |
 
