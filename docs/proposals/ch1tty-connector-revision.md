@@ -6,7 +6,7 @@
 
 | Reference | Location | Status today | Action |
 |---|---|---|---|
-| `CHITTYBOOKS_URL = "https://chittybooks.chitty.cc"` | `chittycommand/docs/plans/2026-02-23-mercury-chittybooks-plan.md:168` | DNS does not resolve | **Disable behind deploy gate** until ChittyBooks deploy decision lands (see `docs/contracts/chittybooks-chittyfinance.md`). |
+| `CHITTYBOOKS_URL = "https://books.chitty.cc"` | `chittycommand/docs/plans/2026-02-23-mercury-chittybooks-plan.md:168` | DNS does not resolve | **Disable behind deploy gate** until ChittyBooks deploy decision lands (see `docs/contracts/chittybooks-chittyfinance.md`). |
 | `booksClient(env)` | `chittycommand/src/lib/integrations.ts:618` | Implemented; target URL does not resolve | Wrap in env guard: if `CHITTYBOOKS_URL` is unset or `*.chitty.cc` DNS-lookup fails on cold-start, return `null` like `financeClient` does on missing config. Add log line `[books] disabled — no CHITTYBOOKS_URL`. |
 | Service-list expectation that `chittybooks` is in registry response | `chittycommand/docs/plans/2026-02-23-mercury-chittybooks-plan.md:934` | Registry will not return chittybooks because nothing is registered | Remove `chittybooks` from the "expected services" assertion until it deploys. |
 
@@ -26,8 +26,8 @@
 
 Apply these to `CHITTYOS/chittycommand/docs/plans/2026-02-23-mercury-chittybooks-plan.md` in a follow-up PR on that repo:
 
-1. **Replace** `CHITTYBOOKS_URL = "https://chittybooks.chitty.cc"` with `CHITTYBOOKS_URL = ""` and add note: "ChittyBooks is a UI-layer surface, not a separate API. For bookkeeping reads/writes, target ChittyFinance (`https://finance.chitty.cc/api/*`)."
-2. **Mark `booksClient` deprecated** in `chittycommand/src/lib/integrations.ts` until/unless ChittyBooks deploys as its own service. Comment: `// @deprecated: chittybooks.chitty.cc does not resolve. Use financeClient for bookkeeping.`
+1. **Replace** `CHITTYBOOKS_URL = "https://books.chitty.cc"` with `CHITTYBOOKS_URL = ""` and add note: "ChittyBooks is a UI-layer surface, not a separate API. For bookkeeping reads/writes, target ChittyFinance (`https://finance.chitty.cc/api/*`)."
+2. **Mark `booksClient` deprecated** in `chittycommand/src/lib/integrations.ts` until/unless ChittyBooks deploys as its own service. Comment: `// @deprecated: books.chitty.cc does not resolve. Use financeClient for bookkeeping.`
 3. **Remove the registry-expectation assertion** for `chittybooks` (or change to "optional, present only if deployed").
 4. **Add deploy gate** at the top of the plan: "This plan assumes ChittyBooks is a deployed bookkeeping API. As of 2026-05-27 that is false. Do not implement task 3+ until the deploy decision in `chittyfinance/docs/contracts/chittybooks-chittyfinance.md` lands."
 

@@ -7,11 +7,11 @@
 | Surface | Repo | Deploy | Health |
 |---|---|---|---|
 | ChittyFinance (engine) | `CHITTYAPPS/chittyfinance` | Hono on CF Workers at `finance.chitty.cc` | `200 ok` |
-| ChittyBooks (UI/app) | `CHITTYAPPS/chittybooks` | Python Flask, `main.py`, Dockerfile, `.replit` → `cloudrun` | **Not deployed**. `chittybooks.chitty.cc` and `books.chitty.cc` do not resolve. |
+| ChittyBooks (UI/app) | `CHITTYAPPS/chittybooks` | Python Flask, `main.py`, Dockerfile, `.replit` → `cloudrun` | **Not deployed**. `books.chitty.cc` and `books.chitty.cc` do not resolve. |
 | ChittyLedger (substrate) | `CHITTYFOUNDATION/chittyledger` | Worker at `ledger.chitty.cc` | `200 ok` |
 | ChittyLedger (legacy fork) | `CHITTYOS/chittybooks` | Express + React, in-memory, not deployed | n/a — DUPLICATE, candidate for retirement or repurpose as ChittyLedger-Evidence seed |
 
-`CHITTYAPPS/chittybooks/CHARTER.md` claims a Cloudflare Worker at `chittybooks.chitty.cc`. The repository is a Python Flask application with `deploymentTarget = "cloudrun"`. Charter and code disagree.
+`CHITTYAPPS/chittybooks/CHARTER.md` claims a Cloudflare Worker at `books.chitty.cc`. The repository is a Python Flask application with `deploymentTarget = "cloudrun"`. Charter and code disagree.
 
 ## Boundary
 
@@ -51,7 +51,7 @@ ChittyBooks reads ChittyLedger-Finance projection tables via `ChittyFinance` agg
 
 ## Deploy decision (2026-05-27)
 
-**Retired: the assumption that `chittybooks.chitty.cc` is a live API.** The domain does not resolve and no Worker exists. Code paths that target it MUST be disabled or guarded (see `docs/proposals/ch1tty-connector-revision.md`).
+**Retired: the assumption that `books.chitty.cc` is a live API.** The domain does not resolve and no Worker exists. Code paths that target it MUST be disabled or guarded (see `docs/proposals/ch1tty-connector-revision.md`).
 
 **Not yet decided: the actual ChittyBooks deploy path.** That decision is an explicit operator gate. Until the operator chooses container / worker-port / merged-into-finance, ChittyBooks stays as repo-only — a candidate UI/workflow surface, not a runtime.
 
@@ -62,7 +62,7 @@ Proof from repo files for the fake-domain retirement (no inference):
 | Repo is Python Flask, not Worker | `CHITTYAPPS/chittybooks/main.py` (43 KB), `Dockerfile`, `pyproject.toml`, `wsgi.py` | Charter ↔ code mismatch |
 | Replit config targets Cloud Run, not CF | `CHITTYAPPS/chittybooks/.replit` lines `deploymentTarget = "cloudrun"` and `[[ports]] localPort = 5000 externalPort = 80` | Never built as a Worker |
 | No `wrangler.toml`/`wrangler.jsonc` in repo | `find CHITTYAPPS/chittybooks -maxdepth 2 -name 'wrangler*'` returns empty | No CF deploy path exists |
-| No DNS for the claimed domain | `dig chittybooks.chitty.cc` and `dig books.chitty.cc` → NXDOMAIN (verified via `curl: Could not resolve host`) | Charter URL is aspirational |
+| No DNS for the claimed domain | `dig books.chitty.cc` and `dig books.chitty.cc` → NXDOMAIN (verified via `curl: Could not resolve host`) | Charter URL is aspirational |
 | Bookkeeping engine already complete in ChittyFinance | `CHITTYAPPS/chittyfinance/server/routes/{allocations,classification,reports,tax,portfolio,charges}.ts` | No engine gap requires a second service |
 | Per-tenant `tenantId NOT NULL` at schema | `database/system.schema.ts:103` | Multi-tenant boundary is in ChittyFinance, not in ChittyBooks |
 
@@ -74,11 +74,11 @@ Options preserved for the operator (deploy gate — not decided here):
 ## Followup actions (operator-gated, not auto-merged)
 
 1. Pick A/B/C above. Each requires explicit approval.
-2. Reconcile `CHITTYAPPS/chittybooks/CHARTER.md` and `CHITTY.md` once the choice is made (currently both claim a Worker at `chittybooks.chitty.cc`, which is false).
+2. Reconcile `CHITTYAPPS/chittybooks/CHARTER.md` and `CHITTY.md` once the choice is made (currently both claim a Worker at `books.chitty.cc`, which is false).
 3. Patch `CHITTYOS/chittycommand` so its `booksClient` does not call the dead `CHITTYBOOKS_URL` (see `docs/proposals/ch1tty-connector-revision.md`). This is the only auto-mergeable action in this branch.
 
 ## Deploy gates
 
-- [ ] PR approval before any `chittybooks.chitty.cc` DNS or Worker creation.
+- [ ] PR approval before any `books.chitty.cc` DNS or Worker creation.
 - [ ] CHARTER.md in `CHITTYAPPS/chittybooks` must be reconciled with whichever option is chosen (currently aspirational).
 - [ ] `CHITTYOS/chittybooks` legacy fork is renamed, archived, or repurposed as ChittyLedger-Evidence — do not let it shadow the canonical surface.
