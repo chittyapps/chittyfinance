@@ -48,9 +48,16 @@ ChittyFinance is a **full-stack financial management platform** for the ChittyOS
 - Identity generation (ChittyID)
 - Token provisioning (ChittyAuth)
 - Service registration (ChittyRegister)
-- Evidence management (ChittyLedger)
+- Evidence management (ChittyLedger - Evidence projection)
 - Legal case management (ChittyCases)
-- Property management UI for end-users (ChittyBooks consumes ChittyFinance as engine)
+
+ChittyFinance IS the bookkeeping UI for ChittyOS. The former ChittyBooks
+service was deprecated on 2026-05-27 and folded into ChittyFinance — its two
+unique features (AI categorization, AI insights) were already present here at
+higher quality. See `CHITTYAPPS/chittybooks/ARCHIVED.md`.
+
+Ledger writes flow through the ChittyLedger substrate as the "Finance"
+projection (`chittycanon://core/services/chittyledger#projection/finance`).
 
 ## Dual-Mode Operation
 
