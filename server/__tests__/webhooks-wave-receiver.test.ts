@@ -12,7 +12,7 @@
  * configured to skip network in test env via CHITTY_LEDGER_BASE).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { webhookRoutes } from '../routes/webhooks';
+import { webhookRoutes } from '../books/webhooks';
 
 // Real ledger-client code runs; only the network boundary (fetch) is intercepted.
 // Per project rule: no mocking of service modules — but stubbing the global

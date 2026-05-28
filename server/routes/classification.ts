@@ -1,3 +1,4 @@
+// Straddles the books/accounting boundary: the COA-definition side belongs to accounting; the categorize-action side belongs to books. Left in routes/ until split.
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { HonoEnv } from '../env';

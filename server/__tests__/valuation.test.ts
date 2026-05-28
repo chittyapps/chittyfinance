@@ -81,7 +81,7 @@ describe('valuation providers', () => {
 
 describe('parseTurboTenantCSV', () => {
   it('parses basic CSV data', async () => {
-    const { parseTurboTenantCSV } = await import('../routes/import');
+    const { parseTurboTenantCSV } = await import('../books/import');
     const csv = `date,description,amount,category
 2024-01-15,Rent Payment,1200,rent
 2024-01-20,Maintenance,-85,maintenance`;
@@ -95,7 +95,7 @@ describe('parseTurboTenantCSV', () => {
   });
 
   it('handles quoted fields with commas', async () => {
-    const { parseTurboTenantCSV } = await import('../routes/import');
+    const { parseTurboTenantCSV } = await import('../books/import');
     const csv = `date,description,amount,category
 2024-01-15,"Rent, Unit 5A",1200,rent
 2024-01-20,"Repair: sink, faucet",-150,maintenance`;
@@ -107,7 +107,7 @@ describe('parseTurboTenantCSV', () => {
   });
 
   it('handles quoted fields with escaped quotes', async () => {
-    const { parseTurboTenantCSV } = await import('../routes/import');
+    const { parseTurboTenantCSV } = await import('../books/import');
     const csv = `date,description,amount,category
 2024-01-15,"Payment for ""Studio""",1200,rent`;
 
@@ -117,7 +117,7 @@ describe('parseTurboTenantCSV', () => {
   });
 
   it('skips rows with missing date or invalid amount', async () => {
-    const { parseTurboTenantCSV } = await import('../routes/import');
+    const { parseTurboTenantCSV } = await import('../books/import');
     const csv = `date,description,amount,category
 ,No Date,100,rent
 2024-01-15,Valid,200,rent
@@ -129,7 +129,7 @@ describe('parseTurboTenantCSV', () => {
   });
 
   it('returns empty for single-line CSV', async () => {
-    const { parseTurboTenantCSV } = await import('../routes/import');
+    const { parseTurboTenantCSV } = await import('../books/import');
     expect(parseTurboTenantCSV('date,description,amount')).toHaveLength(0);
     expect(parseTurboTenantCSV('')).toHaveLength(0);
   });
@@ -137,7 +137,7 @@ describe('parseTurboTenantCSV', () => {
 
 describe('deduplicationHash', () => {
   it('produces consistent SHA-256 based hash', async () => {
-    const { deduplicationHash } = await import('../routes/import');
+    const { deduplicationHash } = await import('../books/import');
     const hash1 = await deduplicationHash('2024-01-15', 1200, 'Rent Payment');
     const hash2 = await deduplicationHash('2024-01-15', 1200, 'Rent Payment');
     expect(hash1).toBe(hash2);
@@ -145,7 +145,7 @@ describe('deduplicationHash', () => {
   });
 
   it('produces different hashes for different inputs', async () => {
-    const { deduplicationHash } = await import('../routes/import');
+    const { deduplicationHash } = await import('../books/import');
     const hash1 = await deduplicationHash('2024-01-15', 1200, 'Rent');
     const hash2 = await deduplicationHash('2024-01-15', 1200, 'Maintenance');
     expect(hash1).not.toBe(hash2);
