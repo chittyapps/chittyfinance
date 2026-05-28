@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
-import { accountRoutes } from '../routes/accounts';
+import { accountRoutes } from '../accounting/accounts';
 import { summaryRoutes } from '../routes/summary';
 
 const mockStorage = {

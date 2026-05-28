@@ -6,7 +6,7 @@
  * Tests use a Map-backed KV stand-in, matching the existing Mercury pattern.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { webhookRoutes } from '../routes/webhooks';
+import { webhookRoutes } from '../books/webhooks';
 
 const SERVICE_TOKEN = 'test-service-token';
 const TENANT = '11111111-1111-1111-1111-111111111111';
