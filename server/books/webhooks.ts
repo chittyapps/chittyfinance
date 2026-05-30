@@ -6,6 +6,7 @@ import { SystemStorage } from '../storage/system';
 import { findAccountCode } from '../../database/chart-of-accounts';
 import { validateRow } from '../lib/chittyschema';
 import { ledgerLog } from '../lib/ledger-client';
+import { checkLegalPersonBinding, type LegalPersonBindingFlag } from '../lib/legal-person-binding';
 
 export const webhookRoutes = new Hono<HonoEnv>();
 
@@ -286,10 +287,12 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
 
   // Resolve local account from Mercury accountId, or use first active account for tenant
   let accountId: string | null = null;
+  let resolvedAccountMetadata: Record<string, unknown> | null = null;
   if (mercuryAccountId) {
     const acct = await storage.lookupAccountByExternalId(`mercury:${mercuryAccountId}`);
     if (acct && acct.tenantId === tenantId) {
       accountId = acct.id;
+      resolvedAccountMetadata = (acct.metadata as Record<string, unknown> | null) ?? null;
     }
   }
   if (!accountId) {
@@ -298,6 +301,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     const active = accounts.find((a) => a.isActive);
     if (active) {
       accountId = active.id;
+      resolvedAccountMetadata = (active.metadata as Record<string, unknown> | null) ?? null;
     } else {
       const created = await storage.createAccount({
         tenantId,
@@ -307,7 +311,23 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
         externalId: mercuryAccountId ? `mercury:${mercuryAccountId}` : undefined,
       });
       accountId = created.id;
+      resolvedAccountMetadata = (created.metadata as Record<string, unknown> | null) ?? null;
     }
+  }
+
+  // Path B runtime check: emit a structured reconciliation flag when the
+  // legal_person_chittyid binding is missing from account metadata. This
+  // does NOT block ingestion — the contract treats it as partial
+  // enforcement until Path A (column add) lands.
+  const bindingFlag: LegalPersonBindingFlag | null = checkLegalPersonBinding({
+    source: 'mercury',
+    tenantId,
+    accountId: accountId ?? undefined,
+    externalId: mercuryAccountId ? `mercury:${mercuryAccountId}` : null,
+    metadata: resolvedAccountMetadata,
+  });
+  if (bindingFlag) {
+    console.warn('[webhook:mercury] reconciliation flag', bindingFlag);
   }
 
   // Advisory ChittySchema validation
@@ -357,6 +377,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
       confidence: classificationConfidence,
       schemaAdvisory: schemaResult.advisory,
       schemaValid: schemaResult.ok,
+      reconciliationFlag: bindingFlag,
     },
   }, c.env);
 
@@ -366,6 +387,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     suggestedCoaCode,
     classificationConfidence,
     schemaAdvisory: schemaResult.advisory,
+    reconciliationFlags: bindingFlag ? [bindingFlag] : [],
   }, 201);
 });
 
@@ -433,6 +455,19 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     return c.json({ received: true, duplicate: true, transactionId: dupRow.id }, 202);
   }
 
+  // Path B runtime check (legacy normalized path).
+  const acctForBinding = await storage.getAccount(tx.accountId, tx.tenantId);
+  const bindingFlag: LegalPersonBindingFlag | null = checkLegalPersonBinding({
+    source: 'mercury',
+    tenantId: tx.tenantId,
+    accountId: tx.accountId,
+    externalId: acctForBinding?.externalId ?? null,
+    metadata: (acctForBinding?.metadata as Record<string, unknown> | null) ?? null,
+  });
+  if (bindingFlag) {
+    console.warn('[webhook:mercury] reconciliation flag', bindingFlag);
+  }
+
   const created = await storage.createTransaction({
     tenantId: tx.tenantId,
     accountId: tx.accountId,
@@ -459,6 +494,7 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
       confidence: classificationConfidence,
       schemaAdvisory: schemaResult.advisory,
       schemaValid: schemaResult.ok,
+      reconciliationFlag: bindingFlag,
     },
   }, c.env);
 
@@ -468,6 +504,7 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     suggestedCoaCode,
     classificationConfidence,
     schemaAdvisory: schemaResult.advisory,
+    reconciliationFlags: bindingFlag ? [bindingFlag] : [],
   }, 201);
 });
 
