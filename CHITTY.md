@@ -106,6 +106,14 @@ Surfaced by 33 route modules under `server/routes/`. Categorized below; full ref
 | MCP | `/api/mcp/*` | Bearer |
 | Tasks | `/api/tasks` | Hybrid |
 
+## ChittyLedger-Finance
+
+ChittyFinance hosts the **ChittyLedger-Finance** projection. The schema is defined in [`docs/chittyledger-finance-design.md`](docs/chittyledger-finance-design.md). The projection's writer is ChittyFinance (entries posted to the substrate via `POST /entries`); its substrate is `ledger.chitty.cc` (`CHITTYFOUNDATION/chittyledger`).
+
+ChittyLedger-Finance is not a separate deployable. It is a projection — a set of tables in the substrate DB with reader/writer affinity to ChittyFinance. The substrate owns the hash chain; projections MUST NOT maintain independent chains.
+
+See also: [ChittyLedger naming plan](docs/proposals/chittyledger-naming-plan.md).
+
 ## Document Triad
 
 This badge is part of a synchronized documentation triad. Changes to shared fields must propagate.
