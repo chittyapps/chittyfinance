@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
-import { taxRoutes } from '../routes/tax';
+import { taxRoutes } from '../accounting/tax';
 import {
   buildScheduleEReport,
   buildForm1065Report,
