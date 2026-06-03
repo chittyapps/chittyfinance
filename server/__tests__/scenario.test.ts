@@ -9,7 +9,7 @@ import { serviceAuth } from '../middleware/auth';
 import { tenantMiddleware } from '../middleware/tenant';
 import { propertyRoutes } from '../routes/properties';
 import { valuationRoutes } from '../routes/valuation';
-import { importRoutes } from '../routes/import';
+import { importRoutes } from '../books/import';
 
 const TEST_TOKEN = 'test-service-token';
 const TENANT_ID = 'b5fa96af-10eb-4d47-b9af-8fcb2ce24f81'; // IT CAN BE LLC

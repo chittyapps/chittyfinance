@@ -60,7 +60,7 @@ const baseEnv = {
 
 // Lazy-import the webhook routes so module mocks above take effect
 async function getApp() {
-  const { webhookRoutes } = await import('../routes/webhooks');
+  const { webhookRoutes } = await import('../books/webhooks');
   const app = new Hono<HonoEnv>();
   app.route('/', webhookRoutes);
   return app;

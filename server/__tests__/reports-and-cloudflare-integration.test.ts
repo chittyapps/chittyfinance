@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
-import { reportRoutes } from '../routes/reports';
+import { reportRoutes } from '../accounting/reports';
 import { integrationRoutes } from '../routes/integrations';
 
 const env = {

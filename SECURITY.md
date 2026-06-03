@@ -52,11 +52,14 @@ We follow coordinated disclosure and will credit reporters unless anonymity is p
 - No secrets in code, KV, or R2
 - Pre-commit hooks scan for credential patterns
 
-### OAuth Security
+### OAuth & Webhook Security
 
-- CSRF protection via HMAC-SHA256 signed state tokens (10-minute expiry)
-- Webhook signatures verified (Stripe `STRIPE_WEBHOOK_SECRET`, Mercury service auth)
-- Idempotent webhook processing with KV-backed deduplication (7-day TTL)
+- **OAuth state**: HMAC-SHA256 signed tokens, 10-minute expiry, timing-safe verification
+- **Stripe webhooks**: Signature verified via `STRIPE_WEBHOOK_SECRET`
+- **Mercury webhooks**: Per-tenant HMAC-SHA256 (7 active registrations) — secrets stored encrypted per tenant, not as global env vars
+- **Wave webhooks**: Endpoint deployed; per-tenant HMAC registration script pending (parity with Mercury pattern)
+- **Idempotency**: All webhook events deduplicated via KV with 7-day TTL
+- **ChittyID SSO**: OAuth 2.0 PKCE with code_verifier (PR #72) — primary browser auth path
 
 ### Classification Trust Path
 
@@ -92,24 +95,40 @@ Reconciled transactions are immutable. All classification changes logged to `cla
 
 | Integration | Auth Method | Data Flow |
 |-------------|------------|-----------|
-| Mercury Bank | Via ChittyConnect (static egress IP) | Read-only account/transaction data |
+| Mercury Bank | Direct webhooks (per-tenant HMAC) + ChittyConnect proxy (static egress IP) | Read-only account/transaction data |
 | Wave Accounting | OAuth 2.0 + GraphQL | Read invoices/expenses |
 | Stripe | API key + webhook signatures | Payment processing |
-| OpenAI | API key | Financial advice (no PII sent) |
+| OpenAI | API key | GPT-4o advice + GPT-4o-mini classification (no PII in prompts) |
+| Cloudflare Email | DKIM/SPF + service auth | Inbound `finance@chitty.cc` |
+
+### ChittyOS Integrations
+
+| Service | Auth Method | Direction |
+|---------|------------|-----------|
+| ChittyAuth | Bearer service token | Inbound (token validation) |
+| ChittyID | OAuth 2.0 PKCE | Outbound (SSO) |
+| ChittyConnect | Service token | Outbound (Mercury proxy) |
+| ChittyDiscovery | Service token | Outbound (self-register + heartbeat) |
+| ChittySchema | Service token (advisory, fall-open) | Outbound (schema validation) |
+| ChittyChronicle | Service token | Outbound (audit log writes) |
 
 ## CI/CD Security
 
-- **CodeQL**: Static analysis on every PR
+- **CodeQL**: Static analysis on every PR (27 alerts resolved 2026-03-24)
 - **Secret scanning**: Working tree scanned for credential patterns
-- **Dependency audit**: `pnpm audit --prod --audit-level high`
+- **Dependency audit**: `npm audit --omit=dev --audit-level high` (or `pnpm audit` if using pnpm-lock)
 - **Workflow secret policy**: Enforced via `check-workflow-secrets.sh`
-- **Workers Builds**: Deployed via Cloudflare's build pipeline (no self-hosted CI secrets)
+- **Bot detection**: Governance workflow checks `user.type === 'Bot'` (PR #95 hardening)
+- **Script injection prevention**: Workflow inputs passed via env vars, not template substitution (PR #95)
+- **Workers Builds**: Deployed via Cloudflare's build pipeline (no self-hosted CI secrets); see issue #111 for current 0s-failure investigation
 
 ## Known Limitations
 
-1. **Session auth is SHA-256, not PBKDF2/bcrypt** -- acceptable for Workers environment (no Node.js crypto), ChittyID SSO is the primary auth path
-2. **No request rate limiting** -- relies on Cloudflare's built-in DDoS protection
-3. **Forensic tables use integer IDs** -- legacy schema, not yet migrated to UUID
+1. **Legacy session auth uses SHA-256, not PBKDF2/bcrypt** — acceptable for Workers environment (no Node.js crypto); ChittyID SSO (OAuth 2.0 PKCE) is the primary auth path
+2. **No application-level rate limiting** — relies on Cloudflare's built-in DDoS protection; rate limiting on import/classification/webhook endpoints is an open follow-up
+3. **Forensic tables use integer IDs** — legacy schema (`shared/schema.ts`), not yet migrated to UUID
+4. **ChittySchema client is fall-open** — advisory only, never blocks writes (intentional: schema registry should not gate financial mutations)
+5. **ChittyChronicle read-side blocked** — write API works; cases/timeline/search endpoints return 404 (Worker only serves health + manifests). Audit writes succeed but cannot be queried via Chronicle UI.
 
 ## Security Contacts
 

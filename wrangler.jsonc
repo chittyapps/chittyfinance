@@ -27,9 +27,12 @@
     { "pattern": "finance.chitty.cc/*", "zone_name": "chitty.cc" }
   ],
 
-  // Hyperdrive binding for fractal scope projection into ChittyOS-Core
+  // Hyperdrive bindings for fractal scope projection.
+  // CHITTYOS_CORE_DB → ChittyOS-Core aggregation. SERVICE_SCOPE_DB → service's own authoritative scopes.
+  // Required by chittyschema/identity/scripts/validate-fractal-scopes.ts
   "hyperdrive": [
-    { "binding": "CHITTYOS_CORE_DB", "id": "1d126444cff1416cb415447e6cc6d15a" }
+    { "binding": "CHITTYOS_CORE_DB", "id": "1d126444cff1416cb415447e6cc6d15a" },
+    { "binding": "SERVICE_SCOPE_DB", "id": "89158b50e55a4d5d9279b5d5c890ea7b" }
   ],
 
   // Cloudflare Email Service binding
