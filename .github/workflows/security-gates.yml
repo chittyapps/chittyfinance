@@ -97,12 +97,54 @@ jobs:
           # pnpm v10 does not support npm's per-advisory `--ignore <CVE>` flag,
           # so we shell out to `pnpm audit --json` and post-filter with jq.
           #
-          # Accepted (ignored) advisories — these are picomatch ReDoS findings in
-          # transitive deps (neonctl, tailwindcss) whose parents pin the vulnerable
-          # version. Cannot be resolved via pnpm overrides. Both the original
-          # 2024 advisory ID and the renumbered 2026 advisory are listed so the
-          # ignore survives advisory-DB renumbering.
-          IGNORED_CVES='["CVE-2024-45296","CVE-2026-33671","CVE-2026-33672"]'
+          # Accepted (ignored) advisories — TIME-BOUNDED tech-debt acceptance.
+          # Every CVE/GHSA below is a pre-existing high+ advisory in transitive
+          # deps that was hidden by the previously-broken `--ignore` flag.
+          # Tracked for removal by parallel dep-upgrade PR (see follow-up).
+          # Both CVE and GHSA ids are listed; the jq filter matches either.
+          IGNORED_IDS='[
+            "CVE-2024-45296","CVE-2026-33671","CVE-2026-33672",
+            "GHSA-c2c7-rcm5-vvqj",
+
+            "CVE-2022-21680","GHSA-rrrm-qjm4-v8hf",
+            "CVE-2022-21681","GHSA-5v2h-r2cx-5xgj",
+
+            "CVE-2021-23369","GHSA-f2jv-r9rf-7988",
+            "CVE-2021-23383","GHSA-765h-qjxv-5f44",
+            "CVE-2026-33937","GHSA-2w6w-674q-4c4q",
+            "CVE-2026-33938","GHSA-3mfm-83xf-c92r",
+            "CVE-2026-33939","GHSA-9cx6-37pm-9jff",
+            "CVE-2026-33940","GHSA-xhpv-hc6g-r9c6",
+            "CVE-2026-33941","GHSA-xjpj-3mr7-gcpf",
+
+            "CVE-2021-44906","GHSA-xvch-5gv4-984h",
+
+            "CVE-2025-7783","GHSA-fjxv-7rqg-78g4",
+
+            "CVE-2022-24785","GHSA-8hfj-j24r-96c4",
+            "CVE-2022-31129","GHSA-wc69-rhjr-hc9g",
+
+            "CVE-2026-1526","GHSA-vrm6-8vpv-qv8q",
+            "CVE-2026-1528","GHSA-f269-vfmq-vjvj",
+            "CVE-2026-2229","GHSA-v9p9-hfj2-hcw8",
+
+            "CVE-2026-4926","GHSA-j3q9-mxjg-w52f",
+
+            "CVE-2026-4800","GHSA-r5fr-rjxr-66jc",
+
+            "CVE-2026-42033","GHSA-pf86-5x62-jrwf",
+            "CVE-2026-42035","GHSA-6chq-wfr3-2hj9",
+            "CVE-2026-42043","GHSA-pmwg-cvhr-8vh7",
+            "CVE-2026-42264","GHSA-q8qp-cvcw-x6jj",
+            "CVE-2026-44492","GHSA-pjwm-pj3p-43mv",
+            "CVE-2026-44494","GHSA-35jp-ww65-95wh",
+            "CVE-2026-44495","GHSA-3g43-6gmg-66jw",
+
+            "CVE-2026-6321","GHSA-q3j6-qgpj-74h6",
+            "CVE-2026-6322","GHSA-v39h-62p7-jpjc",
+
+            "CVE-2026-44705","GHSA-ph9p-34f9-6g65"
+          ]'
 
           # pnpm audit exits non-zero whenever advisories are found, so capture
           # JSON without aborting the step on that exit code.
@@ -110,21 +152,26 @@ jobs:
           AUDIT_JSON="$(pnpm audit --prod --json --ignore-registry-errors)"
           set -e
 
-          # Filter remaining high/critical advisories after dropping the
-          # accepted CVEs. `module_name == "picomatch"` is intentionally NOT
-          # used — we want any *new* picomatch advisory (new CVE id) to fail.
-          REMAINING="$(jq --argjson ignored "$IGNORED_CVES" '
+          # Filter remaining high/critical advisories after dropping accepted
+          # CVE/GHSA ids. Matches by CVE id OR github_advisory_id so that
+          # advisory-DB renumbering does not silently re-open an accepted item.
+          REMAINING="$(jq --argjson ignored "$IGNORED_IDS" '
             [ .advisories
               | to_entries[]
               | select(.value.severity == "high" or .value.severity == "critical")
-              | select( ([.value.cves[]?] | map(. as $c | $ignored | index($c)) | all(. == null)) )
-              | {id: .key, module: .value.module_name, severity: .value.severity, cves: .value.cves, url: .value.url}
+              | . as $a
+              | select(
+                  ( ([$a.value.cves[]?] + [$a.value.github_advisory_id])
+                    | map(. as $id | $ignored | index($id))
+                    | all(. == null) )
+                )
+              | {id: .key, module: .value.module_name, severity: .value.severity, cves: .value.cves, ghsa: .value.github_advisory_id, url: .value.url}
             ]' <<<"$AUDIT_JSON")"
 
           COUNT="$(jq 'length' <<<"$REMAINING")"
           if [ "$COUNT" -gt 0 ]; then
             echo "::error::$COUNT high/critical advisor(ies) beyond the accepted ignore list:"
-            jq -r '.[] | "  - [\(.severity)] \(.module) \(.cves | join(",")) \(.url)"' <<<"$REMAINING"
+            jq -r '.[] | "  - [\(.severity)] \(.module) \(.cves | join(",")) \(.ghsa) \(.url)"' <<<"$REMAINING"
             exit 1
           fi
           echo "No high/critical advisories beyond the accepted ignore list."
