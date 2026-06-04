@@ -93,6 +93,38 @@ jobs:
         run: |
           set -euo pipefail
           cd "${{ steps.pkg.outputs.dir }}"
-          # CVE-2024-45296: picomatch ReDoS in transitive deps (neonctl, tailwindcss)
-          # Cannot be resolved via overrides — parent packages pin vulnerable versions
-          pnpm audit --prod --audit-level high --ignore CVE-2024-45296 --ignore-registry-errors
+
+          # pnpm v10 does not support npm's per-advisory `--ignore <CVE>` flag,
+          # so we shell out to `pnpm audit --json` and post-filter with jq.
+          #
+          # Accepted (ignored) advisories — these are picomatch ReDoS findings in
+          # transitive deps (neonctl, tailwindcss) whose parents pin the vulnerable
+          # version. Cannot be resolved via pnpm overrides. Both the original
+          # 2024 advisory ID and the renumbered 2026 advisory are listed so the
+          # ignore survives advisory-DB renumbering.
+          IGNORED_CVES='["CVE-2024-45296","CVE-2026-33671","CVE-2026-33672"]'
+
+          # pnpm audit exits non-zero whenever advisories are found, so capture
+          # JSON without aborting the step on that exit code.
+          set +e
+          AUDIT_JSON="$(pnpm audit --prod --json --ignore-registry-errors)"
+          set -e
+
+          # Filter remaining high/critical advisories after dropping the
+          # accepted CVEs. `module_name == "picomatch"` is intentionally NOT
+          # used — we want any *new* picomatch advisory (new CVE id) to fail.
+          REMAINING="$(jq --argjson ignored "$IGNORED_CVES" '
+            [ .advisories
+              | to_entries[]
+              | select(.value.severity == "high" or .value.severity == "critical")
+              | select( ([.value.cves[]?] | map(. as $c | $ignored | index($c)) | all(. == null)) )
+              | {id: .key, module: .value.module_name, severity: .value.severity, cves: .value.cves, url: .value.url}
+            ]' <<<"$AUDIT_JSON")"
+
+          COUNT="$(jq 'length' <<<"$REMAINING")"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::$COUNT high/critical advisor(ies) beyond the accepted ignore list:"
+            jq -r '.[] | "  - [\(.severity)] \(.module) \(.cves | join(",")) \(.url)"' <<<"$REMAINING"
+            exit 1
+          fi
+          echo "No high/critical advisories beyond the accepted ignore list."
