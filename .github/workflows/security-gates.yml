@@ -88,6 +88,33 @@ jobs:
           cd "${{ steps.pkg.outputs.dir }}"
           pnpm install --frozen-lockfile
 
+      # Accepted (ignored) advisories — pre-existing high+ findings.
+      # Driven to zero by tracking issue:
+      #   https://github.com/chittyapps/chittyfinance/issues/126
+      # Advisory DB lookup: https://github.com/advisories/<GHSA-id>
+      #
+      # | id                   | module          | severity | next-step                  |
+      # |----------------------|-----------------|----------|----------------------------|
+      # | CVE-2024-45296       | path-to-regexp  | high     | overrides in main; verify  |
+      # | CVE-2022-21680       | marked          | high     | bump consumer              |
+      # | CVE-2022-21681       | marked          | high     | bump consumer              |
+      # | CVE-2021-23369       | handlebars      | high     | bump consumer              |
+      # | CVE-2021-23383       | handlebars      | high     | bump consumer              |
+      # | CVE-2026-33937..41   | handlebars      | high     | bump consumer              |
+      # | CVE-2021-44906       | minimist        | high     | bump consumer              |
+      # | CVE-2025-7783        | form-data       | high     | bump consumer              |
+      # | CVE-2022-24785       | moment          | high     | replace/drop moment        |
+      # | CVE-2022-31129       | moment          | high     | replace/drop moment        |
+      # | CVE-2026-1526        | semver          | high     | bump consumer              |
+      # | CVE-2026-1528        | semver          | high     | bump consumer              |
+      # | CVE-2026-2229        | semver          | high     | bump consumer              |
+      # | CVE-2026-4926        | tough-cookie    | high     | bump consumer              |
+      # | CVE-2026-4867        | path-to-regexp  | high     | overrides in main; verify  |
+      # | CVE-2026-4800        | micromatch      | high     | bump consumer              |
+      # | CVE-2026-39356       | drizzle-orm     | high     | major bump (separate PR)   |
+      # | CVE-2026-42033..495  | esbuild/postcss | high     | bump consumer              |
+      # | CVE-2026-6321/6322   | tar             | high     | bump consumer              |
+      # | CVE-2026-44705       | ws              | high     | bump consumer              |
       - name: Enforce audit high threshold
         if: steps.pkg.outputs.dir != ''
         run: |
@@ -96,11 +123,6 @@ jobs:
 
           # pnpm v10 does not support npm's per-advisory `--ignore <CVE>` flag,
           # so we shell out to `pnpm audit --json` and post-filter with jq.
-          #
-          # Accepted (ignored) advisories — TIME-BOUNDED tech-debt acceptance.
-          # Every CVE/GHSA below is a pre-existing high+ advisory in transitive
-          # deps that was hidden by the previously-broken `--ignore` flag.
-          # Tracked for removal by parallel dep-upgrade PR (see follow-up).
           # Both CVE and GHSA ids are listed; the jq filter matches either.
           IGNORED_IDS='[
             "CVE-2024-45296","CVE-2026-33671","CVE-2026-33672",
@@ -153,22 +175,36 @@ jobs:
           # JSON without aborting the step on that exit code.
           set +e
           AUDIT_JSON="$(pnpm audit --prod --json --ignore-registry-errors)"
+          RC=$?
           set -e
+
+          # Fail closed if pnpm produced no parseable audit JSON (network blip,
+          # registry error, warnings on stdout, partial output, etc.). Accepts
+          # either npm v6 / pnpm legacy (`.advisories`) or npm v7+ shape
+          # (`.vulnerabilities`).
+          if ! echo "$AUDIT_JSON" | jq -e 'has("advisories") or has("vulnerabilities")' >/dev/null 2>&1; then
+            echo "::error::pnpm audit produced no parseable JSON (rc=$RC). Output was:"
+            echo "$AUDIT_JSON" | head -c 500
+            exit 1
+          fi
 
           # Filter remaining high/critical advisories after dropping accepted
           # CVE/GHSA ids. Matches by CVE id OR github_advisory_id so that
           # advisory-DB renumbering does not silently re-open an accepted item.
+          # Null-id guard: an advisory with no CVE AND no GHSA cannot be matched
+          # against the accept-list, so we fail closed on it.
           REMAINING="$(jq --argjson ignored "$IGNORED_IDS" '
-            [ .advisories
+            [ ( (.advisories // .vulnerabilities) // {} )
               | to_entries[]
               | select(.value.severity == "high" or .value.severity == "critical")
               | . as $a
+              | (([$a.value.cves[]?] + [$a.value.github_advisory_id])
+                  | map(select(. != null))) as $ids
               | select(
-                  ( ([$a.value.cves[]?] + [$a.value.github_advisory_id])
-                    | map(. as $id | $ignored | index($id))
-                    | all(. == null) )
+                  ($ids | length) == 0
+                  or ($ids | all(. as $id | ($ignored | index($id)) == null))
                 )
-              | {id: .key, module: .value.module_name, severity: .value.severity, cves: .value.cves, ghsa: .value.github_advisory_id, url: .value.url}
+              | {id: $a.key, module: $a.value.module_name, severity: $a.value.severity, cves: $a.value.cves, ghsa: $a.value.github_advisory_id, url: $a.value.url}
             ]' <<<"$AUDIT_JSON")"
 
           COUNT="$(jq 'length' <<<"$REMAINING")"
