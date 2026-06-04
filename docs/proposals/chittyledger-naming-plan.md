@@ -13,14 +13,14 @@
 
 ## Target model
 
-```
+```text
 ChittyLedger (substrate)        — CHITTYFOUNDATION/chittyledger    — ledger.chitty.cc
 ├── ChittyLedger-Finance        — projection (tables in substrate DB; surface via ChittyFinance)
 │       schema doc:               docs/chittyledger-finance-design.md (already canon)
-│       writer:                   ChittyFinance via /entries
+│       writer:                   ChittyFinance via POST /api/entries
 │       reader:                   ChittyFinance, ChittyBooks (read-only via ChittyFinance aggregators)
 └── ChittyLedger-Evidence       — projection (tables in substrate DB; surface via ChittyEvidence)
-        writer:                   ChittyTrace + ChittyEvidence via /entries
+        writer:                   ChittyTrace + ChittyEvidence via POST /api/entries
         reader:                   ChittyCases, ChittyResolution
 ```
 

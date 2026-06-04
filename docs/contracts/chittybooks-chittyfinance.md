@@ -9,7 +9,7 @@
 | ChittyFinance (engine) | `CHITTYAPPS/chittyfinance` | Hono on CF Workers at `finance.chitty.cc` | `200 ok` |
 | ChittyBooks (UI/app) | `CHITTYAPPS/chittybooks` | Python Flask, `main.py`, Dockerfile, `.replit` → `cloudrun` | **Not deployed**. `books.chitty.cc` does not resolve. |
 | ChittyLedger (substrate) | `CHITTYFOUNDATION/chittyledger` | Worker at `ledger.chitty.cc` | `200 ok` |
-| ChittyLedger (legacy fork) | `CHITTYOS/chittybooks` | Express + React, in-memory, not deployed | n/a — DUPLICATE, candidate for retirement or repurpose as ChittyLedger-Evidence seed |
+| ChittyLedger (legacy fork) | `CHITTYOS/chittyledger` | Express + React, in-memory, not deployed | n/a — DUPLICATE, candidate for retirement or repurpose as ChittyLedger-Evidence seed (see `docs/proposals/chittyledger-naming-plan.md`) |
 
 `CHITTYAPPS/chittybooks/CHARTER.md` claims a Cloudflare Worker at `books.chitty.cc`. The repository is a Python Flask application with `deploymentTarget = "cloudrun"`. Charter and code disagree.
 
@@ -31,23 +31,23 @@ ChittyBooks MUST NOT write transactions, allocations, or COA classifications dir
 
 ## API Surface ChittyBooks consumes
 
-All paths are under `https://finance.chitty.cc`. Auth: ChittyAuth Bearer token. Tenant: `X-Tenant-ID` header (server-side enforces from JWT claims; path param is not trusted).
+All paths are under `https://finance.chitty.cc`. Auth (per `server/middleware/auth.ts` hybridAuth): either a service `Authorization: Bearer <CHITTY_AUTH_SERVICE_TOKEN>` header (with `X-Chitty-User-Id`) **or** a ChittyAuth-issued JWT delivered as the session cookie (`jwt:` prefix) — Bearer is service-to-service only; user/browser callers use the cookie path. Tenant scoping is resolved server-side from session/JWT claims (`c.var.tenantId`); path params are not trusted.
 
 | Path (verified mounted) | Purpose for ChittyBooks |
 |---|---|
 | `/api/tenants` | List tenants the caller can read |
 | `/api/properties` | Property list |
 | `/api/accounts` | Account list + balances |
-| `/api/transactions` | Transaction feed (filter by date, account, tenant) |
-| `/api/allocations` | Allocation rules + history |
+| `/api/transactions` | Transaction feed for caller's tenant. Today the mounted handler accepts only `?limit=`; `?accountId=` and `?since=` are accepted on `/api/transactions/export`. Any source/date filter parity is a follow-up, not a current guarantee. |
+| `/api/allocations/rules`, `/api/allocations/preview`, `/api/allocations/execute`, `/api/allocations/run` | Allocation rule CRUD + dry-run + execution (per `server/accounting/allocations.ts`). There is no umbrella `/api/allocations` index route. |
 | `/api/classification` | COA assignments + audit trail |
-| `/api/reports/*` | Pre-aggregated bookkeeping views |
-| `/api/integrations/status` | Which connectors are configured |
+| `/api/reports/consolidated`, `/api/workflows/close-tax-automation` | Pre-aggregated bookkeeping/close views currently mounted under `/api/reports/*` and `/api/workflows/*` (per `server/accounting/reports.ts`). A `/api/reports/reconciliation` endpoint is **proposed**, not yet mounted. |
+| `/api/integrations/status` | Per-provider `configured` boolean derived from env vars (see `server/routes/integrations.ts`). Last-sync timestamps are a proposed extension, not part of the current response. |
 | `/api/v1/documentation` | OpenAPI 3.0 spec (note: only the docs route is under `/api/v1`; data routes are under `/api`. See `docs/proposals/api-v1-prefix-fix.md`.) |
 
 ## ChittyLedger projection paths (read-only)
 
-ChittyBooks reads ChittyLedger-Finance projection tables via `ChittyFinance` aggregator endpoints — it does not query ChittyLedger directly. This preserves the substrate boundary: ChittyLedger does not know about ChittyBooks.
+ChittyBooks reads ChittyLedger-Finance projection tables via `ChittyFinance` aggregator endpoints — it does not query ChittyLedger directly. This preserves the substrate boundary: ChittyLedger does not know about ChittyBooks. The aggregator endpoints (e.g. `/api/ledger/finance/*`) are **proposed** — none are mounted yet. They must be defined and shipped in ChittyFinance before ChittyBooks relies on them. Until then, ChittyBooks reads projection data only through the existing mounted routes above.
 
 ## Deploy decision (2026-05-27)
 

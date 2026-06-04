@@ -20,7 +20,7 @@
 | Bookkeeping reads | ChittyFinance | `GET https://finance.chitty.cc/api/transactions` and `/api/reports/*` |
 | Bookkeeping writes | ChittyFinance | `POST https://finance.chitty.cc/api/transactions`, `/api/allocations`, `/api/classification` — **not** a separate `chittybooks` write API |
 | Credentials | ChittyConnect | `https://connect.chitty.cc` via concierge — never chat-paste |
-| Ledger writes | ChittyLedger | `https://ledger.chitty.cc/entries` (auth-required) |
+| Ledger writes | ChittyLedger | `POST https://ledger.chitty.cc/api/entries` (auth-required; matches ChittyFinance's `server/lib/ledger-client.ts` which posts to `${base}/api/entries`) |
 
 ## Concrete revisions to the canonical plan
 

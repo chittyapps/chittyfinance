@@ -6,12 +6,12 @@
 
 1. **`tenant_id` required on every Mercury-derived record.** No row, webhook event, or queue message lacks it. Cross-tenant reads are server-side blocked, not client-trusted.
 2. **Legal Person ChittyID binding required.** Every Mercury account maps to exactly one Legal Person (`P-Legal` entity), recorded as `legal_person_chittyid` on the account row. Account ↔ Legal Person is many-to-one (one LLC can have many accounts).
-3. **Wave business mapping required.** Each `(tenant_id, legal_person_chittyid)` pair has at most one Wave business; the mapping lives in `integration_account_links` (source = `wave`, target = `mercury`). Unmapped Mercury accounts produce reconciliation conflicts, not silent omission.
+3. **Wave business mapping required.** Each `(tenant_id, legal_person_chittyid)` pair has at most one Wave business. The intended persistence point is a `integration_account_links` table (source = `wave`, target = `mercury`) — **this table does not yet exist in `database/system.schema.ts`**, so the mapping is contract-only today. Interim implementations may store the link under `integrations.metadata` until the table lands via a coordinated schema cutover (see `CLAUDE.md` → "Schema Changes"). Unmapped Mercury accounts produce reconciliation conflicts once the surface is live, not silent omission.
 4. **ChittyBooks reconciles over Mercury + Wave + Stripe** by reading ChittyFinance's reconciliation views. ChittyBooks never reaches into Mercury directly.
 
 ## Identity model
 
-```
+```text
 Person (P-Legal, e.g. "IT CAN BE LLC")
    │  legal_person_chittyid
    └── Account (Mercury account #1, #2, ...)
@@ -29,19 +29,17 @@ Person (P-Legal, e.g. "IT CAN BE LLC")
 |---|---|---|
 | Mercury read API | `https://api.mercury.com/api/v1` (direct, OAuth tokens scoped per tenant) | Token issued per `(tenant_id, legal_person_chittyid)` via ChittyConnect |
 | Mercury write API | `mercury-proxy` on `chittyserv-dev` (IP-allowlisted by Mercury) | `X-Mercury-Token` per request; proxy is stateless re tenancy |
-| Mercury webhooks | `/api/webhooks/mercury` on `finance.chitty.cc` | Per-business HMAC secret, resolves to `tenant_id` + `legal_person_chittyid` before write |
+| Mercury webhooks | `POST /api/webhooks/mercury/:tenantId` on `finance.chitty.cc` (native Mercury receiver, per `server/books/webhooks.ts`; PR #113). Per-tenant HMAC secret keyed at `webhook:mercury:secret:<tenantId>` in KV. The legacy `POST /api/webhooks/mercury` path was the ChittyConnect-normalized shim and is not the native receiver. | `tenant_id` is the path param and is verified by HMAC; `legal_person_chittyid` resolution is **not** performed inside the webhook handler today — it joins downstream via the local account row. |
 
 The write proxy at `CHITTYOS/mercury-proxy` is **not** a tenant boundary — it is a network egress shim. Tenancy is enforced by the caller (ChittyFinance) before reaching it.
 
 ## Reconciliation surface
 
-ChittyBooks consumes these ChittyFinance endpoints, not raw Mercury:
+ChittyBooks consumes these ChittyFinance endpoints, not raw Mercury. **Endpoints marked _(proposed)_ are not yet mounted** — they are the target surface for the reconciliation contract and must ship before ChittyBooks relies on them:
 
-- `GET /api/transactions?source=mercury` — Mercury txns scoped to caller's tenant
-- `GET /api/transactions?source=wave` — Wave txns scoped to caller's tenant
-- `GET /api/transactions?source=stripe` — Stripe charges scoped to caller's tenant
-- `GET /api/reports/reconciliation?tenant_id=...&period=...` — three-way diff (Mercury ↔ Wave ↔ Stripe)
-- `GET /api/integrations/status` — per-source connection health + last-sync timestamps
+- `GET /api/transactions` — tenant-scoped transaction feed. Today the handler accepts only `?limit=`; `?source=mercury|wave|stripe` filtering is _(proposed)_ and must be added to `server/books/transactions.ts` before this contract is satisfied.
+- `GET /api/reports/reconciliation?tenant_id=...&period=...` _(proposed)_ — three-way diff (Mercury ↔ Wave ↔ Stripe). Not mounted; only `/api/reports/consolidated` exists today.
+- `GET /api/integrations/status` — currently returns per-provider `configured` booleans from env vars (see `server/routes/integrations.ts`). Last-sync timestamps and per-source health _(proposed)_ require extending the handler to read sync state.
 
 Conflicts surface as `reconciliation_conflicts` in ChittyLedger-Finance (see `docs/chittyledger-finance-design.md`).
 
