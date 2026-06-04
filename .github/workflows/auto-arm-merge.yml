@@ -1,0 +1,7 @@
+name: Auto-Arm Merge
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+jobs:
+  arm:
+    uses: chittyfoundation/.github/.github/workflows/auto-arm-merge.yml@main
