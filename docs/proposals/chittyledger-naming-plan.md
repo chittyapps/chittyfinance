@@ -32,7 +32,7 @@ Projections are **views over the substrate**, not separate ledgers. They MUST NO
 2. **Archive** the renamed repo if no active work depends on it. Otherwise port its UI components into `CHITTYAPPS/chittyevidence` (which is the active evidence service).
 3. **Delete or vendor the nested `chittychronicle/chittyledger` and `chittyscore/chittyfinance`** — these are working-tree noise from prior submodule experiments. They are not canon.
 4. **Add a top-of-README disambiguation banner to `CHITTYFOUNDATION/chittyledger`**: "ChittyLedger is the substrate. ChittyLedger-Finance and ChittyLedger-Evidence are projections defined in their respective service repos; they are not separate deployables."
-5. **Add a `ChittyLedger-Finance` section to `CHITTYAPPS/chittyfinance/CHITTY.md`** that says: "ChittyFinance hosts the ChittyLedger-Finance projection. The schema is defined in `docs/chittyledger-finance-design.md`. The projection's writer is ChittyFinance; its substrate is `ledger.chitty.cc`."
+5. **Verify the `ChittyLedger-Finance` section in `CHITTYAPPS/chittyfinance/CHITTY.md`** (already present at CHITTY.md:109-114) still reads: "ChittyFinance hosts the ChittyLedger-Finance projection. The schema is defined in `docs/chittyledger-finance-design.md`. The projection's writer is ChittyFinance; its substrate is `ledger.chitty.cc`." Update only if drift is detected.
 6. **Canon URI alignment** — confirm `chittycanon://core/services/chitty-ledger` resolves to the substrate, not the legacy fork. Update ChittyRegister if it points at the wrong repo.
 
 ## Deploy gates

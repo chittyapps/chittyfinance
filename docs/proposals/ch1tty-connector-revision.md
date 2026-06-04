@@ -14,7 +14,7 @@
 
 | Concern | Existing real service | Path |
 |---|---|---|
-| Mercury read | Direct Mercury API per-tenant token | `https://api.mercury.com/api/v1` via `mercuryClient(token)` in `chittycommand/src/lib/integrations.ts:551` |
+| Mercury read | Via ChittyConnect (canonical path) — ChittyFinance's own Mercury account reader (`server/routes/mercury.ts`) goes through ChittyConnect, and `chittyagent-connect` is defined as the Mercury Bank proxy for every bank API call. ChittyCommand reads should follow the same path; direct `api.mercury.com` calls are reserved for narrow service-internal uses behind the ChittyConnect credential boundary. | ChittyConnect → Mercury (preferred); fall back to `mercuryClient(token)` in `chittycommand/src/lib/integrations.ts:551` only when ChittyConnect is unavailable. |
 | Mercury write | mercury-proxy on chittyserv-dev | `https://mercury-proxy.chitty.cc` (CF tunnel) — POST `/proxy` with `X-Mercury-Token` |
 | Mercury webhooks | ChittyFinance | `POST https://finance.chitty.cc/api/webhooks/mercury` (PR #113, per-business HMAC secrets) |
 | Bookkeeping reads | ChittyFinance | `GET https://finance.chitty.cc/api/transactions` and `/api/reports/*` |

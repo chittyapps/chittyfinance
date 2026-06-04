@@ -24,7 +24,7 @@
 | Resource | Writer | Reader |
 |---|---|---|
 | `tenants`, `properties`, `accounts`, `transactions`, `allocations`, `classifications` | ChittyFinance | ChittyBooks (read-only), ChittyCommand, exports |
-| `financial_documents`, `financial_facts`, `reconciliation_conflicts` | ChittyLedger-Finance (via ChittyTrace ingest) | ChittyFinance, ChittyBooks |
+| `financial_documents`, `financial_facts`, `reconciliation_conflicts` | ChittyFinance writes into the ChittyLedger-Finance projection via `POST https://ledger.chitty.cc/api/entries` (matches `CHITTY.md` and `docs/proposals/chittyledger-naming-plan.md`). ChittyTrace ingest is an upstream feeder that hands material to ChittyFinance — it is not a second writer to the projection. | ChittyFinance, ChittyBooks |
 | Mercury/Wave/Stripe/Plaid raw events | external | ChittyFinance webhooks |
 
 ChittyBooks MUST NOT write transactions, allocations, or COA classifications directly. All mutations route to ChittyFinance.
