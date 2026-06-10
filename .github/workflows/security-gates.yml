@@ -109,9 +109,7 @@ jobs:
       # | CVE-2026-1528        | semver          | high     | bump consumer              |
       # | CVE-2026-2229        | semver          | high     | bump consumer              |
       # | CVE-2026-4926        | tough-cookie    | high     | bump consumer              |
-      # | CVE-2026-4867        | path-to-regexp  | high     | overrides in main; verify  |
       # | CVE-2026-4800        | micromatch      | high     | bump consumer              |
-      # | CVE-2026-39356       | drizzle-orm     | high     | major bump (separate PR)   |
       # | CVE-2026-42033..495  | esbuild/postcss | high     | bump consumer              |
       # | CVE-2026-6321/6322   | tar             | high     | bump consumer              |
       # | CVE-2026-44705       | ws              | high     | bump consumer              |
@@ -151,11 +149,8 @@ jobs:
             "CVE-2026-2229","GHSA-v9p9-hfj2-hcw8",
 
             "CVE-2026-4926","GHSA-j3q9-mxjg-w52f",
-            "CVE-2026-4867","GHSA-37ch-88jc-xwx2",
 
             "CVE-2026-4800","GHSA-r5fr-rjxr-66jc",
-
-            "CVE-2026-39356","GHSA-gpj5-g38j-94v9",
 
             "CVE-2026-42033","GHSA-pf86-5x62-jrwf",
             "CVE-2026-42035","GHSA-6chq-wfr3-2hj9",
