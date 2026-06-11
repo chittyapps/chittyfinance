@@ -208,6 +208,78 @@ export class SystemStorage {
     return row;
   }
 
+  // ChittyScrape feeds the cost flow: a vendor charge extracted from a portal
+  // (registered-agent annual fee, utility bill, mortgage statement) is mirrored
+  // into the books as an expense transaction. Idempotent by external_id
+  //   `scrape:{portalId}:{period}:{vendor}`
+  // so re-running a scrape (e.g. the ChittyCommand cron re-dispatching the
+  // portal) updates the same row rather than duplicating it.
+  //
+  // amount is REQUIRED — the scraper output is the source of truth for the fee.
+  // The route rejects (400) a charge with no amount; we never default to 0,
+  // because a $0 expense row would be a silent data-integrity lie.
+  async upsertVendorCharge(input: {
+    tenantId: string;
+    accountId: string;
+    date: Date;
+    period: string; // billing period the charge belongs to, e.g. '2026' or '2026-06'
+    portalId: string; // ChittyScrape portal id, e.g. 'nw-registered-agent'
+    vendor: string; // human vendor name, e.g. 'Northwest Registered Agent'
+    amountUsd: number; // > 0; the extracted fee
+    coaCode: string; // real chart_of_accounts code chosen by vendor category
+    description?: string;
+    paymentStatus?: string; // scraped 'ok' | 'failed' — recorded, does not gate the expense
+    metadata?: Record<string, unknown>;
+  }) {
+    const externalId = `scrape:${input.portalId}:${input.period}:${input.vendor}`;
+    const amount = input.amountUsd.toFixed(2);
+    const now = new Date();
+    const metadata = {
+      source: 'chittyscrape',
+      portalId: input.portalId,
+      vendor: input.vendor,
+      period: input.period,
+      exactAmountUsd: input.amountUsd,
+      paymentStatus: input.paymentStatus ?? null,
+      ...input.metadata,
+    };
+
+    const [row] = await this.db
+      .insert(schema.transactions)
+      .values({
+        tenantId: input.tenantId,
+        accountId: input.accountId,
+        amount,
+        currency: 'USD',
+        type: 'expense',
+        category: 'vendor_charge',
+        description: input.description ?? `Vendor charge: ${input.vendor} (${input.period})`,
+        date: input.date,
+        payee: input.vendor,
+        externalId,
+        coaCode: input.coaCode,
+        classifiedBy: 'chittyscrape',
+        classifiedAt: now,
+        metadata,
+      })
+      .onConflictDoUpdate({
+        target: [schema.transactions.tenantId, schema.transactions.externalId],
+        // Partial arbiter index (WHERE external_id IS NOT NULL) — predicate
+        // required so Postgres infers the partial unique index.
+        targetWhere: sql`${schema.transactions.externalId} IS NOT NULL`,
+        set: {
+          amount,
+          coaCode: input.coaCode,
+          classifiedBy: 'chittyscrape',
+          classifiedAt: now,
+          metadata,
+          updatedAt: now,
+        },
+      })
+      .returning();
+    return row;
+  }
+
   async updateTransaction(id: string, tenantId: string, data: Partial<typeof schema.transactions.$inferInsert>) {
     const [row] = await this.db
       .update(schema.transactions)
