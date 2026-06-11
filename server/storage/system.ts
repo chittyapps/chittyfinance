@@ -136,6 +136,78 @@ export class SystemStorage {
     return row;
   }
 
+  /**
+   * Idempotently record a single day's AI/infra cost for one service, sourced
+   * from ChittyComptroller (comptroller.chitty.cc). ChittyComptroller remains
+   * the source of truth; ChittyFinance only mirrors the daily per-service total
+   * as an expense transaction so infra cost flows into the books without being
+   * re-derived from gateway logs.
+   *
+   * Idempotency key: external_id = `comptroller:{YYYY-MM-DD}:{service}`, enforced
+   * by the partial unique index transactions_tenant_external_idx (tenant_id,
+   * external_id). Re-runs UPDATE amount/metadata/classifiedAt — never duplicate.
+   *
+   * `amount` is stored at decimal(12,2) cents precision (sub-cent costs round to
+   * 0.00). The exact cost_usd plus token/tier breakdown is preserved in metadata
+   * so no precision is lost and the Comptroller's number is recoverable.
+   */
+  async upsertComptrollerCost(input: {
+    tenantId: string;
+    accountId: string;
+    date: Date;
+    service: string;
+    costUsd: number;
+    coaCode: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    const day = input.date.toISOString().slice(0, 10);
+    const externalId = `comptroller:${day}:${input.service}`;
+    const amount = input.costUsd.toFixed(2);
+    const now = new Date();
+    const metadata = {
+      source: 'comptroller',
+      service: input.service,
+      exactCostUsd: input.costUsd,
+      reportDate: day,
+      ...input.metadata,
+    };
+
+    const [row] = await this.db
+      .insert(schema.transactions)
+      .values({
+        tenantId: input.tenantId,
+        accountId: input.accountId,
+        amount,
+        currency: 'USD',
+        type: 'expense',
+        category: 'ai_infrastructure',
+        description: `AI/Infra: ${input.service}`,
+        date: input.date,
+        payee: input.service,
+        externalId,
+        coaCode: input.coaCode,
+        classifiedBy: 'comptroller',
+        classifiedAt: now,
+        metadata,
+      })
+      .onConflictDoUpdate({
+        target: [schema.transactions.tenantId, schema.transactions.externalId],
+        // The arbiter index is partial (WHERE external_id IS NOT NULL); Postgres
+        // requires the predicate in the conflict target to infer a partial index.
+        targetWhere: sql`${schema.transactions.externalId} IS NOT NULL`,
+        set: {
+          amount,
+          coaCode: input.coaCode,
+          classifiedBy: 'comptroller',
+          classifiedAt: now,
+          metadata,
+          updatedAt: now,
+        },
+      })
+      .returning();
+    return row;
+  }
+
   async updateTransaction(id: string, tenantId: string, data: Partial<typeof schema.transactions.$inferInsert>) {
     const [row] = await this.db
       .update(schema.transactions)
