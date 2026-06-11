@@ -3,6 +3,7 @@
 // Uses Neon PostgreSQL with decimal precision for accounting
 
 import { pgTable, uuid, text, timestamp, decimal, boolean, integer, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
@@ -160,6 +161,12 @@ export const transactions = pgTable('transactions', {
   propertyIdx: index('transactions_property_idx').on(table.propertyId),
   coaIdx: index('transactions_coa_idx').on(table.tenantId, table.coaCode),
   unclassifiedIdx: index('transactions_unclassified_idx').on(table.tenantId, table.coaCode),
+  // Idempotency for external syncs (Mercury/Wave/Comptroller). Partial: only
+  // rows with a non-null external_id are constrained, so manual txns (NULL) are
+  // unaffected. Scoped per-tenant to avoid cross-tenant external_id collisions.
+  tenantExternalIdx: uniqueIndex('transactions_tenant_external_idx')
+    .on(table.tenantId, table.externalId)
+    .where(sql`${table.externalId} IS NOT NULL`),
 }));
 
 export const insertTransactionSchema = createInsertSchema(transactions);
