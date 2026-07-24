@@ -65,6 +65,28 @@ export default function ConnectAccounts() {
   }, [isAuthenticated, loading, setLocation]);
 
   const handleConnect = async (serviceType: string) => {
+    if (serviceType === 'wavapps' || serviceType === 'google') {
+      try {
+        setLoading(true);
+        const endpoint = serviceType === 'wavapps' 
+          ? '/api/integrations/wave/authorize' 
+          : '/api/integrations/google/authorize';
+        const response = await apiRequest('GET', endpoint);
+        const data = (await response.json()) as { authUrl?: string };
+        if (!data.authUrl) throw new Error('No authorization URL returned');
+        window.location.href = data.authUrl;
+        return;
+      } catch (error) {
+        toast({
+          title: "Connection Failed",
+          description: error instanceof Error ? error.message : "Unable to start OAuth authorization.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+    }
+
     if (!apiKey && !connectedServices.includes(serviceType)) {
       toast({
         title: "API Key Required",
@@ -123,9 +145,10 @@ export default function ConnectAccounts() {
       "stripe": "Stripe Payments",
       "quickbooks": "QuickBooks",
       "xero": "Xero Accounting",
-      "wavapps": "WavApps",
+      "wavapps": "Wave Accounting",
       "brex": "Brex",
-      "gusto": "Gusto Payroll"
+      "gusto": "Gusto Payroll",
+      "google": "Google Workspace"
     };
     return names[serviceType] || serviceType;
   };
@@ -138,7 +161,8 @@ export default function ConnectAccounts() {
       "xero": "Global Accounting Platform",
       "wavapps": "Financial Software",
       "brex": "Business Credit & Expenses",
-      "gusto": "Payroll & HR"
+      "gusto": "Payroll & HR",
+      "google": "Sheets, Calendar & Drive"
     };
     return descriptions[serviceType] || "";
   };
@@ -159,6 +183,8 @@ export default function ConnectAccounts() {
         return <BarChart4 size={size} />;
       case "gusto":
         return <DollarSign size={size} />;
+      case "google":
+        return <BarChart4 size={size} />;
       default:
         return <CreditCard size={size} />;
     }
@@ -182,7 +208,7 @@ export default function ConnectAccounts() {
         </div>
 
         <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 bg-zinc-900 border border-zinc-800">
+          <TabsList className="grid w-full grid-cols-4 bg-zinc-900 border border-zinc-800">
             <TabsTrigger value="banking" className="data-[state=active]:bg-lime-500 data-[state=active]:text-black">
               Banking
             </TabsTrigger>
@@ -190,7 +216,10 @@ export default function ConnectAccounts() {
               Accounting
             </TabsTrigger>
             <TabsTrigger value="payments" className="data-[state=active]:bg-lime-500 data-[state=active]:text-black">
-              Payments & Payroll
+              Payments
+            </TabsTrigger>
+            <TabsTrigger value="workspace" className="data-[state=active]:bg-lime-500 data-[state=active]:text-black">
+              Workspace
             </TabsTrigger>
           </TabsList>
 
@@ -254,12 +283,31 @@ export default function ConnectAccounts() {
               onConnect={() => handleConnect("gusto")}
             />
           </TabsContent>
+
+          {/* Workspace Integrations */}
+          <TabsContent value="workspace" className="space-y-4">
+            <ServiceCard
+              name="Google Workspace"
+              description="Sheets, Calendar & Drive"
+              icon={getServiceIcon("google", 28)}
+              connected={connectedServices.includes("google")}
+              onConnect={() => handleConnect("google")}
+            />
+          </TabsContent>
         </Tabs>
 
         <div className="mt-10 pt-6 border-t border-zinc-800">
           <div className="mb-6">
             <h2 className="text-lg font-medium text-zinc-200">API Key for Connection</h2>
             <p className="text-sm text-zinc-500">Enter the API key for the service you're connecting</p>
+          </div>
+
+          <div className="mb-6 p-4 bg-lime-500/10 border border-lime-500/20 rounded-md">
+            <h3 className="text-sm font-medium text-lime-400 mb-1">Static IP Whitelisting (For Write Access)</h3>
+            <p className="text-xs text-zinc-400">
+              For enhanced security and to enable write functions (e.g. transfers, payments), please whitelist our ChittyConnect static egress IP when generating your API key in the provider's portal:
+              <br/><span className="inline-block mt-2 font-mono text-zinc-300 bg-zinc-900 px-2 py-1 rounded border border-zinc-800">connect.chitty.cc (Assigned Static IP)</span>
+            </p>
           </div>
           
           <div className="space-y-4">

@@ -101,6 +101,7 @@ export type InsertChartOfAccount = z.infer<typeof insertChartOfAccountsSchema>;
 export const accounts = pgTable('accounts', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  chittyId: text('chitty_id'), // Owner's canonical P/L/T/E/A identity — @canon: chittycanon://gov/governance#core-types
   name: text('name').notNull(),
   type: text('type').notNull(), // 'checking', 'savings', 'credit', 'investment', 'mortgage', 'loan', 'tax_liability'
   institution: text('institution'), // 'Mercury Bank', 'Wave', etc.
