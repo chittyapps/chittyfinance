@@ -18,7 +18,7 @@
 {
   "name": "chittyfinance",
   "main": "server/worker.ts",
-  "compatibility_date": "2026-03-01",
+  "compatibility_date": "2026-08-07",
   "compatibility_flags": ["nodejs_compat"],
   "account_id": "0bc21e3a5a9de1a4cc843be9c3e98121",
   "workers_dev": false,
