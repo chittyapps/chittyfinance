@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { ledgerLog } from '../lib/ledger-client';
-import { findAccountCode } from '../../database/chart-of-accounts';
+import { findAccountCode, getAccountByCode } from '../../database/chart-of-accounts';
 
 export const importRoutes = new Hono<HonoEnv>();
 
@@ -614,7 +614,16 @@ function normalizeAmazonEntity(
   poNumber: string,
   accountGroup: string,
   accountUser: string,
+  costCenter: string = '',
 ): { entity: EntityKey; personalUse: boolean } {
+  const cc = costCenter.trim().toUpperCase();
+  if (cc === 'COZY-CASTLE') return { entity: 'cozy-castle', personalUse: false };
+  if (cc === 'CITY-STUDIO') return { entity: 'city-studio', personalUse: false };
+  if (cc === 'APT-ARLENE') return { entity: 'apt-arlene', personalUse: false };
+  if (cc === 'LAKESIDE-LOFT') return { entity: 'lakeside-loft', personalUse: false };
+  if (cc === 'GENERAL') return { entity: 'aribia-mgmt', personalUse: false };
+  if (cc === 'PERSONAL') return { entity: 'personal-nick', personalUse: true };
+
   const po = poNumber.trim().toLowerCase();
   const group = accountGroup.trim().toLowerCase();
   const user = accountUser.trim().toLowerCase();
@@ -720,7 +729,18 @@ function classifyAmazonItem(
   category: string,
   personalUse: boolean,
   poNumber: string,
+  glCode: string = '',
 ): { code: string; confidence: number } {
+  // An operator-supplied GL column is a strong hint, not gospel: a typo'd code
+  // must not enter the books at a confidence the bulk-accept path (>= 0.80,
+  // client/src/pages/Classification.tsx) will auto-approve into a nonexistent
+  // account. Trust it only when it resolves in the chart of accounts, and at
+  // the same 0.850 the Mercury CSV path uses for the identical class of input.
+  const gl = glCode.trim();
+  if (gl && /^\d{4}$/.test(gl) && getAccountByCode(gl)) {
+    return { code: gl, confidence: 0.850 };
+  }
+
   // Personal use → owner draws
   if (personalUse) {
     const catLower = category.toLowerCase();
@@ -970,10 +990,10 @@ importRoutes.post('/api/import/amazon', async (c) => {
     }
 
     const { entity, personalUse } = normalizeAmazonEntity(
-      row.poNumber, row.accountGroup, row.accountUser,
+      row.poNumber, row.accountGroup, row.accountUser, row.costCenter
     );
     const classification = classifyAmazonItem(
-      row.amazonCategory, personalUse, row.poNumber,
+      row.amazonCategory, personalUse, row.poNumber, row.glCode
     );
 
     const isSuspense = classification.code === '9010';
