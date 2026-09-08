@@ -47,8 +47,7 @@
     "CHITTYCONNECT_API_BASE": "https://connect.chitty.cc"
   },
 
-  "observability": { "enabled": true },
-  "tail_consumers": [{ "service": "chittytrack" }],
+  "observability": { "enabled": false },
 
   "build": {
     "command": "pnpm install --frozen-lockfile && pnpm exec vite build --outDir dist/public"
@@ -104,7 +103,6 @@
         "CHITTYCONNECT_API_BASE": "https://connect.chitty.cc"
       },
       "triggers": { "crons": ["0 9 * * *"] },
-      "tail_consumers": [{ "service": "chittytrack" }],
       "kv_namespaces": [
         { "binding": "FINANCE_KV", "id": "89d0b3bc875e49c4a3a9091de6a080aa" }
       ],
@@ -127,7 +125,6 @@
         "CHITTYCONNECT_API_BASE": "https://connect.chitty.cc"
       },
       "triggers": { "crons": ["0 9 * * *"] },
-      "tail_consumers": [{ "service": "chittytrack" }],
       "kv_namespaces": [
         { "binding": "FINANCE_KV", "id": "517b63be4d7144c197b5bdf851f12041" }
       ],
@@ -156,7 +153,6 @@
         "CHITTYCONNECT_API_BASE": "https://connect.chitty.cc"
       },
       "triggers": { "crons": ["0 9 * * *"] },
-      "tail_consumers": [{ "service": "chittytrack" }],
       "kv_namespaces": [
         { "binding": "FINANCE_KV", "id": "517b63be4d7144c197b5bdf851f12041" }
       ],
