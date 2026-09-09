@@ -5,6 +5,8 @@ export interface Env {
   CHITTY_AUTH_ISSUER?: string;
   CHITTY_AUTH_AUDIENCE?: string;
   CHITTYCONNECT_API_BASE?: string;
+  // ChittyComptroller cost API base (defaults to https://comptroller.chitty.cc).
+  COMPTROLLER_API_BASE?: string;
   OPENAI_API_KEY?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
