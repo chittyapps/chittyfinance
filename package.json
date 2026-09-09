@@ -134,18 +134,22 @@
     "overrides": {
       "express-rate-limit": ">=8.2.2",
       "@hono/node-server": ">=1.19.13",
-      "axios": ">=1.17.0",
+      "axios": ">=1.18.0",
       "rollup": ">=4.59.0",
-      "hono": ">=4.12.23",
-      "fast-uri": ">=3.1.2",
+      "hono": ">=4.12.25",
+      "fast-uri": ">=3.1.6",
       "path-to-regexp": ">=8.4.0",
       "picomatch": ">=4.0.4",
       "lodash": ">=4.17.23",
       "qs": ">=6.15.2",
       "ajv": ">=8.18.0",
-      "postcss": ">=8.5.10",
-      "ip-address": ">=10.1.1",
-      "ws": ">=8.20.1"
+      "postcss": ">=8.5.18",
+      "ip-address": ">=10.3.1",
+      "ws": ">=8.20.1",
+      "form-data": ">=4.0.6",
+      "browserslist": ">=4.28.7",
+      "nanoid@<4": ">=3.3.18",
+      "nanoid@>=4": ">=5.1.16 <6"
     }
   },
   "description": "Multi-entity financial management with Plaid banking integration"
