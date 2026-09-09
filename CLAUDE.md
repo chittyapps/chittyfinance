@@ -22,7 +22,7 @@ npm run db:push:standalone  # Push schema to SQLite
 npm run db:seed          # Seed IT CAN BE LLC entities (system only)
 ```
 
-Legacy Express dev binds port 5001 with `reusePort: true`. Secrets via `op run`.
+Legacy Express dev binds port 5001 with `reusePort: true`. Secrets are brokered by ChittySecrets (`secrets.chitty.cc`) into Cloudflare Worker bindings; 1Password/`op` is retired and non-functional.
 
 ## Where Things Live
 
