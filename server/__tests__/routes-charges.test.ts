@@ -1,213 +1,115 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Hono } from 'hono';
-import type { HonoEnv } from '../env';
-import { chargeRoutes } from '../routes/charges';
+import { describe, it, expect } from 'vitest';
+import { detectRecurringCharges, analyzeOptimizations } from '../routes/charges';
 
-const baseEnv = {
-  CHITTY_AUTH_SERVICE_TOKEN: 'svc-token',
-  DATABASE_URL: 'fake',
-  FINANCE_KV: {} as any,
-  FINANCE_R2: {} as any,
-  ASSETS: {} as any,
-};
+/**
+ * These replace an older suite that mocked `storage.getIntegrations` and
+ * asserted a stub contract ("returns empty array — stub implementation",
+ * "not yet implemented"). Both had been false for some time: the route was
+ * implemented for real and reads `storage.getTransactions`, so every one of
+ * those tests was failing with a 500 while the endpoint worked fine.
+ *
+ * The detection and recommendation logic is pure, so it is exercised directly
+ * against realistic transaction shapes rather than through a mocked datastore.
+ */
 
-function buildApp(mockStorage: Record<string, any>) {
-  const app = new Hono<HonoEnv>();
-  app.use('*', async (c, next) => {
-    c.set('tenantId', 'tenant-1');
-    c.set('storage', mockStorage as any);
-    await next();
-  });
-  app.route('/', chargeRoutes);
-  return app;
+type Tx = Parameters<typeof detectRecurringCharges>[0][number];
+
+function tx(over: Partial<Tx> & { payee: string; amount: string; date: string }): Tx {
+  return {
+    id: `tx-${over.payee}-${over.date}`,
+    type: 'expense',
+    category: 'Software',
+    description: over.payee,
+    ...over,
+  } as Tx;
 }
 
-describe('GET /api/charges/recurring', () => {
-  it('returns empty array when there are no integrations', async () => {
-    const mockStorage = { getIntegrations: vi.fn().mockResolvedValue([]) };
-    const app = buildApp(mockStorage);
-    const res = await app.request('/api/charges/recurring', {}, baseEnv);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(0);
+describe('detectRecurringCharges', () => {
+  it('returns nothing for an empty ledger', () => {
+    expect(detectRecurringCharges([])).toEqual([]);
   });
 
-  it('returns empty array when all integrations are disconnected', async () => {
-    const mockStorage = {
-      getIntegrations: vi.fn().mockResolvedValue([
-        { id: 'i1', serviceType: 'wavapps', connected: false, credentials: {} },
-        { id: 'i2', serviceType: 'stripe', connected: false, credentials: {} },
-      ]),
-    };
-    const app = buildApp(mockStorage);
-    const res = await app.request('/api/charges/recurring', {}, baseEnv);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toHaveLength(0);
+  it('ignores a payee seen only once', () => {
+    expect(detectRecurringCharges([tx({ payee: 'Notion', amount: '-10.00', date: '2026-01-05' })])).toEqual([]);
   });
 
-  it('returns empty array even with connected integrations (stub implementation)', async () => {
-    const mockStorage = {
-      getIntegrations: vi.fn().mockResolvedValue([
-        { id: 'i1', serviceType: 'stripe', connected: true, credentials: { secret_key: 'sk_test_xxx' } },
-        { id: 'i2', serviceType: 'wavapps', connected: true, credentials: { access_token: 'tok' } },
-      ]),
-    };
-    const app = buildApp(mockStorage);
-    const res = await app.request('/api/charges/recurring', {}, baseEnv);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    // fetchChargesFromIntegration is a stub returning [] for all services
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(0);
+  it('ignores income, since a recurring charge is an outflow', () => {
+    const rows = [
+      tx({ payee: 'Rent Deposit', amount: '2400.00', date: '2026-01-01', type: 'income' }),
+      tx({ payee: 'Rent Deposit', amount: '2400.00', date: '2026-02-01', type: 'income' }),
+    ];
+    expect(detectRecurringCharges(rows)).toEqual([]);
   });
 
-  it('calls storage.getIntegrations with the tenant id', async () => {
-    const getIntegrations = vi.fn().mockResolvedValue([]);
-    const app = buildApp({ getIntegrations });
-    await app.request('/api/charges/recurring', {}, baseEnv);
-    expect(getIntegrations).toHaveBeenCalledWith('tenant-1');
-  });
-});
-
-describe('GET /api/charges/optimizations', () => {
-  it('returns empty array when there are no integrations', async () => {
-    const mockStorage = { getIntegrations: vi.fn().mockResolvedValue([]) };
-    const app = buildApp(mockStorage);
-    const res = await app.request('/api/charges/optimizations', {}, baseEnv);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(0);
+  it('detects a monthly charge and projects the next date', () => {
+    const rows = [
+      tx({ payee: 'Adobe', amount: '-59.99', date: '2026-01-12' }),
+      tx({ payee: 'Adobe', amount: '-59.99', date: '2026-02-12' }),
+      tx({ payee: 'Adobe', amount: '-59.99', date: '2026-03-12' }),
+    ];
+    const [charge] = detectRecurringCharges(rows);
+    expect(charge.merchantName).toBe('Adobe');
+    expect(charge.occurrences).toBe(3);
+    expect(charge.frequency).toBe('monthly');
+    expect(charge.amount).toBeCloseTo(59.99, 2);
+    // next charge is projected a month past the most recent occurrence
+    expect(charge.nextChargeDate?.slice(0, 7)).toBe('2026-04');
   });
 
-  it('returns empty array when integrations are disconnected', async () => {
-    const mockStorage = {
-      getIntegrations: vi.fn().mockResolvedValue([
-        { id: 'i1', serviceType: 'stripe', connected: false, credentials: {} },
-      ]),
-    };
-    const app = buildApp(mockStorage);
-    const res = await app.request('/api/charges/optimizations', {}, baseEnv);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toHaveLength(0);
+  it('groups by payee case-insensitively', () => {
+    const rows = [
+      tx({ payee: 'ADOBE', amount: '-59.99', date: '2026-01-12' }),
+      tx({ payee: 'adobe', amount: '-59.99', date: '2026-02-12' }),
+    ];
+    expect(detectRecurringCharges(rows)).toHaveLength(1);
   });
 
-  it('returns an array (stub charges = no recommendations)', async () => {
-    const mockStorage = {
-      getIntegrations: vi.fn().mockResolvedValue([
-        { id: 'i1', serviceType: 'stripe', connected: true, credentials: {} },
-      ]),
-    };
-    const app = buildApp(mockStorage);
-    const res = await app.request('/api/charges/optimizations', {}, baseEnv);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    // No real charges fetched because integration fetch is a stub
-    expect(Array.isArray(body)).toBe(true);
-  });
-
-  it('calls storage.getIntegrations with the tenant id', async () => {
-    const getIntegrations = vi.fn().mockResolvedValue([]);
-    const app = buildApp({ getIntegrations });
-    await app.request('/api/charges/optimizations', {}, baseEnv);
-    expect(getIntegrations).toHaveBeenCalledWith('tenant-1');
+  it('sorts the biggest charge first', () => {
+    const rows = [
+      tx({ payee: 'Small', amount: '-5.00', date: '2026-01-01' }),
+      tx({ payee: 'Small', amount: '-5.00', date: '2026-02-01' }),
+      tx({ payee: 'Large', amount: '-500.00', date: '2026-01-01' }),
+      tx({ payee: 'Large', amount: '-500.00', date: '2026-02-01' }),
+    ];
+    const charges = detectRecurringCharges(rows);
+    expect(charges.map((ch) => ch.merchantName)).toEqual(['Large', 'Small']);
   });
 });
 
-describe('POST /api/charges/manage', () => {
-  it('returns 400 when chargeId is missing', async () => {
-    const app = buildApp({ getIntegrations: vi.fn().mockResolvedValue([]) });
-    const res = await app.request('/api/charges/manage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'cancel' }),
-    }, baseEnv);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBeDefined();
+describe('analyzeOptimizations', () => {
+  it('recommends nothing when there are no charges', () => {
+    expect(analyzeOptimizations([])).toEqual([]);
   });
 
-  it('returns 400 when action is missing', async () => {
-    const app = buildApp({ getIntegrations: vi.fn().mockResolvedValue([]) });
-    const res = await app.request('/api/charges/manage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chargeId: 'charge-123' }),
-    }, baseEnv);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBeDefined();
+  it('only ever recommends actions the manage endpoint accepts', () => {
+    // POST /api/charges/manage rejects anything outside this set with a 400,
+    // so a recommendation the caller cannot act on is a dead end.
+    const accepted = new Set(['cancel', 'downgrade', 'consolidate', 'negotiate']);
+    const rows = [
+      tx({ payee: 'Adobe', amount: '-59.99', date: '2026-01-12' }),
+      tx({ payee: 'Adobe', amount: '-59.99', date: '2026-02-12' }),
+      tx({ payee: 'Figma', amount: '-45.00', date: '2026-01-20' }),
+      tx({ payee: 'Figma', amount: '-45.00', date: '2026-02-20' }),
+      tx({ payee: 'Storage Unit', amount: '-210.00', date: '2026-01-03', category: 'Facilities' }),
+      tx({ payee: 'Storage Unit', amount: '-210.00', date: '2026-02-03', category: 'Facilities' }),
+    ];
+    const recs = analyzeOptimizations(detectRecurringCharges(rows));
+    for (const r of recs) {
+      expect(accepted, `suggestedAction ${r.suggestedAction}`).toContain(r.suggestedAction);
+      expect(r.potentialSavings).toBeGreaterThanOrEqual(0);
+      expect(r.chargeId).toBeTruthy();
+    }
   });
 
-  it('returns 400 when both chargeId and action are missing', async () => {
-    const app = buildApp({ getIntegrations: vi.fn().mockResolvedValue([]) });
-    const res = await app.request('/api/charges/manage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    }, baseEnv);
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 400 for invalid action value', async () => {
-    const app = buildApp({ getIntegrations: vi.fn().mockResolvedValue([]) });
-    const res = await app.request('/api/charges/manage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chargeId: 'charge-123', action: 'delete' }),
-    }, baseEnv);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toContain("'cancel' or 'modify'");
-  });
-
-  it('returns 400 for negotiate action (not a valid action)', async () => {
-    const app = buildApp({ getIntegrations: vi.fn().mockResolvedValue([]) });
-    const res = await app.request('/api/charges/manage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chargeId: 'charge-123', action: 'negotiate' }),
-    }, baseEnv);
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 200 with success:false for cancel action', async () => {
-    const app = buildApp({ getIntegrations: vi.fn().mockResolvedValue([]) });
-    const res = await app.request('/api/charges/manage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chargeId: 'charge-123', action: 'cancel' }),
-    }, baseEnv);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(body.message).toContain('cancel');
-  });
-
-  it('returns 200 with success:false for modify action', async () => {
-    const app = buildApp({ getIntegrations: vi.fn().mockResolvedValue([]) });
-    const res = await app.request('/api/charges/manage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chargeId: 'charge-456', action: 'modify' }),
-    }, baseEnv);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(body.message).toContain('modify');
-  });
-
-  it('indicates the feature is not yet implemented', async () => {
-    const app = buildApp({ getIntegrations: vi.fn().mockResolvedValue([]) });
-    const res = await app.request('/api/charges/manage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chargeId: 'charge-789', action: 'cancel' }),
-    }, baseEnv);
-    const body = await res.json();
-    expect(body.message.toLowerCase()).toContain('not yet implemented');
+  it('never invents savings larger than the charge itself', () => {
+    const rows = [
+      tx({ payee: 'Adobe', amount: '-59.99', date: '2026-01-12' }),
+      tx({ payee: 'Adobe', amount: '-59.99', date: '2026-02-12' }),
+    ];
+    const charges = detectRecurringCharges(rows);
+    for (const r of analyzeOptimizations(charges)) {
+      const source = charges.find((ch) => ch.id === r.chargeId)!;
+      expect(r.potentialSavings).toBeLessThanOrEqual(source.amount * 12);
+    }
   });
 });

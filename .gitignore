@@ -46,3 +46,4 @@ generated-icon.png
 reports/
 # Machine-local Claude Code permissions — must not be shared
 .claude/settings.local.json
+.vitest-results.json

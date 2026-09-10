@@ -17,19 +17,39 @@ import type { HonoEnv } from '../env';
 // intercept before the route module loads. vi.mock() is hoisted above
 // variable declarations, so we use vi.hoisted() for any fn we reference
 // from inside the mock factory.
-const { mockCreateTransaction, mockGetByExternalId } = vi.hoisted(() => ({
+const {
+  mockCreateTransaction,
+  mockGetByExternalId,
+  mockLookupAccountByExternalId,
+  mockGetAccounts,
+  mockGetAccount,
+  mockCreateAccount,
+} = vi.hoisted(() => ({
   mockCreateTransaction: vi.fn(),
   mockGetByExternalId: vi.fn(),
+  mockLookupAccountByExternalId: vi.fn(),
+  mockGetAccounts: vi.fn(),
+  mockGetAccount: vi.fn(),
+  mockCreateAccount: vi.fn(),
 }));
 
 vi.mock('../db/connection', () => ({
   createDb: vi.fn(() => ({ /* drizzle stub */ })),
 }));
 
+// This stand-in must cover every storage method the route calls. When the route
+// grew account resolution, the two methods below were all that existed here, so
+// every request TypeError'd into a 500 -- which these tests caught correctly and
+// which nobody saw, because no CI job ran them. See the storage-surface guard
+// at the bottom of this file, which fails if the route gains another call.
 vi.mock('../storage/system', () => ({
   SystemStorage: class MockSystemStorage {
     getTransactionByExternalId = mockGetByExternalId;
     createTransaction = mockCreateTransaction;
+    lookupAccountByExternalId = mockLookupAccountByExternalId;
+    getAccounts = mockGetAccounts;
+    getAccount = mockGetAccount;
+    createAccount = mockCreateAccount;
   },
 }));
 
@@ -91,6 +111,20 @@ function buildEnvelope(partial: Partial<any> = {}): any {
 beforeEach(() => {
   mockCreateTransaction.mockReset();
   mockGetByExternalId.mockReset();
+  mockLookupAccountByExternalId.mockReset();
+  mockGetAccounts.mockReset();
+  mockGetAccount.mockReset();
+  mockCreateAccount.mockReset();
+
+  // Default: the tenant already has one account, which is the ordinary path.
+  // Individual tests override where they care.
+  mockLookupAccountByExternalId.mockResolvedValue(null);
+  mockGetAccounts.mockResolvedValue([{ id: ACCOUNT_ID, tenantId: TENANT_ID, isActive: true, metadata: null }]);
+  mockGetAccount.mockResolvedValue({ id: ACCOUNT_ID, tenantId: TENANT_ID, isActive: true, metadata: null });
+  mockCreateAccount.mockResolvedValue({ id: ACCOUNT_ID, tenantId: TENANT_ID, isActive: true, metadata: null });
+  mockCreateTransaction.mockImplementation(async (row: Record<string, unknown>) => ({ id: 'tx-created', ...row }));
+  mockGetByExternalId.mockResolvedValue(null);
+
   global.fetch = originalFetch;
   baseEnv.FINANCE_KV = makeKv();
 });
@@ -335,5 +369,25 @@ describe('POST /api/webhooks/mercury', () => {
     );
     expect(res.status).toBe(202);
     expect(mockCreateTransaction).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Guard against the drift that made every test in this file fail with a 500:
+ * the route grew storage calls the stand-in above did not implement. If this
+ * fails, add the missing method to MockSystemStorage rather than deleting the
+ * assertion -- a stand-in narrower than the route is a suite that tests nothing.
+ */
+describe('storage surface', () => {
+  it('implements every storage method the webhook route calls', async () => {
+    const src = await import('node:fs').then((fs) =>
+      fs.promises.readFile(new URL('../books/webhooks.ts', import.meta.url), 'utf8'),
+    );
+    const called = new Set([...src.matchAll(/storage\.([a-zA-Z]+)\(/g)].map((m) => m[1]));
+    const { SystemStorage } = await import('../storage/system');
+    const stub = new (SystemStorage as unknown as new () => Record<string, unknown>)();
+    for (const method of called) {
+      expect(typeof stub[method], `MockSystemStorage is missing ${method}()`).toBe('function');
+    }
   });
 });

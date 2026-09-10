@@ -30,7 +30,7 @@ interface OptimizationRecommendation {
  * Groups expenses by payee, identifies repeat charges with similar amounts,
  * and estimates frequency + next charge date.
  */
-function detectRecurringCharges(
+export function detectRecurringCharges(
   transactions: Array<{
     id: string;
     payee: string | null;
@@ -131,7 +131,7 @@ function detectRecurringCharges(
  * Generate optimization recommendations based on detected recurring charges.
  * Uses category, amount, and frequency to suggest actions.
  */
-function analyzeOptimizations(
+export function analyzeOptimizations(
   charges: RecurringCharge[],
 ): OptimizationRecommendation[] {
   const recommendations: OptimizationRecommendation[] = [];
