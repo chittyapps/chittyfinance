@@ -23,6 +23,11 @@ export const tenantMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
   // property a tenant-isolation boundary should rely on, and the failure mode
   // if it ever changes is silent cross-tenant data access.
   if (!storage || !userId || typeof storage.getUserTenants !== 'function') {
+    // 500 rather than 403 on purpose. 403 is the answer to "you are not a
+    // member", and returning it here would make a server misconfiguration
+    // indistinguishable from ordinary denial -- the same camouflage that let
+    // the fail-open sit unnoticed. This state is the server's fault and should
+    // read as an outage, loudly. The body names no tenant and no caller.
     return c.json(
       {
         error: 'tenant_check_unavailable',

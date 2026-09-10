@@ -510,6 +510,20 @@ describe('Scenario: Cross-tenant isolation', () => {
     expect(res.status).toBe(403);
     expect(mockStorage.getProperty).not.toHaveBeenCalled();
   });
+
+  it('still scopes the query by the verified tenant, not by anything else', () => {
+    // Defence in depth: the 403 above proves the middleware refuses early, but
+    // isolation must not rest on the middleware alone. For an allowed request
+    // the route must pass the tenant that was verified -- so if the middleware
+    // were ever bypassed, the query would still be scoped.
+    return (async () => {
+      const app = createTestApp();
+      mockStorage.getProperty.mockClear();
+      const res = await app.request(`/api/properties/${PROP_1}`, { headers: authHeaders() }, env);
+      expect(res.status).toBe(200);
+      expect(mockStorage.getProperty).toHaveBeenCalledWith(PROP_1, TENANT_ID);
+    })();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
