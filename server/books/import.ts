@@ -628,17 +628,45 @@ const MAX_COST_CENTER_LEN = 64;
 
 /**
  * Fold the spelling variants an operator actually produces onto one key:
- * case, surrounding and internal whitespace, underscores, and the unicode
- * dashes that spreadsheets substitute for a plain hyphen.
+ * case, surrounding and internal whitespace, underscores, and the assorted
+ * unicode dashes that spreadsheets and word processors substitute for a plain
+ * hyphen (figure/en/em dashes, minus sign, hyphen bullet, small and fullwidth
+ * forms). Degenerate input made entirely of separators folds to '', which no
+ * table key can equal, so it is treated as unrecognized rather than matching.
  */
 function normalizeCostCenterKey(raw: string): string {
   return raw
     .trim()
     .toUpperCase()
-    .replace(/[\u2010-\u2015\u2212_\s]+/g, '-')
+    .replace(/[\u2010-\u2015\u2043\u2212\ufe58\ufe63\uff0d_\s]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 }
+
+/**
+ * The table above is written for humans, so its keys are folded through the
+ * same normalizer the lookup uses. Two keys that differ only in punctuation
+ * would otherwise collide and silently make one unreachable -- routing one
+ * property's spend to another. That is a build-time mistake, so it throws at
+ * module load rather than waiting for an import to misroute.
+ */
+const AMAZON_COST_CENTER_INDEX: Record<string, { entity: EntityKey; personalUse: boolean }> =
+  (() => {
+    const index: Record<string, { entity: EntityKey; personalUse: boolean }> = {};
+    for (const [raw, value] of Object.entries(AMAZON_COST_CENTERS)) {
+      const key = normalizeCostCenterKey(raw);
+      if (!key) {
+        throw new Error(`AMAZON_COST_CENTERS key ${JSON.stringify(raw)} normalizes to empty`);
+      }
+      if (key in index) {
+        throw new Error(
+          `AMAZON_COST_CENTERS key ${JSON.stringify(raw)} collides with an earlier key on ${JSON.stringify(key)}`,
+        );
+      }
+      index[key] = value;
+    }
+    return index;
+  })();
 
 /** How a COA code was reached — persisted alongside the entity method. */
 type ClassificationMethod = 'gl-code' | 'gl-code-rejected' | 'keyword';
@@ -664,7 +692,10 @@ export function normalizeAmazonEntity(
       return { entity: 'suspense', personalUse: heuristic.personalUse, method: 'cost-center-unrecognized' };
     }
 
-    const hit = AMAZON_COST_CENTERS[normalizeCostCenterKey(rawCc)];
+    const key = normalizeCostCenterKey(rawCc);
+    // Input that is nothing but separators ('---', '___') folds to ''. Treat it
+    // as unrecognized explicitly rather than relying on the lookup missing.
+    const hit = key ? AMAZON_COST_CENTER_INDEX[key] : undefined;
 
     // An unrecognized cost center is an operator telling us something we do not
     // understand. Falling through to the PO/account-group heuristics would bury

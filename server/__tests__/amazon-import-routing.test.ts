@@ -34,6 +34,40 @@ describe('normalizeAmazonEntity — cost center routing', () => {
     expect(withUnknownCc.method).toBe('cost-center-unrecognized');
   });
 
+  it('fails closed for every unrecognized cost center, not just one sample', () => {
+    // Each of these would otherwise be routed by the PO heuristics to
+    // cozy-castle. None may reach a real entity.
+    const unrecognized = ['MORADA-MAMI', 'BEACH-HOUSE', 'VILLA VISTA', 'general ledger', '9999', 'x'];
+    for (const cc of unrecognized) {
+      const r = normalizeAmazonEntity('surf 504', '', '', cc);
+      expect(r.entity, `cost center ${JSON.stringify(cc)}`).toBe('suspense');
+      expect(r.method, `cost center ${JSON.stringify(cc)}`).toBe('cost-center-unrecognized');
+    }
+  });
+
+  it('treats separator-only cost centers as unrecognized rather than as absent', () => {
+    // These fold to an empty key. Absent would mean "use the heuristics";
+    // present-but-meaningless must mean "ask a human".
+    for (const cc of ['---', '___', '- - -', '\u2014\u2014']) {
+      const r = normalizeAmazonEntity('surf 504', '', '', cc);
+      expect(r.entity, `cost center ${JSON.stringify(cc)}`).toBe('suspense');
+      expect(r.method, `cost center ${JSON.stringify(cc)}`).toBe('cost-center-unrecognized');
+    }
+  });
+
+  it('leaves no cost-center key shadowed by a collision', () => {
+    // A key that collides with an earlier one after folding becomes
+    // unreachable, which would route that property's spend to whichever entity
+    // won. Every documented key must still resolve via the cost-center path.
+    // The index also throws at module load on collision, so importing this
+    // module at all exercises that guard.
+    for (const cc of ['COZY-CASTLE', 'CITY-STUDIO', 'APT-ARLENE', 'LAKESIDE-LOFT', 'GENERAL', 'PERSONAL']) {
+      const r = normalizeAmazonEntity('', '', '', cc);
+      expect(r.method, `key ${cc}`).toBe('cost-center');
+      expect(r.entity, `key ${cc}`).not.toBe('suspense');
+    }
+  });
+
   it('treats an absurdly long cost center as unrecognized rather than parsing it', () => {
     const r = normalizeAmazonEntity('surf 504', '', '', 'X'.repeat(500));
     expect(r.entity).toBe('suspense');
@@ -69,13 +103,25 @@ describe('classifyAmazonItem — GL code passthrough', () => {
     expect(r).toEqual({ code: '5020', confidence: 0.850, method: 'gl-code' });
   });
 
-  it('never emits a confidence that would clear the bulk-accept gate outright', () => {
-    // client/src/pages/Classification.tsx auto-accepts at >= 0.80 with a $500
-    // cap. 0.850 is deliberate and matches the Mercury CSV path; anything
-    // higher (notably 1.000) would assert certainty this input cannot carry.
+  it('never claims certainty for an operator-typed GL code', () => {
+    // A COA-validated GL code DOES clear the bulk-accept gate
+    // (client/src/pages/Classification.tsx, >= 0.80, capped at $500) and that
+    // is intended -- it matches what the Mercury CSV path does with the same
+    // class of input. What it must never do is claim 1.000, which asserts a
+    // certainty a hand-typed spreadsheet column cannot carry and which would
+    // survive any future tightening of the gate below 1.
     const r = classifyAmazonItem('', false, '', '5020');
     expect(r.confidence).toBeLessThan(1);
-    expect(r.confidence).toBe(0.85);
+    expect(r.confidence).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('does not let a rejected GL code auto-approve on the keyword fallback', () => {
+    // The contract that matters is the confidence, not which code we land on:
+    // a row whose operator instruction we threw away must not then be
+    // bulk-accepted on a guess.
+    const r = classifyAmazonItem('', false, 'cleaning / maintenance supplie', '4242');
+    expect(r.method).toBe('gl-code-rejected');
+    expect(r.confidence).toBeLessThan(0.8);
   });
 
   it('rejects a well-formed GL code that is not in the chart of accounts', () => {
