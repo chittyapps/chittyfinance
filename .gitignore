@@ -41,3 +41,8 @@ generated-icon.png
 
 # One-off patches and scripts
 *.patch
+
+# Generated audit output (scripts/*-rotation-audit.sh)
+reports/
+# Machine-local Claude Code permissions — must not be shared
+.claude/settings.local.json
