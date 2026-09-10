@@ -816,7 +816,7 @@ function normalizeAmazonEntityByHeuristics(
 // Amazon Category → COA Code Classification
 // ═══════════════════════════════════════════════════════════════
 
-/** Personal spend categories — COA 3200 (Owner Draws) */
+/** Personal spend categories — routed to OWNER_DRAWS_CODE (3010). */
 const AMAZON_PERSONAL_CATEGORIES = new Set([
   'health and beauty', 'beauty', 'prestige beauty', 'grocery',
   'pet products', 'apparel', 'book', 'luggage', 'sports',
