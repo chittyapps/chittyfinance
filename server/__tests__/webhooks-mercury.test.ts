@@ -377,6 +377,11 @@ describe('POST /api/webhooks/mercury', () => {
  * the route grew storage calls the stand-in above did not implement. If this
  * fails, add the missing method to MockSystemStorage rather than deleting the
  * assertion -- a stand-in narrower than the route is a suite that tests nothing.
+ *
+ * It matches direct `storage.method(` calls only, which is every call the route
+ * currently makes. It would miss `storage[name](...)`, a destructured method, or
+ * a call split across lines after the dot. Those are worth avoiding in the route
+ * for exactly this reason; if one appears, this guard silently stops covering it.
  */
 describe('storage surface', () => {
   it('implements every storage method the webhook route calls', async () => {

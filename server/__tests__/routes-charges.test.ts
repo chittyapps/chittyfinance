@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { detectRecurringCharges, analyzeOptimizations } from '../routes/charges';
+import { describe, it, expect, vi } from 'vitest';
+import { Hono } from 'hono';
+import type { HonoEnv } from '../env';
+import { chargeRoutes, detectRecurringCharges, analyzeOptimizations } from '../routes/charges';
 
 /**
  * These replace an older suite that mocked `storage.getIntegrations` and
@@ -111,5 +113,127 @@ describe('analyzeOptimizations', () => {
       const source = charges.find((ch) => ch.id === r.chargeId)!;
       expect(r.potentialSavings).toBeLessThanOrEqual(source.amount * 12);
     }
+  });
+});
+
+/**
+ * The pure-function tests above do not exercise the HTTP layer, so these cover
+ * what only a request can: tenant scoping, the validation branches, and the
+ * 404. The storage stand-in implements exactly the two methods the route calls
+ * -- an older version of this file stubbed `getIntegrations`, which the route
+ * stopped using, and every test then failed with a 500 that nobody saw.
+ */
+const baseEnv = {
+  CHITTY_AUTH_SERVICE_TOKEN: 'svc-token',
+  DATABASE_URL: 'fake',
+  FINANCE_KV: {} as any,
+  FINANCE_R2: {} as any,
+  ASSETS: {} as any,
+};
+
+const TENANT = 'tenant-1';
+
+function buildApp(storage: Record<string, unknown>) {
+  const app = new Hono<HonoEnv>();
+  app.use('*', async (c, next) => {
+    c.set('tenantId', TENANT);
+    c.set('storage', storage as any);
+    await next();
+  });
+  app.route('/', chargeRoutes);
+  return app;
+}
+
+function recurringLedger() {
+  return [
+    tx({ payee: 'Adobe', amount: '-59.99', date: '2026-01-12' }),
+    tx({ payee: 'Adobe', amount: '-59.99', date: '2026-02-12' }),
+  ];
+}
+
+describe('GET /api/charges/* — HTTP layer', () => {
+  it('scopes the transaction read to the tenant from context, not the query string', async () => {
+    const getTransactions = vi.fn().mockResolvedValue(recurringLedger());
+    const app = buildApp({ getTransactions });
+    // A caller-supplied tenantId must not reach storage.
+    const res = await app.request('/api/charges/recurring?tenantId=other-tenant', {}, baseEnv);
+    expect(res.status).toBe(200);
+    expect(getTransactions).toHaveBeenCalledWith(TENANT);
+    expect(getTransactions).not.toHaveBeenCalledWith('other-tenant');
+  });
+
+  it('returns detected charges as JSON', async () => {
+    const app = buildApp({ getTransactions: vi.fn().mockResolvedValue(recurringLedger()) });
+    const res = await app.request('/api/charges/recurring', {}, baseEnv);
+    const body = (await res.json()) as Array<{ merchantName: string }>;
+    expect(Array.isArray(body)).toBe(true);
+    expect(body[0].merchantName).toBe('Adobe');
+  });
+
+  it('returns an empty array for an empty ledger rather than erroring', async () => {
+    const app = buildApp({ getTransactions: vi.fn().mockResolvedValue([]) });
+    const res = await app.request('/api/charges/recurring', {}, baseEnv);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  it('serves optimizations from the same tenant-scoped read', async () => {
+    const getTransactions = vi.fn().mockResolvedValue(recurringLedger());
+    const app = buildApp({ getTransactions });
+    const res = await app.request('/api/charges/optimizations', {}, baseEnv);
+    expect(res.status).toBe(200);
+    expect(getTransactions).toHaveBeenCalledWith(TENANT);
+    expect(Array.isArray(await res.json())).toBe(true);
+  });
+});
+
+describe('POST /api/charges/manage — HTTP layer', () => {
+  function manage(app: ReturnType<typeof buildApp>, payload: unknown) {
+    return app.request(
+      '/api/charges/manage',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) },
+      baseEnv,
+    );
+  }
+
+  it('rejects a missing chargeId or action with 400', async () => {
+    const app = buildApp({ updateTransaction: vi.fn() });
+    expect((await manage(app, { action: 'cancel' })).status).toBe(400);
+    expect((await manage(app, { chargeId: 'c-1' })).status).toBe(400);
+  });
+
+  it('rejects an action outside the accepted set with 400', async () => {
+    const updateTransaction = vi.fn();
+    const app = buildApp({ updateTransaction });
+    const res = await manage(app, { chargeId: 'c-1', action: 'delete' });
+    expect(res.status).toBe(400);
+    expect(updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('accepts every action analyzeOptimizations can recommend', async () => {
+    for (const action of ['cancel', 'downgrade', 'consolidate', 'negotiate']) {
+      const app = buildApp({ updateTransaction: vi.fn().mockResolvedValue({ id: 'c-1' }) });
+      const res = await manage(app, { chargeId: 'c-1', action });
+      expect(res.status, `action ${action}`).toBe(200);
+    }
+  });
+
+  it('flags the charge against the context tenant and echoes the action', async () => {
+    const updateTransaction = vi.fn().mockResolvedValue({ id: 'c-1' });
+    const app = buildApp({ updateTransaction });
+    const res = await manage(app, { chargeId: 'c-1', action: 'cancel' });
+    expect(res.status).toBe(200);
+    expect(updateTransaction).toHaveBeenCalledWith(
+      'c-1',
+      TENANT,
+      expect.objectContaining({ metadata: expect.objectContaining({ chargeAction: 'cancel' }) }),
+    );
+    expect(await res.json()).toMatchObject({ success: true, chargeId: 'c-1', action: 'cancel' });
+  });
+
+  it('returns 404 when the transaction does not exist', async () => {
+    const app = buildApp({ updateTransaction: vi.fn().mockResolvedValue(null) });
+    const res = await manage(app, { chargeId: 'nope', action: 'cancel' });
+    expect(res.status).toBe(404);
   });
 });
