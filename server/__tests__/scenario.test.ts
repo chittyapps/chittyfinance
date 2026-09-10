@@ -32,11 +32,16 @@ function createTestApp() {
   const app = new Hono<HonoEnv>();
 
   // Apply middleware to all /api/* routes
-  app.use('/api/*', serviceAuth, tenantMiddleware, async (c, next) => {
-    // Mock storage middleware
-    c.set('storage', mockStorage as any);
+  // storage and userId must be in context BEFORE tenantMiddleware runs. They
+  // used to be set in a middleware mounted after it, so every request took the
+  // branch that skipped the membership check entirely -- these tests were not
+  // exercising tenant isolation at all. tenantMiddleware now fails closed, so
+  // the ordering has to be right.
+  app.use('/api/*', serviceAuth, async (c, next) => {
+    c.set('storage', { ...(mockStorage as any), getUserTenants: async () => [{ tenant: { id: TENANT_ID } }] } as any);
+    c.set('userId', 'test-user');
     await next();
-  });
+  }, tenantMiddleware);
 
   app.route('/', propertyRoutes);
   app.route('/', valuationRoutes);
@@ -496,9 +501,14 @@ describe('Scenario: Cross-tenant isolation', () => {
     const res = await app.request(`/api/properties/${PROP_1}`, {
       headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Tenant-ID': OTHER_TENANT, 'Content-Type': 'application/json' },
     }, env);
-    expect(res.status).toBe(404);
-    // getProperty was called with the OTHER tenant ID, which won't match
-    expect(mockStorage.getProperty).toHaveBeenCalledWith(PROP_1, OTHER_TENANT);
+    // Previously this asserted a 404: the request was allowed through and the
+    // isolation came from the query failing to match. tenantMiddleware now
+    // verifies membership first, so a caller asking for a tenant they do not
+    // belong to is refused before any query runs. Rejecting earlier and never
+    // touching the datastore is the stronger guarantee, so the assertion moves
+    // up to it rather than being relaxed back to the old behaviour.
+    expect(res.status).toBe(403);
+    expect(mockStorage.getProperty).not.toHaveBeenCalled();
   });
 });
 
