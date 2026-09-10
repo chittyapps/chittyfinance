@@ -49,7 +49,9 @@ shared/          Legacy integer-ID schema (forensic tables only)
 | `standalone` (default) | SQLite | `database/standalone.schema.ts` | Single user |
 | `system` | Neon Postgres | `database/system.schema.ts` | Full multi-tenant |
 
-`server/db.ts` auto-switches the Drizzle client. Never cross schemas.
+`server/db/connection.ts` builds the Drizzle client (Neon HTTP). Never cross schemas.
+
+Note: `server/db.ts` no longer exists, and the Hono app does **not** switch on `MODE` — `storageMiddleware` in `server/app.ts` always constructs `SystemStorage`. `server/storage/standalone.ts` and `database/standalone.schema.ts` are still in the tree but nothing in the request path reaches them, so treat the table above as describing the schemas, not a live runtime switch.
 
 ## Path Aliases
 

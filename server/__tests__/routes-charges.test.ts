@@ -103,6 +103,30 @@ describe('analyzeOptimizations', () => {
     }
   });
 
+  it('does not credit a small charge with the whole category\'s savings', () => {
+    // Consolidation groups by category. Crediting each member with a share of
+    // the category total made a $1/mo line report $300.30 against a $1,000/mo
+    // neighbour, and counted the same saving once per member.
+    const rows = [
+      tx({ payee: 'Tiny', amount: '-1.00', date: '2026-01-01' }),
+      tx({ payee: 'Tiny', amount: '-1.00', date: '2026-02-01' }),
+      tx({ payee: 'Huge', amount: '-1000.00', date: '2026-01-01' }),
+      tx({ payee: 'Huge', amount: '-1000.00', date: '2026-02-01' }),
+    ];
+    const charges = detectRecurringCharges(rows);
+    const recs = analyzeOptimizations(charges);
+    expect(recs.length).toBeGreaterThan(0);
+    expect(recs.every((r) => r.suggestedAction === 'consolidate')).toBe(true);
+
+    const tiny = recs.find((r) => r.merchantName === 'Tiny')!;
+    const huge = recs.find((r) => r.merchantName === 'Huge')!;
+    expect(tiny.potentialSavings).toBeLessThan(huge.potentialSavings);
+    for (const r of recs) {
+      const src = charges.find((c) => c.id === r.chargeId)!;
+      expect(r.potentialSavings, `${r.merchantName}`).toBeLessThanOrEqual(src.amount);
+    }
+  });
+
   it('never invents savings larger than the charge itself', () => {
     const rows = [
       tx({ payee: 'Adobe', amount: '-59.99', date: '2026-01-12' }),
