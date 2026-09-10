@@ -669,7 +669,23 @@ const AMAZON_COST_CENTER_INDEX: Record<string, { entity: EntityKey; personalUse:
   })();
 
 /** How a COA code was reached — persisted alongside the entity method. */
-type ClassificationMethod = 'gl-code' | 'gl-code-rejected' | 'keyword';
+type ClassificationMethod = 'gl-code' | 'gl-code-rejected' | 'keyword' | 'entity-suspense';
+
+/** Suspense — "needs a human". Excluded from bulk accept by design. */
+const SUSPENSE_CODE = '9010';
+
+/**
+ * Owner Draws. Note this is 3010, not 3200: '3200' was not in
+ * REI_CHART_OF_ACCOUNTS at all, so every personal Amazon row was being booked
+ * to an account that does not exist.
+ */
+const OWNER_DRAWS_CODE = '3010';
+
+/**
+ * Ceiling for a row whose supplied GL code we rejected. Must stay strictly
+ * below MIN_BULK_CONFIDENCE (0.80) in client/src/pages/Classification.tsx.
+ */
+const MAX_REJECTED_GL_CONFIDENCE = 0.75;
 
 /** How an entity assignment was reached — persisted so a misroute is traceable. */
 type EntityMethod =
@@ -832,27 +848,67 @@ export function classifyAmazonItem(
   personalUse: boolean,
   poNumber: string,
   glCode: string = '',
+  entityMethod: EntityMethod = 'heuristic',
 ): { code: string; confidence: number; method: ClassificationMethod } {
-  // An operator-supplied GL column is a strong hint, not gospel: a typo'd code
-  // must not enter the books at a confidence the bulk-accept path (>= 0.80,
-  // client/src/pages/Classification.tsx) will auto-approve into a nonexistent
-  // account. Trust it only when it resolves in the chart of accounts, and at
-  // the same 0.850 the Mercury CSV path uses for the identical class of input.
-  const gl = glCode.trim();
-  let glRejected = false;
-  if (gl) {
-    if (/^\d{4}$/.test(gl) && getAccountByCode(gl)) {
-      return { code: gl, confidence: 0.850, method: 'gl-code' };
-    }
-    // Malformed, or a well-formed code that is not in the chart of accounts.
-    // Fall through to keyword matching, but record that we threw an operator
-    // instruction away -- silently ignoring it is how a whole import lands in
-    // the wrong account with nobody able to say why.
-    glRejected = true;
+  // The entity router already refused to place this row. Classifying it
+  // confidently anyway would put "needs a human" and "cleaning supplies, 0.700"
+  // on the same record, and the COA code is what the bulk-accept path reads.
+  if (entityMethod === 'cost-center-unrecognized' || entityMethod === 'cost-center-conflict') {
+    return { code: SUSPENSE_CODE, confidence: 0.100, method: 'entity-suspense' };
   }
 
+  // An operator-supplied GL column is a strong hint, not gospel: a typo'd code
+  // must not enter the books at a confidence the bulk-accept path
+  // (>= MIN_BULK_CONFIDENCE in client/src/pages/Classification.tsx) will
+  // auto-approve into a nonexistent account. Trust it only when it resolves in
+  // the chart of accounts, and at the same 0.850 the Mercury CSV path uses for
+  // the identical class of input.
+  const gl = glCode.trim();
+  const glAccount = gl && /^\d{4}$/.test(gl) ? getAccountByCode(gl) : undefined;
+  let glRejected = Boolean(gl) && !glAccount;
+
+  // Personal spend is decided before the GL column is consulted. The GL column
+  // is business chart-of-accounts coding; letting it run first meant a personal
+  // row carrying '5020' was booked as a deductible cleaning expense instead of
+  // an owner draw. A GL code on a personal row is honoured only when it names
+  // an equity account, which is the only thing a personal row can legitimately
+  // be.
+  if (personalUse) {
+    if (glAccount && glAccount.type === 'equity') {
+      return { code: gl, confidence: 0.850, method: 'gl-code' };
+    }
+    if (gl) glRejected = true;
+    const keyword = classifyAmazonItemByKeyword(category, personalUse, poNumber);
+    return capIfRejected(keyword, glRejected);
+  }
+
+  if (glAccount) {
+    return { code: gl, confidence: 0.850, method: 'gl-code' };
+  }
+
+  // Malformed, or a well-formed code that is not in the chart of accounts.
+  // Fall through to keyword matching, but record that we threw an operator
+  // instruction away -- silently ignoring it is how a whole import lands in
+  // the wrong account with nobody able to say why.
   const keyword = classifyAmazonItemByKeyword(category, personalUse, poNumber);
-  return { ...keyword, method: glRejected ? 'gl-code-rejected' : 'keyword' };
+  return capIfRejected(keyword, glRejected);
+}
+
+/**
+ * A row whose operator instruction we discarded must not then be auto-approved
+ * on the keyword guess that replaced it. Cap it below the bulk-accept gate so
+ * it lands in front of a human.
+ */
+function capIfRejected(
+  keyword: { code: string; confidence: number },
+  glRejected: boolean,
+): { code: string; confidence: number; method: ClassificationMethod } {
+  if (!glRejected) return { ...keyword, method: 'keyword' };
+  return {
+    code: keyword.code,
+    confidence: Math.min(keyword.confidence, MAX_REJECTED_GL_CONFIDENCE),
+    method: 'gl-code-rejected',
+  };
 }
 
 function classifyAmazonItemByKeyword(
@@ -864,10 +920,10 @@ function classifyAmazonItemByKeyword(
   if (personalUse) {
     const catLower = category.toLowerCase();
     if (AMAZON_PERSONAL_CATEGORIES.has(catLower)) {
-      return { code: '3200', confidence: 0.850 };
+      return { code: OWNER_DRAWS_CODE, confidence: 0.850 };
     }
     // Personal user but non-personal category — still likely personal, lower confidence
-    return { code: '3200', confidence: 0.500 };
+    return { code: OWNER_DRAWS_CODE, confidence: 0.500 };
   }
 
   // CHITTY SERVICES PO-based category hints (more reliable than Amazon category)
@@ -1118,7 +1174,7 @@ importRoutes.post('/api/import/amazon', async (c) => {
       row.poNumber, row.accountGroup, row.accountUser, row.costCenter
     );
     const classification = classifyAmazonItem(
-      row.amazonCategory, personalUse, row.poNumber, row.glCode
+      row.amazonCategory, personalUse, row.poNumber, row.glCode, entityMethod
     );
 
     if (entityMethod === 'cost-center-unrecognized') unrecognizedCostCenters.add(row.costCenter.trim());

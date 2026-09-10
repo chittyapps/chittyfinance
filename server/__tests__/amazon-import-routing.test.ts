@@ -145,3 +145,60 @@ describe('classifyAmazonItem — GL code passthrough', () => {
     expect(r).toEqual({ code: '5080', confidence: 0.65, method: 'keyword' });
   });
 });
+
+describe('classifyAmazonItem — personal spend cannot be coded as business expense', () => {
+  it('ignores a business GL code on a personal row', () => {
+    // 5020 is a real cleaning-expense account, so it passes COA validation.
+    // On a personal row it must still not be used: that would book an owner
+    // draw as a deductible expense.
+    expect(getAccountByCode('5020')?.type).toBe('expense');
+    const r = classifyAmazonItem('', true, '', '5020');
+    expect(r.code).not.toBe('5020');
+    expect(r.code).toBe('3010');
+    expect(r.method).toBe('gl-code-rejected');
+    expect(r.confidence).toBeLessThan(0.8);
+  });
+
+  it('honors an equity GL code on a personal row, which is the legitimate case', () => {
+    expect(getAccountByCode('3010')?.type).toBe('equity');
+    const r = classifyAmazonItem('', true, '', '3010');
+    expect(r).toEqual({ code: '3010', confidence: 0.85, method: 'gl-code' });
+  });
+
+  it('caps a rejected GL code below the bulk-accept gate even on a personal category', () => {
+    // A personal *category* row would otherwise return 0.850, which clears the
+    // 0.80 gate -- so the row whose instruction we discarded would auto-approve.
+    expect(classifyAmazonItem('grocery', true, '', '').confidence).toBe(0.85);
+    const r = classifyAmazonItem('grocery', true, '', '4242');
+    expect(r.method).toBe('gl-code-rejected');
+    expect(r.confidence).toBeLessThan(0.8);
+  });
+
+  it('only ever emits owner-draw codes that exist in the chart of accounts', () => {
+    // '3200' was used here historically and is not in REI_CHART_OF_ACCOUNTS at
+    // all, so every personal row was booked to a nonexistent account.
+    for (const category of ['grocery', 'apparel', 'widgets', '']) {
+      const r = classifyAmazonItem(category, true, '', '');
+      expect(getAccountByCode(r.code), `category ${JSON.stringify(category)} -> ${r.code}`).toBeDefined();
+    }
+  });
+});
+
+describe('classification defers to an entity that already failed closed', () => {
+  it('forces suspense when the cost center was unrecognized', () => {
+    const e = normalizeAmazonEntity('cleaning / maintenance supplie', '', '', 'MORADA-MAMI');
+    expect(e.method).toBe('cost-center-unrecognized');
+    // Without the entityMethod guard this row classifies as 5020 at 0.700.
+    expect(classifyAmazonItem('', false, 'cleaning / maintenance supplie', '').code).toBe('5020');
+    const c = classifyAmazonItem('', e.personalUse, 'cleaning / maintenance supplie', '', e.method);
+    expect(c).toEqual({ code: '9010', confidence: 0.1, method: 'entity-suspense' });
+  });
+
+  it('forces suspense on a cost-center conflict even with a valid GL code', () => {
+    const e = normalizeAmazonEntity('', 'Personal', '', 'COZY-CASTLE');
+    expect(e.method).toBe('cost-center-conflict');
+    const c = classifyAmazonItem('', e.personalUse, '', '5020', e.method);
+    expect(c.code).toBe('9010');
+    expect(c.method).toBe('entity-suspense');
+  });
+});
