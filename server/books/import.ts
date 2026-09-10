@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { ledgerLog } from '../lib/ledger-client';
-import { findAccountCode } from '../../database/chart-of-accounts';
+import { findAccountCode, getAccountByCode } from '../../database/chart-of-accounts';
 
 export const importRoutes = new Hono<HonoEnv>();
 
@@ -610,7 +610,134 @@ importRoutes.post('/api/import/hdpro', async (c) => {
  * Account Group adds a layer: Personal group + Surf 504 PO = personal spend at property.
  * Account User detects Arias personal purchases on the business card.
  */
-function normalizeAmazonEntity(
+/**
+ * Cost centers an operator may type into the Amazon CSV, mapped to entities.
+ * Anything outside this table is NOT guessed at -- see normalizeAmazonEntity.
+ */
+const AMAZON_COST_CENTERS: Record<string, { entity: EntityKey; personalUse: boolean }> = {
+  'COZY-CASTLE': { entity: 'cozy-castle', personalUse: false },
+  'CITY-STUDIO': { entity: 'city-studio', personalUse: false },
+  'APT-ARLENE': { entity: 'apt-arlene', personalUse: false },
+  'LAKESIDE-LOFT': { entity: 'lakeside-loft', personalUse: false },
+  GENERAL: { entity: 'aribia-mgmt', personalUse: false },
+  PERSONAL: { entity: 'personal-nick', personalUse: true },
+};
+
+/** Longest cost center above is 13 chars; anything far beyond that is not a cost center. */
+const MAX_COST_CENTER_LEN = 64;
+
+/**
+ * Fold the spelling variants an operator actually produces onto one key:
+ * case, surrounding and internal whitespace, underscores, and the assorted
+ * unicode dashes that spreadsheets and word processors substitute for a plain
+ * hyphen (figure/en/em dashes, minus sign, hyphen bullet, small and fullwidth
+ * forms). Degenerate input made entirely of separators folds to '', which no
+ * table key can equal, so it is treated as unrecognized rather than matching.
+ */
+function normalizeCostCenterKey(raw: string): string {
+  return raw
+    .trim()
+    .toUpperCase()
+    .replace(/[\u2010-\u2015\u2043\u2212\ufe58\ufe63\uff0d_\s]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * The table above is written for humans, so its keys are folded through the
+ * same normalizer the lookup uses. Two keys that differ only in punctuation
+ * would otherwise collide and silently make one unreachable -- routing one
+ * property's spend to another. That is a build-time mistake, so it throws at
+ * module load rather than waiting for an import to misroute.
+ */
+const AMAZON_COST_CENTER_INDEX: Record<string, { entity: EntityKey; personalUse: boolean }> =
+  (() => {
+    const index: Record<string, { entity: EntityKey; personalUse: boolean }> = {};
+    for (const [raw, value] of Object.entries(AMAZON_COST_CENTERS)) {
+      const key = normalizeCostCenterKey(raw);
+      if (!key) {
+        throw new Error(`AMAZON_COST_CENTERS key ${JSON.stringify(raw)} normalizes to empty`);
+      }
+      if (key in index) {
+        throw new Error(
+          `AMAZON_COST_CENTERS key ${JSON.stringify(raw)} collides with an earlier key on ${JSON.stringify(key)}`,
+        );
+      }
+      index[key] = value;
+    }
+    return index;
+  })();
+
+/** How a COA code was reached — persisted alongside the entity method. */
+type ClassificationMethod = 'gl-code' | 'gl-code-rejected' | 'keyword' | 'entity-suspense';
+
+/** Suspense — "needs a human". Excluded from bulk accept by design. */
+const SUSPENSE_CODE = '9010';
+
+/**
+ * Owner Draws. Note this is 3010, not 3200: '3200' was not in
+ * REI_CHART_OF_ACCOUNTS at all, so every personal Amazon row was being booked
+ * to an account that does not exist.
+ */
+const OWNER_DRAWS_CODE = '3010';
+
+/**
+ * Ceiling for a row whose supplied GL code we rejected. Must stay strictly
+ * below MIN_BULK_CONFIDENCE (0.80) in client/src/pages/Classification.tsx.
+ */
+const MAX_REJECTED_GL_CONFIDENCE = 0.75;
+
+/** How an entity assignment was reached — persisted so a misroute is traceable. */
+type EntityMethod =
+  | 'cost-center'
+  | 'heuristic'
+  | 'cost-center-unrecognized'
+  | 'cost-center-conflict';
+
+export function normalizeAmazonEntity(
+  poNumber: string,
+  accountGroup: string,
+  accountUser: string,
+  costCenter: string = '',
+): { entity: EntityKey; personalUse: boolean; method: EntityMethod } {
+  const rawCc = costCenter.trim();
+  if (rawCc) {
+    const heuristic = normalizeAmazonEntityByHeuristics(poNumber, accountGroup, accountUser);
+
+    if (rawCc.length > MAX_COST_CENTER_LEN) {
+      return { entity: 'suspense', personalUse: heuristic.personalUse, method: 'cost-center-unrecognized' };
+    }
+
+    const key = normalizeCostCenterKey(rawCc);
+    // Input that is nothing but separators ('---', '___') folds to ''. Treat it
+    // as unrecognized explicitly rather than relying on the lookup missing.
+    const hit = key ? AMAZON_COST_CENTER_INDEX[key] : undefined;
+
+    // An unrecognized cost center is an operator telling us something we do not
+    // understand. Falling through to the PO/account-group heuristics would bury
+    // that under a confident-looking guess, so route to suspense (9010 = needs a
+    // human) instead. A new cost center shows up as a visible batch of suspense
+    // rows, not as silently misrouted spend.
+    if (!hit) {
+      return { entity: 'suspense', personalUse: heuristic.personalUse, method: 'cost-center-unrecognized' };
+    }
+
+    // Cost center outranks the heuristics, EXCEPT where it would flip a row the
+    // heuristics call personal into business spend. That direction is
+    // tax-consequential -- it moves an owner draw into a deductible expense --
+    // so a disagreement goes to a human rather than to whichever signal we
+    // happened to rank first.
+    if (heuristic.personalUse && !hit.personalUse) {
+      return { entity: 'suspense', personalUse: true, method: 'cost-center-conflict' };
+    }
+
+    return { ...hit, method: 'cost-center' };
+  }
+
+  return { ...normalizeAmazonEntityByHeuristics(poNumber, accountGroup, accountUser), method: 'heuristic' };
+}
+
+function normalizeAmazonEntityByHeuristics(
   poNumber: string,
   accountGroup: string,
   accountUser: string,
@@ -716,7 +843,75 @@ const AMAZON_CATEGORY_COA: Record<string, string> = {
  * Classify an Amazon item. Amazon categories are NOT authoritative —
  * confidence is kept low to force L2 human review.
  */
-function classifyAmazonItem(
+export function classifyAmazonItem(
+  category: string,
+  personalUse: boolean,
+  poNumber: string,
+  glCode: string = '',
+  entityMethod: EntityMethod = 'heuristic',
+): { code: string; confidence: number; method: ClassificationMethod } {
+  // The entity router already refused to place this row. Classifying it
+  // confidently anyway would put "needs a human" and "cleaning supplies, 0.700"
+  // on the same record, and the COA code is what the bulk-accept path reads.
+  if (entityMethod === 'cost-center-unrecognized' || entityMethod === 'cost-center-conflict') {
+    return { code: SUSPENSE_CODE, confidence: 0.100, method: 'entity-suspense' };
+  }
+
+  // An operator-supplied GL column is a strong hint, not gospel: a typo'd code
+  // must not enter the books at a confidence the bulk-accept path
+  // (>= MIN_BULK_CONFIDENCE in client/src/pages/Classification.tsx) will
+  // auto-approve into a nonexistent account. Trust it only when it resolves in
+  // the chart of accounts, and at the same 0.850 the Mercury CSV path uses for
+  // the identical class of input.
+  const gl = glCode.trim();
+  const glAccount = gl && /^\d{4}$/.test(gl) ? getAccountByCode(gl) : undefined;
+  let glRejected = Boolean(gl) && !glAccount;
+
+  // Personal spend is decided before the GL column is consulted. The GL column
+  // is business chart-of-accounts coding; letting it run first meant a personal
+  // row carrying '5020' was booked as a deductible cleaning expense instead of
+  // an owner draw. A GL code on a personal row is honoured only when it names
+  // an equity account, which is the only thing a personal row can legitimately
+  // be.
+  if (personalUse) {
+    if (glAccount && glAccount.type === 'equity') {
+      return { code: gl, confidence: 0.850, method: 'gl-code' };
+    }
+    if (gl) glRejected = true;
+    const keyword = classifyAmazonItemByKeyword(category, personalUse, poNumber);
+    return capIfRejected(keyword, glRejected);
+  }
+
+  if (glAccount) {
+    return { code: gl, confidence: 0.850, method: 'gl-code' };
+  }
+
+  // Malformed, or a well-formed code that is not in the chart of accounts.
+  // Fall through to keyword matching, but record that we threw an operator
+  // instruction away -- silently ignoring it is how a whole import lands in
+  // the wrong account with nobody able to say why.
+  const keyword = classifyAmazonItemByKeyword(category, personalUse, poNumber);
+  return capIfRejected(keyword, glRejected);
+}
+
+/**
+ * A row whose operator instruction we discarded must not then be auto-approved
+ * on the keyword guess that replaced it. Cap it below the bulk-accept gate so
+ * it lands in front of a human.
+ */
+function capIfRejected(
+  keyword: { code: string; confidence: number },
+  glRejected: boolean,
+): { code: string; confidence: number; method: ClassificationMethod } {
+  if (!glRejected) return { ...keyword, method: 'keyword' };
+  return {
+    code: keyword.code,
+    confidence: Math.min(keyword.confidence, MAX_REJECTED_GL_CONFIDENCE),
+    method: 'gl-code-rejected',
+  };
+}
+
+function classifyAmazonItemByKeyword(
   category: string,
   personalUse: boolean,
   poNumber: string,
@@ -725,10 +920,10 @@ function classifyAmazonItem(
   if (personalUse) {
     const catLower = category.toLowerCase();
     if (AMAZON_PERSONAL_CATEGORIES.has(catLower)) {
-      return { code: '3200', confidence: 0.850 };
+      return { code: OWNER_DRAWS_CODE, confidence: 0.850 };
     }
     // Personal user but non-personal category — still likely personal, lower confidence
-    return { code: '3200', confidence: 0.500 };
+    return { code: OWNER_DRAWS_CODE, confidence: 0.500 };
   }
 
   // CHITTY SERVICES PO-based category hints (more reliable than Amazon category)
@@ -950,6 +1145,12 @@ importRoutes.post('/api/import/amazon', async (c) => {
   let returnFiltered = 0;
   let suspenseCount = 0;
   let personalCount = 0;
+  // Operator input we deliberately refused to act on. Counted and returned so a
+  // fail-closed batch is visible in the import response instead of just showing
+  // up as an unexplained pile of 9010s.
+  const unrecognizedCostCenters = new Set<string>();
+  const rejectedGlCodes = new Set<string>();
+  let costCenterConflicts = 0;
   const errors: string[] = [];
   const entityStats: Record<string, { count: number; total: number; personal: number }> = {};
   const userStats: Record<string, { count: number; total: number; personalTotal: number }> = {};
@@ -969,12 +1170,16 @@ importRoutes.post('/api/import/amazon', async (c) => {
       continue;
     }
 
-    const { entity, personalUse } = normalizeAmazonEntity(
-      row.poNumber, row.accountGroup, row.accountUser,
+    const { entity, personalUse, method: entityMethod } = normalizeAmazonEntity(
+      row.poNumber, row.accountGroup, row.accountUser, row.costCenter
     );
     const classification = classifyAmazonItem(
-      row.amazonCategory, personalUse, row.poNumber,
+      row.amazonCategory, personalUse, row.poNumber, row.glCode, entityMethod
     );
+
+    if (entityMethod === 'cost-center-unrecognized') unrecognizedCostCenters.add(row.costCenter.trim());
+    if (entityMethod === 'cost-center-conflict') costCenterConflicts++;
+    if (classification.method === 'gl-code-rejected') rejectedGlCodes.add(row.glCode.trim());
 
     const isSuspense = classification.code === '9010';
     if (isSuspense) suspenseCount++;
@@ -1024,6 +1229,8 @@ importRoutes.post('/api/import/amazon', async (c) => {
           itemPromotion: row.itemPromotion,
           normalizedEntity: entity,
           personalUse,
+          entityMethod,
+          classificationMethod: classification.method,
           paymentType: row.paymentInstrumentType,
           paymentCardLast4: row.paymentIdentifier,
           // Preserve any structured fields if populated (future-proofing for restructured account)
@@ -1051,6 +1258,9 @@ importRoutes.post('/api/import/amazon', async (c) => {
       returnFiltered,
       suspenseCount,
       personalCount,
+      unrecognizedCostCenters: [...unrecognizedCostCenters],
+      costCenterConflicts,
+      rejectedGlCodes: [...rejectedGlCodes],
       errorCount: errors.length,
     },
   }, c.env);
@@ -1063,6 +1273,11 @@ importRoutes.post('/api/import/amazon', async (c) => {
     returnsProvided: returnKeys.size,
     suspenseCount,
     personalCount,
+    // Operator input that was refused rather than guessed at. Non-empty here
+    // means rows landed in suspense on purpose and a human should look.
+    unrecognizedCostCenters: [...unrecognizedCostCenters],
+    costCenterConflicts,
+    rejectedGlCodes: [...rejectedGlCodes],
     errors: errors.slice(0, 50),
     entityMapping: entityStats,
     userBreakdown: userStats,
