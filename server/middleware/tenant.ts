@@ -14,10 +14,27 @@ export const tenantMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
   const storage = c.get('storage');
   const userId = c.get('userId');
 
+  // Fail CLOSED. This previously accepted the caller-supplied tenantId and
+  // called next() whenever the membership check could not be performed, which
+  // meant a request reaching this middleware without storage or a resolved
+  // userId got whatever tenant it asked for. It is unreachable on the mounted
+  // routes -- tenantMiddleware only ever runs inside protectedRoute, after
+  // storageMiddleware and callerContext -- but "unreachable today" is not a
+  // property a tenant-isolation boundary should rely on, and the failure mode
+  // if it ever changes is silent cross-tenant data access.
   if (!storage || !userId || typeof storage.getUserTenants !== 'function') {
-    c.set('tenantId', tenantId);
-    await next();
-    return;
+    // 500 rather than 403 on purpose. 403 is the answer to "you are not a
+    // member", and returning it here would make a server misconfiguration
+    // indistinguishable from ordinary denial -- the same camouflage that let
+    // the fail-open sit unnoticed. This state is the server's fault and should
+    // read as an outage, loudly. The body names no tenant and no caller.
+    return c.json(
+      {
+        error: 'tenant_check_unavailable',
+        message: 'Tenant membership could not be verified',
+      },
+      500,
+    );
   }
 
   const memberships = await storage.getUserTenants(userId);

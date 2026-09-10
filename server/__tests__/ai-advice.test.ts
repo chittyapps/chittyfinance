@@ -18,10 +18,16 @@ let mockStorage: Record<string, any>;
 function createTestApp() {
   const app = new Hono<HonoEnv>();
 
-  app.use('/api/*', serviceAuth, tenantMiddleware, async (c, next) => {
-    c.set('storage', mockStorage as any);
+  // storage and userId must be in context BEFORE tenantMiddleware runs. They
+  // used to be set in a middleware mounted after it, so every request took the
+  // branch that skipped the membership check entirely -- these tests were not
+  // exercising tenant isolation at all. tenantMiddleware now fails closed, so
+  // the ordering has to be right.
+  app.use('/api/*', serviceAuth, async (c, next) => {
+    c.set('storage', { ...(mockStorage as any), getUserTenants: async () => [{ tenant: { id: TENANT_ID } }] } as any);
+    c.set('userId', 'test-user');
     await next();
-  });
+  }, tenantMiddleware);
 
   app.route('/', aiRoutes);
   return app;
