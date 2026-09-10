@@ -1,0 +1,76 @@
+name: Tests
+
+# The unit suite was not gated by any workflow. It had drifted to 23 failures
+# across 6 files -- three of them testing modules deleted in #81, and the rest
+# broken by a Vitest 4 change -- with nobody notified, because nothing ran them.
+# This job exists so that cannot recur silently.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run check
+
+      - name: Test
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run --reporter=json --outputFile=.vitest-results.json --reporter=default
+
+      # A suite that collects nothing exits 0 and reads as green, which is the
+      # same failure this workflow was created to stop. Assert a floor on the
+      # count so an import error, a bad glob, or a deleted directory fails loudly
+      # instead of quietly reporting success. Raise MIN_TESTS as the suite grows.
+      - name: Assert the suite actually ran
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIN_TESTS=340
+          if [ ! -f .vitest-results.json ]; then
+            echo "::error::vitest produced no results file — the suite did not run"
+            exit 1
+          fi
+          TOTAL=$(jq '.numTotalTests' .vitest-results.json)
+          FAILED=$(jq '.numFailedTests' .vitest-results.json)
+          PASSED=$(jq '.numPassedTests' .vitest-results.json)
+          PENDING=$(jq '.numPendingTests // 0' .vitest-results.json)
+          FILES=$(jq '.numTotalTestSuites' .vitest-results.json)
+          echo "collected $TOTAL tests across $FILES files — $PASSED passed, $FAILED failed, $PENDING skipped/todo"
+
+          # Count PASSING tests against the floor, not total. numTotalTests
+          # includes it.todo() and it.skip(), so a floor on the total can be
+          # satisfied by stubbing tests out rather than writing them.
+          if [ "$PASSED" -lt "$MIN_TESTS" ]; then
+            echo "::error::only $PASSED tests passed, expected at least $MIN_TESTS — tests are missing or skipped, not passing"
+            exit 1
+          fi
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED test(s) failed"
+            exit 1
+          fi
+          if [ "$PENDING" -gt 0 ]; then
+            echo "::warning::$PENDING test(s) are skipped or todo"
+          fi

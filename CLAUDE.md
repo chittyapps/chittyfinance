@@ -22,7 +22,7 @@ npm run db:push:standalone  # Push schema to SQLite
 npm run db:seed          # Seed IT CAN BE LLC entities (system only)
 ```
 
-Legacy Express dev binds port 5001 with `reusePort: true`. Secrets are brokered by ChittySecrets (`secrets.chitty.cc`) into Cloudflare Worker bindings; 1Password/`op` is retired and non-functional.
+Secrets are brokered by ChittySecrets (`secrets.chitty.cc`) into Cloudflare Worker bindings; 1Password/`op` is retired and non-functional.
 
 ## Where Things Live
 
@@ -31,7 +31,6 @@ client/src/      React UI (Vite root)
 server/
   app.ts         Hono factory
   worker.ts      CF Workers entry (prod)
-  index.ts       Legacy Express entry (standalone dev — kept for reference)
   routes/        22 resource-per-file modules. Resource routes are mounted at /api/<resource> (no /v1 prefix). Only operational/meta routes (status, metrics, documentation) live under /api/v1/. OpenAPI spec at /api/v1/documentation is partial (covers a subset — see `server/routes/docs.ts`); treat `server/app.ts` route mounts as the source of truth until the spec is completed.
   middleware/    auth (hybridAuth), tenant, error
   storage/       SystemStorage — single source of DB access
@@ -50,7 +49,9 @@ shared/          Legacy integer-ID schema (forensic tables only)
 | `standalone` (default) | SQLite | `database/standalone.schema.ts` | Single user |
 | `system` | Neon Postgres | `database/system.schema.ts` | Full multi-tenant |
 
-`server/db.ts` auto-switches the Drizzle client. Never cross schemas.
+`server/db/connection.ts` builds the Drizzle client (Neon HTTP). Never cross schemas.
+
+Note: `server/db.ts` no longer exists, and the Hono app does **not** switch on `MODE` — `storageMiddleware` in `server/app.ts` always constructs `SystemStorage`. `server/storage/standalone.ts` and `database/standalone.schema.ts` are still in the tree but nothing in the request path reaches them, so treat the table above as describing the schemas, not a live runtime switch.
 
 ## Path Aliases
 
@@ -77,7 +78,7 @@ shared/          Legacy integer-ID schema (forensic tables only)
 
 ## Gotchas
 
-- **Legacy Express code** (`server/index.ts`, `server/routes.ts`, `server/storage.ts`, `server/db.ts`, `shared/schema.ts`) is dev-only. Production is Hono on Workers.
+- **The legacy Express server is gone.** `server/index.ts`, `server/routes.ts`, `server/storage.ts` and `server/db.ts` were removed in #81; production and dev are both Hono. `express` survives only as a type-only import in `server/lib/error-handling.ts` and is a removal candidate. `shared/schema.ts` does still exist and still holds the forensic tables.
 - **Forensic tables** live in `shared/schema.ts` (integer IDs) — may not be in production Neon yet.
 - **CF Workers Builds** (issue #111) is permanently red — auto-merge ignores it; real CI elsewhere.
 - **Port 5000/5001** hardcoded.
