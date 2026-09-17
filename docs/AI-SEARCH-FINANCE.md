@@ -3,7 +3,7 @@
 Build manifest for the Cloudflare AI Search instance backing finance, real estate, tax
 and compliance work, and for the AI Gateway dynamic route in front of it.
 
-Status: **manifest**. Nothing is created yet. Infrastructure creation routes through
+Status: **built and verified 2026-09-17** for internal canon; external corpus pending. See §6. Infrastructure creation routes through
 ChittyConnect per the sensitive-intent contract and is operator-approved per item.
 
 Discovery, 2026-09-17, account ChittyCorp LLC (`0bc21e3a…`):
@@ -36,7 +36,7 @@ Chicago held by a Wyoming LLC") must answer in one pass.
 |---|---|---|
 | `jurisdiction` | text | `us-federal`, `il`, `il-chicago`, `il-cook`, `wy`, `fl`, `co` (Colombia), `internal` |
 | `authority` | text | `statute`, `regulation`, `form`, `guidance`, `internal-canon`, `commentary` |
-| `doc_type` | text | `form`, `instructions`, `publication`, `ordinance`, `code`, `policy`, `memo` |
+| `doc_type` | text | `form`, `instructions`, `publication`, `ordinance`, `code`, `policy`, `memo`, `record` |
 | `effective_year` | number | Tax year or ordinance year; filters stale guidance |
 | `source_url` | text | Provenance. Every item must carry one |
 
@@ -155,3 +155,43 @@ models are retired.
 - Copyrighted commentary is not uploaded. Primary sources and internal documents only.
 - Retrieval is evidence, never authority: an answer that affects a filing cites the
   form or statute, and the LITC/CPA reviews it. Nothing here is tax advice.
+
+## 6. Build notes (verified 2026-09-17)
+
+Namespace `finance`, instance `finance-reference`, bound to the `finance` gateway.
+`default` and `legal-cases` untouched; the gateway's own settings unchanged.
+
+**Four things the API requires that the spec above did not say:**
+
+1. **`index_method: {vector: true, keyword: true}` must be set explicitly.** The default
+   is vector-only, which leaves `fusion_method: "rrf"` with nothing to fuse — and the
+   keyword leg is exactly what account-code and line-number lookups need.
+2. **Metadata values must be sent as JSON strings** in the multipart part. A numeric
+   `2026` is rejected (`7056 invalid_metadata_format`); `"2026"` is accepted and coerces
+   correctly onto the number-typed field.
+3. **`keyword_match_mode` defaults to `"and"`**, requiring every query term. Hybrid
+   queries return nothing until it is set to `"or"`.
+4. Defaults inherited: embedding `@cf/qwen/qwen3-embedding-0.6b`, `chunk_size` 1024,
+   `score_threshold` 0.4, `max_num_results` 10, no public endpoint.
+
+**Loaded:** 7 internal canon items, 32 chunks, 32 vectors at 1024 dimensions, indexing
+completed with zero errors. Each item was hashed locally, downloaded back from the
+instance and re-hashed — all matched.
+
+**This manifest is deliberately NOT in the index.** It was loaded during the build and
+removed: §2 lists the entire corpus, so it lexically matches almost any tax query and
+took rank 1 over the real answer on a self-employment question. A build document is not
+reference material.
+
+**Verification queries** (hybrid, rrf, `keyword_match_mode: "or"`, cache off) all
+returned the correct passage: the Form 8825 wages line, the mid-term/self-employment
+answer, the transfer clearing treatment, and the COA 3200 remediation record.
+
+**Known gaps going into the federal load:**
+
+- `max_num_results: 1` is unsafe — the correct chunk placed second on one query. Retrieve
+  several and let the caller judge.
+- Two `source_url` values point at `/blob/main/` paths that 404 until PR #157 and this
+  PR merge. Provenance is stable by design; the links resolve on merge.
+- `doc_type` gained `record` for change records like the remediation SQL, which fitted
+  none of the original seven values.
