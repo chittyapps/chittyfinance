@@ -1,0 +1,299 @@
+// Transfer semantics — money moving between accounts the group controls.
+//
+// Per docs/CHART-OF-ACCOUNTS.md §5/§6: a movement is a P&L event only when the
+// counterparty is outside the group. Every hop between two accounts the group
+// controls is a transfer, whatever it is labelled. Booking such a hop as income
+// or expense overstates both sides of the P&L and every 8825/Schedule E line
+// derived from them.
+//
+// This module is pure — no DB, no network, no env. Everything here is
+// unit-testable against real inputs.
+
+/** The full `transactions.type` domain. The column is plain `text` with no CHECK
+ *  constraint, so this is the only place the domain is defined. */
+export const TRANSACTION_TYPES = ['income', 'expense', 'transfer'] as const;
+
+export type TransactionType = (typeof TRANSACTION_TYPES)[number];
+
+export function isTransactionType(value: unknown): value is TransactionType {
+  return typeof value === 'string' && (TRANSACTION_TYPES as readonly string[]).includes(value);
+}
+
+/** True when a row must be kept out of every income/expense total and tax line. */
+export function isTransferType(value: unknown): boolean {
+  return value === 'transfer';
+}
+
+/** Clearing accounts a transfer leg is booked to (docs/CHART-OF-ACCOUNTS.md §6). */
+export const TRANSFER_CLEARING_INTRA_ENTITY = '1900';
+export const TRANSFER_CLEARING_INTERCOMPANY = '1910';
+
+export const TRANSFER_CLEARING_CODES: readonly string[] = [
+  TRANSFER_CLEARING_INTRA_ENTITY,
+  TRANSFER_CLEARING_INTERCOMPANY,
+];
+
+export function isTransferClearingCode(code: string | null | undefined): boolean {
+  return !!code && TRANSFER_CLEARING_CODES.includes(code);
+}
+
+/** Mercury's own label for a movement between two Mercury accounts. */
+export const MERCURY_INTERNAL_TRANSFER_KIND = 'internalTransfer';
+
+/**
+ * Mercury sets `kind === 'internalTransfer'` on BOTH legs of a movement between
+ * two accounts it can see. Verified against live data: the legs are separate
+ * rows sharing `postedAt` to the microsecond, carrying opposite `amount`, with
+ * `counterpartyNickname` naming the other account. `counterpartyNickname` is
+ * populated only for internal movements — external activity never sets it.
+ */
+export function isMercuryInternalTransfer(kind: unknown): boolean {
+  return kind === MERCURY_INTERNAL_TRANSFER_KIND;
+}
+
+/**
+ * Choose 1900 (intra-entity) or 1910 (intercompany).
+ *
+ * 1910 is emitted only on a *positive* mismatch — we know the counterparty
+ * account and it belongs to a different tenant. When the counterparty tenant is
+ * unknown (the usual case on the webhook path, where Mercury gives us a nickname
+ * string and not an account id we can resolve), the honest answer is 1900: the
+ * doc's rule is "across entities; only if the counterparty account belongs to a
+ * different tenant — otherwise 1900".
+ */
+export function selectTransferClearingCode(params: {
+  tenantId: string;
+  counterpartyTenantId?: string | null;
+}): string {
+  const { tenantId, counterpartyTenantId } = params;
+  if (!counterpartyTenantId) return TRANSFER_CLEARING_INTRA_ENTITY;
+  return counterpartyTenantId === tenantId
+    ? TRANSFER_CLEARING_INTRA_ENTITY
+    : TRANSFER_CLEARING_INTERCOMPANY;
+}
+
+/**
+ * Canonical key both legs of one movement compute to the same value.
+ *
+ * The two legs have DIFFERENT Mercury transaction ids, so they cannot be paired
+ * on id. They share `postedAt` to the microsecond and carry opposite amounts, so
+ * the pair (|amount|, postedAt) identifies the movement symmetrically.
+ *
+ * Account identity is deliberately NOT part of the key: leg A sees its own
+ * account id and the *nickname* of the counterparty, while leg B sees the
+ * mirror. Those are different kinds of identifier, so no sorted pair of them
+ * agrees across legs. The counterparty nickname is still recorded in metadata so
+ * a later pass (once Mercury account ids are resolvable both ways) can tighten
+ * the key. The residual collision risk is two unrelated internal movements of
+ * identical magnitude at the identical microsecond.
+ *
+ * `postedAt` is used verbatim — parsing it through `Date` would truncate the
+ * microseconds that make the key discriminating.
+ */
+export function transferGroupKey(params: {
+  amount: number;
+  postedAt: string;
+}): string {
+  const magnitude = Math.abs(params.amount).toFixed(2);
+  return `${magnitude}|${params.postedAt.trim()}`;
+}
+
+/** FNV-1a (32-bit, two rounds → 16 hex chars). Synchronous and dependency-free,
+ *  so it runs identically in Workers and in tests. Not a security primitive —
+ *  this is a grouping key, never an authorization token. */
+function fnv1a(input: string, seed: number): number {
+  let hash = seed >>> 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Deterministic `metadata.transfer_group` — each leg computes it independently
+ * from its own row, with no lookup of the sibling (which may not have arrived
+ * yet when the webhook fires).
+ */
+export function transferGroupId(params: { amount: number; postedAt: string }): string {
+  const key = transferGroupKey(params);
+  const lo = fnv1a(key, 0x811c9dc5);
+  const hi = fnv1a(key, 0x1000193);
+  return `xfer_${hi.toString(16).padStart(8, '0')}${lo.toString(16).padStart(8, '0')}`;
+}
+
+export interface TransferClassification {
+  type: 'transfer';
+  suggestedCoaCode: string;
+  transferGroup: string;
+  /** Merge into the row's `metadata` column. */
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Full classification for one leg of a Mercury internal transfer. Callers use
+ * this INSTEAD of `findAccountCode()` — an internal movement must never be
+ * offered an income or expense code, however its bank description reads.
+ */
+export function classifyMercuryInternalTransfer(params: {
+  tenantId: string;
+  amount: number;
+  postedAt: string;
+  kind: string;
+  bankDescription?: string | null;
+  counterpartyNickname?: string | null;
+  counterpartyTenantId?: string | null;
+}): TransferClassification {
+  const transferGroup = transferGroupId({ amount: params.amount, postedAt: params.postedAt });
+  const suggestedCoaCode = selectTransferClearingCode({
+    tenantId: params.tenantId,
+    counterpartyTenantId: params.counterpartyTenantId,
+  });
+
+  return {
+    type: 'transfer',
+    suggestedCoaCode,
+    transferGroup,
+    metadata: {
+      transfer_group: transferGroup,
+      transfer_direction: params.amount >= 0 ? 'in' : 'out',
+      mercury_kind: params.kind,
+      bank_description: params.bankDescription ?? null,
+      counterparty_nickname: params.counterpartyNickname ?? null,
+    },
+  };
+}
+
+// ── Clearing balance ──
+
+export interface ClearingLegRow {
+  id: string;
+  amount: string | number;
+  coaCode?: string | null;
+  suggestedCoaCode?: string | null;
+  date: Date | string;
+  description?: string;
+  metadata?: unknown;
+}
+
+export interface ClearingGroupBalance {
+  transferGroup: string;
+  legCount: number;
+  net: number;
+  rowIds: string[];
+}
+
+export interface ClearingBalanceResult {
+  /** Rows considered — type='transfer' booked to 1900/1910 in the period. */
+  legCount: number;
+  groupCount: number;
+  /** Sum of every clearing leg. Zero when each movement has both of its legs. */
+  net: number;
+  /** True only when at least one leg was found AND everything nets to zero.
+   *  An empty period is `balanced: false` with `legCount: 0` so a vacuous pass
+   *  is distinguishable from a real one. */
+  balanced: boolean;
+  /** Groups that do not net to zero — the missing-leg work queue. */
+  unmatchedGroups: ClearingGroupBalance[];
+  /** Every row belonging to an unmatched group. */
+  unmatchedRows: ClearingLegRow[];
+  /** Clearing-coded transfer rows carrying no `metadata.transfer_group`;
+   *  they cannot be paired at all. */
+  ungroupedRows: ClearingLegRow[];
+}
+
+function toNumber(value: string | number): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function readTransferGroup(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>).transfer_group;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/**
+ * Effective clearing code for a row. The ingest path is trust level L1 — it may
+ * write `suggested_coa_code` but never `coa_code` — so a freshly ingested
+ * transfer has `coa_code = NULL`. Reading `coa_code` alone would find zero rows
+ * and report "balanced" over an empty set.
+ */
+export function effectiveClearingCode(row: ClearingLegRow): string | null {
+  return row.coaCode ?? row.suggestedCoaCode ?? null;
+}
+
+/** Rounded to cents — decimal(12,2) amounts arrive as strings and float
+ *  addition otherwise leaves 1e-13 residue that reads as an imbalance. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Assert the 1900/1910 clearing accounts net to zero for a tenant and period.
+ *
+ * A non-zero balance means a missing leg — which is the point of a clearing
+ * account rather than dropping the rows (docs/CHART-OF-ACCOUNTS.md §6, step 5).
+ *
+ * Pass the transfer rows for one tenant and one period; scoping is the caller's
+ * job, and both report and storage callers already have a scoped row set.
+ */
+export function checkTransferClearingBalance(
+  rows: Array<ClearingLegRow & { type?: string }>,
+): ClearingBalanceResult {
+  const legs = rows.filter(
+    (row) => isTransferType(row.type) && isTransferClearingCode(effectiveClearingCode(row)),
+  );
+
+  const groups = new Map<string, { net: number; rows: ClearingLegRow[] }>();
+  const ungroupedRows: ClearingLegRow[] = [];
+  let net = 0;
+
+  for (const row of legs) {
+    const value = toNumber(row.amount);
+    net += value;
+
+    const group = readTransferGroup(row.metadata);
+    if (!group) {
+      ungroupedRows.push(row);
+      continue;
+    }
+
+    const bucket = groups.get(group) ?? { net: 0, rows: [] };
+    bucket.net += value;
+    bucket.rows.push(row);
+    groups.set(group, bucket);
+  }
+
+  const unmatchedGroups: ClearingGroupBalance[] = [];
+  const unmatchedRows: ClearingLegRow[] = [];
+
+  for (const [transferGroup, bucket] of groups) {
+    const groupNet = round2(bucket.net);
+    if (groupNet === 0 && bucket.rows.length % 2 === 0) continue;
+    unmatchedGroups.push({
+      transferGroup,
+      legCount: bucket.rows.length,
+      net: groupNet,
+      rowIds: bucket.rows.map((row) => row.id),
+    });
+    unmatchedRows.push(...bucket.rows);
+  }
+
+  const roundedNet = round2(net);
+
+  return {
+    legCount: legs.length,
+    groupCount: groups.size,
+    net: roundedNet,
+    balanced:
+      legs.length > 0 &&
+      roundedNet === 0 &&
+      unmatchedGroups.length === 0 &&
+      ungroupedRows.length === 0,
+    unmatchedGroups,
+    unmatchedRows,
+    ungroupedRows,
+  };
+}

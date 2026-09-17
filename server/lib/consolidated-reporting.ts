@@ -1,3 +1,9 @@
+import {
+  checkTransferClearingBalance,
+  isTransferType,
+  type ClearingBalanceResult,
+  type ClearingLegRow,
+} from '../books/transfers';
 type NumberLike = string | number | null | undefined;
 
 const NON_DEDUCTIBLE_EXPENSE_CATEGORIES = new Set([
@@ -64,6 +70,8 @@ export interface ReportQuality {
   unassignedStateTransactions: number;
   futureDatedTransactions: number;
   internalIntercompanyEliminated: number;
+  /** type='transfer' rows kept out of every income/expense total. */
+  transfersExcluded: number;
 }
 
 export interface PreflightCheck {
@@ -176,6 +184,7 @@ export function buildConsolidatedReport(params: {
     unassignedStateTransactions: 0,
     futureDatedTransactions: 0,
     internalIntercompanyEliminated: params.internalIntercompanyEliminated,
+    transfersExcluded: 0,
   };
 
   const entityMap = new Map<string, any>();
@@ -188,8 +197,30 @@ export function buildConsolidatedReport(params: {
 
   const now = Date.now();
 
+  // Transfer legs are summarized for the clearing check, then dropped before
+  // any total is computed. The gate is `type = 'transfer'`, never the COA code:
+  // gating on the code alone would also drop every 9010 suspense row out of
+  // historical reports without anything having been reclassified.
+  const clearing = checkTransferClearingBalance(
+    params.transactions.map((tx) => ({
+      id: tx.id,
+      type: tx.type,
+      amount: tx.amount,
+      coaCode: tx.coaCode ?? null,
+      suggestedCoaCode: tx.suggestedCoaCode ?? null,
+      date: tx.date,
+      description: tx.description,
+      metadata: tx.metadata,
+    })),
+  );
+
   for (const tx of params.transactions) {
     quality.totalTransactions += 1;
+
+    if (isTransferType(tx.type)) {
+      quality.transfersExcluded += 1;
+      continue;
+    }
 
     const txDate = parseDate(tx.date);
     if (!txDate || txDate.getTime() > now) quality.futureDatedTransactions += 1;
@@ -434,6 +465,7 @@ export function buildConsolidatedReport(params: {
     byEntity,
     byState,
     quality,
+    transferClearing: clearing,
   };
 }
 
@@ -485,6 +517,27 @@ export function buildPreflightChecks(
     threshold: '<= 10%',
   });
 
+  // Clearing accounts must net to zero per period. A non-zero balance means a
+  // missing leg — which is the point of a clearing account rather than dropping
+  // the rows (docs/CHART-OF-ACCOUNTS.md §6, step 5).
+  const clearing: ClearingBalanceResult = report.transferClearing;
+  const clearingBroken =
+    clearing.unmatchedGroups.length > 0 ||
+    clearing.ungroupedRows.length > 0 ||
+    clearing.net !== 0;
+  checks.push({
+    id: 'transfer-clearing-balance',
+    status: clearing.legCount === 0 ? 'pass' : clearingBroken ? 'fail' : 'pass',
+    message:
+      clearing.legCount === 0
+        ? 'No transfer clearing activity (1900/1910) in this period.'
+        : clearingBroken
+          ? `Transfer clearing does not net to zero (net ${clearing.net}); ${clearing.unmatchedGroups.length} unmatched group(s), ${clearing.ungroupedRows.length} ungrouped leg(s). A missing leg means the movement was only half-recorded.`
+          : `Transfer clearing nets to zero across ${clearing.groupCount} movement(s).`,
+    metric: clearingBroken ? clearing.unmatchedRows.length + clearing.ungroupedRows.length : 0,
+    threshold: '0 unmatched legs',
+  });
+
   checks.push({
     id: 'intercompany-elimination',
     status: quality.internalIntercompanyEliminated > 0 ? 'pass' : 'warn',
@@ -514,6 +567,10 @@ export function buildRemediationPrompts(checks: PreflightCheck[]) {
 
     if (check.id === 'future-dated-transactions') {
       prompts.push('Review and correct future-dated transactions before generating tax filing schedules.');
+    }
+
+    if (check.id === 'transfer-clearing-balance') {
+      prompts.push('Transfer clearing (1900/1910) does not net to zero — locate the missing leg for each unmatched transfer_group before filing.');
     }
     if (check.id === 'state-attribution') {
       prompts.push('Assign state codes to UNASSIGNED transactions using property/state metadata before state tax allocation.');

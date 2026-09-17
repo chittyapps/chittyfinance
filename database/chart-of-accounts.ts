@@ -42,6 +42,12 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   { code: '1620', name: 'HVAC Equipment', type: 'asset', subtype: 'fixed', description: 'Heating and cooling systems' },
   { code: '1625', name: 'Accumulated Depreciation - HVAC', type: 'asset', subtype: 'contra', description: 'Accumulated depreciation on HVAC' },
 
+  // Clearing (1900-1999) — docs/CHART-OF-ACCOUNTS.md §6.
+  // Balance-sheet only. A movement between two accounts the group controls is a
+  // transfer, not a P&L event; both legs land here and must net to zero per period.
+  { code: '1900', name: 'Transfer Clearing - Intra-Entity', type: 'asset', subtype: 'clearing', description: 'Movement between two accounts of one entity. Never an income or expense line.' },
+  { code: '1910', name: 'Transfer Clearing - Intercompany', type: 'asset', subtype: 'clearing', description: 'Movement between accounts of different entities. Never an income or expense line.' },
+
   // ============== LIABILITIES (2xxx) ==============
   // Current Liabilities (2000-2099)
   { code: '2000', name: 'Accounts Payable', type: 'liability', subtype: 'current', description: 'Bills owed to vendors' },
@@ -283,4 +289,23 @@ export function isDeductible(code: string): boolean {
 export function getScheduleELine(code: string): string | undefined {
   const account = getAccountByCode(code);
   return account?.scheduleE;
+}
+
+/**
+ * True when a code belongs on an income statement.
+ *
+ * Asset, liability and equity codes hit no income or expense line — booking them
+ * to one is the single largest error in the current data
+ * (docs/CHART-OF-ACCOUNTS.md §6). An unknown code is NOT treated as P&L: a code
+ * that is not in the chart cannot be asserted to belong on a return line.
+ *
+ * This is a secondary guard. The primary report gate is `type = 'transfer'`;
+ * gating reports on the COA code alone would silently drop every 9010 suspense
+ * row (48% of the table) out of historical reports.
+ */
+export function isProfitAndLossAccount(code: string | null | undefined): boolean {
+  if (!code) return false;
+  const account = getAccountByCode(code);
+  if (!account) return false;
+  return account.type === 'income' || account.type === 'expense';
 }

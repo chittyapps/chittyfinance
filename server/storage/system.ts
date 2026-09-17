@@ -2,8 +2,27 @@ import { eq, and, desc, sql, inArray, isNull, asc, is, Column, SQL, exists } fro
 import type { AnyColumn } from 'drizzle-orm';
 import type { Database } from '../db/connection';
 import * as schema from '../db/schema';
+import {
+  TRANSACTION_TYPES,
+  isTransactionType,
+  isTransferType,
+} from '../books/transfers';
 
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * `transactions.type` is a plain `text` column with no CHECK constraint, so the
+ * domain is enforced here on every write rather than by the database. Without
+ * this a typo silently becomes a fourth type and is then invisible to every
+ * report, which sums on exact matches.
+ */
+function assertTransactionType(value: unknown): asserts value is (typeof TRANSACTION_TYPES)[number] {
+  if (!isTransactionType(value)) {
+    throw new Error(
+      `Invalid transaction type ${JSON.stringify(value)} — expected one of ${TRANSACTION_TYPES.join(', ')}`,
+    );
+  }
+}
 
 /**
  * Sentinel error thrown when a trust-path operation is rejected.
@@ -172,11 +191,13 @@ export class SystemStorage {
   }
 
   async createTransaction(data: typeof schema.transactions.$inferInsert) {
+    assertTransactionType(data.type);
     const [row] = await this.db.insert(schema.transactions).values(data).returning();
     return row;
   }
 
   async updateTransaction(id: string, tenantId: string, data: Partial<typeof schema.transactions.$inferInsert>) {
+    if (data.type !== undefined) assertTransactionType(data.type);
     const [row] = await this.db
       .update(schema.transactions)
       .set({ ...data, updatedAt: new Date() })
@@ -514,6 +535,8 @@ export class SystemStorage {
     let totalIncome = 0;
     let totalExpenses = 0;
     for (const t of txns) {
+      // Transfers are hops between accounts the group controls — never NOI.
+      if (isTransferType(t.type)) continue;
       const amt = parseFloat(t.amount);
       if (t.type === 'income') totalIncome += amt;
       else if (t.type === 'expense') totalExpenses += Math.abs(amt);
@@ -583,6 +606,8 @@ export class SystemStorage {
     let totalExpenses = 0;
 
     for (const t of txns) {
+      // Transfers never appear on a P&L (docs/CHART-OF-ACCOUNTS.md §5).
+      if (isTransferType(t.type)) continue;
       const amt = parseFloat(t.amount);
       const category = t.category || 'uncategorized';
       if (t.type === 'income') {
