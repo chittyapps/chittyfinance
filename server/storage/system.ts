@@ -136,6 +136,119 @@ export class SystemStorage {
     return row;
   }
 
+  /**
+   * ChittyScrape vendor charge -> expense transaction, as an L1 suggestion.
+   *
+   * One SQL statement (so the row write and its audit row commit or fail
+   * together — neon-http has no interactive transactions, which is also why
+   * this does not call classifyTransaction()):
+   *   prev  snapshot of the existing row for (tenant_id, external_id)
+   *   up    INSERT ... ON CONFLICT (tenant_id, external_id) WHERE external_id
+   *         IS NOT NULL (the partial arbiter transactions_tenant_external_idx)
+   *         DO UPDATE amount/metadata/suggestion ONLY WHERE the existing row is
+   *         unclassified and unreconciled. Otherwise Postgres skips the update
+   *         and RETURNING is empty — the row is left exactly as a human left it.
+   *   aud   classification_audit row ('suggest' on insert, 're-suggest' when
+   *         the proposal changed; nothing when unchanged or skipped).
+   * Never writes coa_code / classified_by / classified_at.
+   *
+   * Rule mirrored in pure form by mayOverwriteVendorCharge /
+   * vendorChargeAuditAction (server/lib/vendor-charge.ts). The `prev` snapshot
+   * only labels the audit action; the DO UPDATE WHERE is the actual guard. Under
+   * a concurrent first insert of the same key, the loser's label can read
+   * 'suggest' instead of 're-suggest'; the row itself stays correct.
+   */
+  async upsertVendorCharge(input: {
+    tenantId: string;
+    accountId: string;
+    externalId: string;
+    date: Date;
+    amount: string; // signed decimal(12,2), negative for an expense
+    vendor: string;
+    description: string;
+    suggestedCoaCode: string;
+    confidence: string; // decimal(4,3)
+    actorId: string;
+    reason: string;
+    metadata: Record<string, unknown>;
+    auditMetadata: Record<string, unknown>;
+  }): Promise<{
+    id: string;
+    inserted: boolean;
+    written: boolean;
+    auditRows: number;
+    amount: string | null;
+    suggestedCoaCode: string | null;
+    existingCoaCode: string | null;
+    existingReconciled: boolean | null;
+  }> {
+    const result = await this.db.execute(sql`
+      WITH prev AS (
+        SELECT id, suggested_coa_code, coa_code, reconciled
+        FROM transactions
+        WHERE tenant_id = ${input.tenantId} AND external_id = ${input.externalId}
+      ),
+      up AS (
+        INSERT INTO transactions (
+          tenant_id, account_id, amount, currency, type, category, description,
+          date, payee, external_id, suggested_coa_code, classification_confidence, metadata
+        ) VALUES (
+          ${input.tenantId}, ${input.accountId}, ${input.amount}, 'USD', 'expense', 'vendor_charge',
+          ${input.description}, ${input.date.toISOString()}, ${input.vendor}, ${input.externalId},
+          ${input.suggestedCoaCode}, ${input.confidence}, ${JSON.stringify(input.metadata)}::jsonb
+        )
+        ON CONFLICT (tenant_id, external_id) WHERE external_id IS NOT NULL
+        DO UPDATE SET
+          amount = EXCLUDED.amount,
+          suggested_coa_code = EXCLUDED.suggested_coa_code,
+          classification_confidence = EXCLUDED.classification_confidence,
+          metadata = EXCLUDED.metadata,
+          updated_at = now()
+        WHERE transactions.coa_code IS NULL AND transactions.reconciled = false
+        RETURNING id, tenant_id, amount, suggested_coa_code, classification_confidence
+      ),
+      aud AS (
+        INSERT INTO classification_audit (
+          transaction_id, tenant_id, previous_coa_code, new_coa_code, action,
+          trust_level, actor_id, actor_type, confidence, reason, metadata
+        )
+        SELECT
+          up.id, up.tenant_id, prev.suggested_coa_code, up.suggested_coa_code,
+          CASE WHEN prev.id IS NULL THEN 'suggest' ELSE 're-suggest' END,
+          'L1', ${input.actorId}, 'agent', up.classification_confidence,
+          ${input.reason}, ${JSON.stringify(input.auditMetadata)}::jsonb
+        FROM up
+        LEFT JOIN prev ON prev.id = up.id
+        WHERE prev.id IS NULL
+           OR prev.suggested_coa_code IS DISTINCT FROM up.suggested_coa_code
+        RETURNING id
+      )
+      SELECT
+        COALESCE(up.id, prev.id) AS id,
+        (prev.id IS NULL) AS inserted,
+        (up.id IS NOT NULL) AS written,
+        (SELECT count(*)::int FROM aud) AS audit_rows,
+        up.amount::text AS amount,
+        up.suggested_coa_code,
+        prev.coa_code AS existing_coa_code,
+        prev.reconciled AS existing_reconciled
+      FROM (SELECT 1) AS one
+      LEFT JOIN prev ON true
+      LEFT JOIN up ON true
+    `);
+    const r = result.rows[0] as Record<string, unknown>;
+    return {
+      id: r.id as string,
+      inserted: r.inserted as boolean,
+      written: r.written as boolean,
+      auditRows: Number(r.audit_rows),
+      amount: (r.amount as string | null) ?? null,
+      suggestedCoaCode: (r.suggested_coa_code as string | null) ?? null,
+      existingCoaCode: (r.existing_coa_code as string | null) ?? null,
+      existingReconciled: (r.existing_reconciled as boolean | null) ?? null,
+    };
+  }
+
   async updateTransaction(id: string, tenantId: string, data: Partial<typeof schema.transactions.$inferInsert>) {
     const [row] = await this.db
       .update(schema.transactions)

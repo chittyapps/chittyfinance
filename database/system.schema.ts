@@ -3,6 +3,7 @@
 // Uses Neon PostgreSQL with decimal precision for accounting
 
 import { pgTable, uuid, text, timestamp, decimal, boolean, integer, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
@@ -160,6 +161,13 @@ export const transactions = pgTable('transactions', {
   propertyIdx: index('transactions_property_idx').on(table.propertyId),
   coaIdx: index('transactions_coa_idx').on(table.tenantId, table.coaCode),
   unclassifiedIdx: index('transactions_unclassified_idx').on(table.tenantId, table.coaCode),
+  // Idempotency arbiter for external syncs (ChittyScrape vendor charges use it
+  // via ON CONFLICT). Partial: manual rows with NULL external_id are
+  // unconstrained. Per-tenant so external ids cannot collide across tenants.
+  // Prod must get this via CREATE UNIQUE INDEX CONCURRENTLY before deploy.
+  tenantExternalIdx: uniqueIndex('transactions_tenant_external_idx')
+    .on(table.tenantId, table.externalId)
+    .where(sql`${table.externalId} IS NOT NULL`),
 }));
 
 export const insertTransactionSchema = createInsertSchema(transactions);
