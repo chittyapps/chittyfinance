@@ -7,6 +7,7 @@ import { findAccountCode } from '../../database/chart-of-accounts';
 import { ClassificationError } from '../storage/system';
 import { classifyBatchWithAI } from '../lib/classification-ai';
 import { logClassificationEvent, logCoaEvent } from '../lib/chittychronicle';
+import { confidenceSchema, hasClassificationAuthority, hasCoaAuthority } from '../lib/classification-policy';
 
 export const classificationRoutes = new Hono<HonoEnv>();
 
@@ -30,19 +31,21 @@ function mapClassificationError(err: unknown, c: any): Response {
   throw err;
 }
 
-// Roles permitted to modify the Chart of Accounts (L4 Govern).
-// Only tenant owners and admins can add/edit/retire COA accounts.
-const L4_ROLES = new Set(['owner', 'admin']);
-
 // Query param schemas
 const limitQuerySchema = z.coerce.number().int().min(1).max(500).default(50);
-const batchLimitQuerySchema = z.coerce.number().int().min(1).max(500).default(100);
+// Batch writes cost up to 3 Neon HTTP round-trips per row (read, batched
+// write, read-back). Workers cap outbound subrequests per invocation, so the
+// batch endpoints are capped at 100 rows (~300 subrequests) per call and are
+// meant to be called repeatedly rather than with one huge limit.
+const BATCH_LIMIT_MAX = 100;
+const batchLimitQuerySchema = z.coerce.number().int().min(1).max(BATCH_LIMIT_MAX).default(BATCH_LIMIT_MAX);
 
 // Body schemas
 const classifyBodySchema = z.object({
   transactionId: z.string().uuid(),
   coaCode: z.string().min(1),
-  confidence: z.string().optional(),
+  // Absent means "leave the stored confidence alone" (see storage layer).
+  confidence: confidenceSchema.optional(),
   reason: z.string().optional(),
 });
 
@@ -69,8 +72,28 @@ async function requireL4(c: any): Promise<Response | null> {
   const tenantId = c.get('tenantId');
   const userId = c.get('userId');
   const role = await storage.getUserRoleForTenant(userId, tenantId);
-  if (!role || !L4_ROLES.has(role)) {
+  if (!hasCoaAuthority(role)) {
     return c.json({ error: 'forbidden', message: 'L4 (owner or admin) role required to modify Chart of Accounts' }, 403);
+  }
+  return null;
+}
+
+/**
+ * Require L2 authority (owner/admin/manager) for anything that writes
+ * `coa_code` or reconciled state, plus the tenant-wide batch writers.
+ * Per-row L1 suggestions (`/api/classification/suggest`) stay open to any
+ * tenant member: they never touch authoritative state.
+ */
+async function requireL2(c: any, what: string): Promise<Response | null> {
+  const storage = c.get('storage');
+  const tenantId = c.get('tenantId');
+  const userId = c.get('userId');
+  const role = await storage.getUserRoleForTenant(userId, tenantId);
+  if (!hasClassificationAuthority(role)) {
+    return c.json(
+      { error: 'forbidden', message: `L2 (owner, admin, or manager) role required to ${what}` },
+      403,
+    );
   }
   return null;
 }
@@ -188,7 +211,7 @@ classificationRoutes.get('/api/classification/unclassified', async (c) => {
   const tenantId = c.get('tenantId');
   const limitParsed = limitQuerySchema.safeParse(c.req.query('limit'));
   if (!limitParsed.success) {
-    return c.json({ error: 'invalid_limit', message: 'limit must be an integer between 1 and 500' }, 400);
+    return c.json({ error: 'invalid_limit', message: `limit must be an integer between 1 and ${BATCH_LIMIT_MAX}` }, 400);
   }
   const txns = await storage.getUnclassifiedTransactions(tenantId, limitParsed.data);
   return c.json(txns);
@@ -231,6 +254,9 @@ classificationRoutes.post('/api/classification/suggest', async (c) => {
 
 // POST /api/classification/classify — L2: set authoritative coa_code
 classificationRoutes.post('/api/classification/classify', async (c) => {
+  const forbidden = await requireL2(c, 'classify transactions');
+  if (forbidden) return forbidden;
+
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
   const userId = c.get('userId');
@@ -277,6 +303,9 @@ classificationRoutes.post('/api/classification/classify', async (c) => {
 
 // POST /api/classification/reconcile — L3: lock a classified transaction
 classificationRoutes.post('/api/classification/reconcile', async (c) => {
+  const forbidden = await requireL2(c, 'reconcile transactions');
+  if (forbidden) return forbidden;
+
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
   const userId = c.get('userId');
@@ -288,8 +317,13 @@ classificationRoutes.post('/api/classification/reconcile', async (c) => {
   const { transactionId } = parsed.data;
 
   try {
-    const result = await storage.reconcileTransaction(transactionId, tenantId, userId);
-    if (!result) return c.json({ error: 'Transaction not found' }, 404);
+    const outcome = await storage.reconcileTransaction(transactionId, tenantId, userId);
+    if (!outcome) return c.json({ error: 'Transaction not found' }, 404);
+    const result = outcome.row;
+
+    // Already reconciled: nothing was written, so don't record an event for a
+    // write that never happened (double-click / retry).
+    if (!outcome.written) return c.json(result);
 
     ledgerLog(c, {
       entityType: 'audit',
@@ -310,6 +344,9 @@ classificationRoutes.post('/api/classification/reconcile', async (c) => {
 
 // POST /api/classification/batch-suggest — L1: auto-suggest COA codes for unclassified transactions
 classificationRoutes.post('/api/classification/batch-suggest', async (c) => {
+  const forbidden = await requireL2(c, 'run batch suggestion');
+  if (forbidden) return forbidden;
+
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
 
@@ -320,10 +357,16 @@ classificationRoutes.post('/api/classification/batch-suggest', async (c) => {
 
   const txns = await storage.getUnclassifiedTransactions(tenantId, limitParsed.data);
   let suggested = 0;
+  let alreadySuggested = 0;
+  let locked = 0;
+  let conflicts = 0;
 
   for (const tx of txns) {
     // Skip if already has a suggestion
-    if (tx.suggestedCoaCode) continue;
+    if (tx.suggestedCoaCode) {
+      alreadySuggested++;
+      continue;
+    }
 
     const code = findAccountCode(tx.description, tx.category ?? undefined);
     try {
@@ -342,19 +385,32 @@ classificationRoutes.post('/api/classification/batch-suggest', async (c) => {
       // A conflict means the row changed after we read it; nothing was
       // written, so skip it like a locked row rather than abort the batch.
       if (err instanceof ClassificationError && (err.code === 'reconciled_locked' || err.code === 'conflict')) {
+        if (err.code === 'conflict') conflicts++;
+        else locked++;
         continue;
       }
       throw err;
     }
   }
 
-  return c.json({ processed: txns.length, suggested });
+  return c.json({
+    processed: txns.length,
+    suggested,
+    skipped: alreadySuggested + locked + conflicts,
+    alreadySuggested,
+    locked,
+    conflicts,
+    limit: limitParsed.data,
+  });
 });
 
 // POST /api/classification/ai-suggest — L1: GPT-4o-mini batch suggestion with keyword fallback
 // Writes suggested_coa_code only (never authoritative coa_code).
 // Falls back to keyword match for any transaction the model can't classify.
 classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
+  const forbidden = await requireL2(c, 'run AI batch suggestion');
+  if (forbidden) return forbidden;
+
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
 
@@ -395,6 +451,8 @@ classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
   let aiCount = 0;
   let keywordCount = 0;
   let suggested = 0;
+  let locked = 0;
+  let conflicts = 0;
 
   for (const s of suggestions) {
     try {
@@ -415,6 +473,8 @@ classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
       // A conflict means the row changed after we read it; nothing was
       // written, so skip it like a locked row rather than abort the batch.
       if (err instanceof ClassificationError && (err.code === 'reconciled_locked' || err.code === 'conflict')) {
+        if (err.code === 'conflict') conflicts++;
+        else locked++;
         continue;
       }
       throw err;
@@ -430,6 +490,10 @@ classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
   return c.json({
     processed: txns.length,
     suggested,
+    skipped: (txns.length - needSuggestion.length) + locked + conflicts,
+    alreadySuggested: txns.length - needSuggestion.length,
+    locked,
+    conflicts,
     aiCount,
     keywordCount,
     aiAvailable: Boolean(apiKey),
@@ -450,6 +514,9 @@ classificationRoutes.get('/api/classification/reconciled', async (c) => {
 
 // POST /api/classification/unreconcile — L3: unlock a reconciled transaction
 classificationRoutes.post('/api/classification/unreconcile', async (c) => {
+  const forbidden = await requireL2(c, 'unreconcile transactions');
+  if (forbidden) return forbidden;
+
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
   const userId = c.get('userId');

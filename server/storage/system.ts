@@ -1121,14 +1121,21 @@ export class SystemStorage {
     const isSuggestion = Boolean(opts.isSuggestion);
     const previousCoaCode = tx.coaCode ?? null;
     const previousSuggested = tx.suggestedCoaCode ?? null;
+    // An omitted confidence leaves the stored value alone (bulk-accept sends
+    // no confidence and must not wipe the suggestion's score); an explicit
+    // null clears it.
+    const confidenceProvided = opts.confidence !== undefined;
     const confidence = opts.confidence ?? null;
+    const confidenceSet = confidenceProvided ? { classificationConfidence: confidence } : {};
+    // The audit row records the confidence in force after this write.
+    const auditConfidence = confidenceProvided ? confidence : (tx.classificationConfidence ?? null);
     const now = new Date();
 
     const set = isSuggestion
       ? {
           // L1: write to suggested_coa_code only
           suggestedCoaCode: coaCode,
-          classificationConfidence: confidence,
+          ...confidenceSet,
           updatedAt: now,
         }
       : {
@@ -1136,7 +1143,7 @@ export class SystemStorage {
           coaCode,
           classifiedBy: opts.actorId,
           classifiedAt: now,
-          classificationConfidence: confidence,
+          ...confidenceSet,
           updatedAt: now,
         };
 
@@ -1162,7 +1169,7 @@ export class SystemStorage {
         trustLevel: opts.trustLevel,
         actorId: opts.actorId,
         actorType: opts.actorType,
-        confidence,
+        confidence: auditConfidence,
         reason: opts.reason ?? null,
       },
     });
@@ -1196,8 +1203,9 @@ export class SystemStorage {
       throw new ClassificationError('not_classified', 'Cannot reconcile — transaction has no COA classification');
     }
     // Already locked: nothing to do (mirrors unreconciledTransaction), and
-    // avoids a second reconcile audit row for the same lock.
-    if (tx.reconciled) return tx;
+    // avoids a second reconcile audit row for the same lock. `written: false`
+    // lets the route skip the ledger/Chronicle events for a no-op.
+    if (tx.reconciled) return { row: tx, written: false };
 
     const t = schema.transactions;
     const now = new Date();
@@ -1224,7 +1232,7 @@ export class SystemStorage {
       throw new ClassificationError('conflict', CONFLICT_MESSAGE);
     }
 
-    return this.getTransaction(txId, tenantId);
+    return { row: await this.getTransaction(txId, tenantId), written: true };
   }
 
   async getTransaction(txId: string, tenantId: string) {
