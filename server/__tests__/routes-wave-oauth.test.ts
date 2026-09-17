@@ -2,26 +2,47 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 
-// All vi.mock calls are hoisted to the top by Vitest's transformer
-
-const mockGetAuthorizationUrl = vi.fn().mockReturnValue('https://api.waveapps.com/oauth2/authorize/?mock=1');
-const mockExchangeCodeForToken = vi.fn();
-const mockGetBusinesses = vi.fn();
-const mockSetAccessToken = vi.fn();
-const mockRefreshAccessToken = vi.fn();
-
-vi.mock('../lib/wave-api', () => ({
-  WaveAPIClient: vi.fn().mockImplementation(() => ({
-    getAuthorizationUrl: mockGetAuthorizationUrl,
-    exchangeCodeForToken: mockExchangeCodeForToken,
-    getBusinesses: mockGetBusinesses,
-    setAccessToken: mockSetAccessToken,
-    refreshAccessToken: mockRefreshAccessToken,
-  })),
+// vi.mock() is hoisted above every const in this file, so any fn referenced
+// from inside a factory must come from vi.hoisted() -- otherwise the factory
+// runs first and throws "Cannot access '<name>' before initialization", which
+// fails the whole file at collection time rather than as a readable assertion.
+const {
+  mockGetAuthorizationUrl,
+  mockExchangeCodeForToken,
+  mockGetBusinesses,
+  mockSetAccessToken,
+  mockRefreshAccessToken,
+  mockGenerateOAuthState,
+  mockValidateOAuthState,
+  mockCreateIntegration,
+  mockUpdateIntegration,
+  mockGetIntegrationsStorage,
+} = vi.hoisted(() => ({
+  mockGetAuthorizationUrl: vi.fn().mockReturnValue('https://api.waveapps.com/oauth2/authorize/?mock=1'),
+  mockExchangeCodeForToken: vi.fn(),
+  mockGetBusinesses: vi.fn(),
+  mockSetAccessToken: vi.fn(),
+  mockRefreshAccessToken: vi.fn(),
+  mockGenerateOAuthState: vi.fn().mockResolvedValue('mock-payload.mock-signature'),
+  mockValidateOAuthState: vi.fn(),
+  mockCreateIntegration: vi.fn().mockResolvedValue({}),
+  mockUpdateIntegration: vi.fn().mockResolvedValue({}),
+  mockGetIntegrationsStorage: vi.fn().mockResolvedValue([]),
 }));
 
-const mockGenerateOAuthState = vi.fn().mockResolvedValue('mock-payload.mock-signature');
-const mockValidateOAuthState = vi.fn();
+// Vitest 4 refuses to `new` a vi.fn() whose implementation is an arrow
+// function ("did not use 'function' or 'class' in its implementation"), which
+// is what silently turned every route that constructs a client into a 500.
+// Both constructor stand-ins below are real classes for that reason.
+vi.mock('../lib/wave-api', () => ({
+  WaveAPIClient: class MockWaveAPIClient {
+    getAuthorizationUrl = mockGetAuthorizationUrl;
+    exchangeCodeForToken = mockExchangeCodeForToken;
+    getBusinesses = mockGetBusinesses;
+    setAccessToken = mockSetAccessToken;
+    refreshAccessToken = mockRefreshAccessToken;
+  },
+}));
 
 vi.mock('../lib/oauth-state-edge', () => ({
   generateOAuthState: mockGenerateOAuthState,
@@ -32,16 +53,12 @@ vi.mock('../db/connection', () => ({
   createDb: vi.fn().mockReturnValue({}),
 }));
 
-const mockCreateIntegration = vi.fn().mockResolvedValue({});
-const mockUpdateIntegration = vi.fn().mockResolvedValue({});
-const mockGetIntegrationsStorage = vi.fn().mockResolvedValue([]);
-
 vi.mock('../storage/system', () => ({
-  SystemStorage: vi.fn().mockImplementation(() => ({
-    getIntegrations: mockGetIntegrationsStorage,
-    createIntegration: mockCreateIntegration,
-    updateIntegration: mockUpdateIntegration,
-  })),
+  SystemStorage: class MockSystemStorage {
+    getIntegrations = mockGetIntegrationsStorage;
+    createIntegration = mockCreateIntegration;
+    updateIntegration = mockUpdateIntegration;
+  },
 }));
 
 import { waveRoutes, waveCallbackRoute } from '../routes/wave';
@@ -198,15 +215,33 @@ describe('GET /api/integrations/wave/callback', () => {
   it('redirects with invalid_state when state validation fails', async () => {
     mockValidateOAuthState.mockResolvedValue(null); // Simulate invalid state
     const app = buildCallbackApp();
+    // configuredEnv, not baseEnv: the route checks OAUTH_STATE_SECRET before it
+    // validates the state, so a secret-less env short-circuits to
+    // server_misconfigured and this test would pass through a path it is not
+    // testing. That guard gets its own case below.
     const res = await app.request(
       '/api/integrations/wave/callback?code=auth-code&state=tampered-state',
       {},
-      baseEnv
+      configuredEnv
     );
     expect(res.status).toBe(302);
     const location = res.headers.get('location');
     expect(location).toContain('wave=error');
     expect(location).toContain('invalid_state');
+    expect(mockValidateOAuthState).toHaveBeenCalled();
+  });
+
+  it('redirects with server_misconfigured when OAUTH_STATE_SECRET is absent', async () => {
+    const app = buildCallbackApp();
+    const res = await app.request(
+      '/api/integrations/wave/callback?code=auth-code&state=some-state',
+      {},
+      baseEnv
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('server_misconfigured');
+    // and it must fail before touching the state at all
+    expect(mockValidateOAuthState).not.toHaveBeenCalled();
   });
 
   it('uses PUBLIC_APP_BASE_URL for the redirect base URL', async () => {

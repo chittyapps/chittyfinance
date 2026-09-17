@@ -133,7 +133,7 @@ async function main() {
   console.log('NEXT STEPS');
   console.log('='.repeat(60));
   console.log(`
-Add these to your .env or 1Password:
+Add these to your .env, or register them with ChittySecrets (secrets.chitty.cc):
 
   WAVE_ACCESS_TOKEN=${accessToken.substring(0, 10)}...
   WAVE_BUSINESS_ID=${businessId}

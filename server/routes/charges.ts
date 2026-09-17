@@ -30,7 +30,7 @@ interface OptimizationRecommendation {
  * Groups expenses by payee, identifies repeat charges with similar amounts,
  * and estimates frequency + next charge date.
  */
-function detectRecurringCharges(
+export function detectRecurringCharges(
   transactions: Array<{
     id: string;
     payee: string | null;
@@ -131,7 +131,7 @@ function detectRecurringCharges(
  * Generate optimization recommendations based on detected recurring charges.
  * Uses category, amount, and frequency to suggest actions.
  */
-function analyzeOptimizations(
+export function analyzeOptimizations(
   charges: RecurringCharge[],
 ): OptimizationRecommendation[] {
   const recommendations: OptimizationRecommendation[] = [];
@@ -156,7 +156,11 @@ function analyzeOptimizations(
         merchantName: charge.merchantName,
         currentAmount: charge.amount,
         suggestedAction: 'consolidate',
-        potentialSavings: totalInCategory * 0.3,
+        // 30% of THIS charge, not 30% of the category total. The latter gave
+        // every charge in the group the same figure, so a $1/mo line grouped
+        // with a $1,000/mo line was credited $300.30 in savings -- 25x its own
+        // annual cost -- and the category's saving was counted once per member.
+        potentialSavings: charge.amount * 0.3,
         reasoning: `${sameCategory.length} recurring charges in "${charge.category}" totaling $${totalInCategory.toFixed(2)}/period. Consolidating could reduce overlap.`,
         alternativeOptions: sameCategory
           .filter((c) => c.id !== charge.id)

@@ -48,7 +48,8 @@ We follow coordinated disclosure and will credit reporters unless anonymity is p
 ### Secret Management
 
 - All secrets delivered via Cloudflare Workers environment bindings
-- 1Password is the cold source of truth
+- ChittySecrets (`secrets.chitty.cc`) is the cold source of truth; Cloudflare Worker secrets are runtime delivery
+- 1Password is retired and non-functional — do not reintroduce it
 - No secrets in code, KV, or R2
 - Pre-commit hooks scan for credential patterns
 

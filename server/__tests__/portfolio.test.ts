@@ -19,10 +19,16 @@ const PROP_INACTIVE = '44444444-4444-4444-4444-444444444444';
 function createTestApp(storage: any) {
   const app = new Hono<HonoEnv>();
 
-  app.use('/api/*', serviceAuth, tenantMiddleware, async (c, next) => {
-    c.set('storage', storage as any);
+  // storage and userId must be in context BEFORE tenantMiddleware runs. They
+  // used to be set in a middleware mounted after it, so every request took the
+  // branch that skipped the membership check entirely -- these tests were not
+  // exercising tenant isolation at all. tenantMiddleware now fails closed, so
+  // the ordering has to be right.
+  app.use('/api/*', serviceAuth, async (c, next) => {
+    c.set('storage', { ...(storage as any), getUserTenants: async () => [{ tenant: { id: TENANT_ID } }] } as any);
+    c.set('userId', 'test-user');
     await next();
-  });
+  }, tenantMiddleware);
 
   app.route('/', portfolioRoutes);
   return app;

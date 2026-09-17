@@ -3,95 +3,79 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { tenantMiddleware } from '../middleware/tenant';
 
+const TENANT = 'tenant-a';
+const OTHER = 'tenant-b';
+const USER = 'user-1';
+
+function buildApp(opts: { storage?: unknown; userId?: string | undefined }) {
+  const app = new Hono<HonoEnv>();
+  app.use('*', async (c, next) => {
+    if (opts.storage !== undefined) c.set('storage', opts.storage as any);
+    if (opts.userId !== undefined) c.set('userId', opts.userId);
+    await next();
+  });
+  app.use('*', tenantMiddleware);
+  app.get('/probe', (c) => c.json({ tenantId: c.get('tenantId') }));
+  return app;
+}
+
+const memberOf = (...ids: string[]) => ({
+  getUserTenants: vi.fn().mockResolvedValue(ids.map((id) => ({ tenant: { id } }))),
+});
+
 describe('tenantMiddleware', () => {
-  function buildApp(options?: {
-    userId?: string;
-    storage?: {
-      getUserTenants?: (userId: string) => Promise<Array<{ tenant: { id: string } }>>;
-    };
-  }) {
-    const app = new Hono<HonoEnv>();
-    app.use('/api/*', async (c, next) => {
-      if (options?.userId) {
-        c.set('userId', options.userId);
-      }
-      if (options?.storage) {
-        c.set('storage', options.storage as any);
-      }
-      await next();
-    });
-    app.use('/api/*', tenantMiddleware);
-    app.get('/api/test', (c) => c.json({ tenantId: c.get('tenantId') }));
-    return app;
-  }
-
-  const env = {
-    CHITTY_AUTH_SERVICE_TOKEN: 'x',
-    DATABASE_URL: 'fake',
-    FINANCE_KV: {} as any,
-    FINANCE_R2: {} as any,
-    ASSETS: {} as any,
-    CF_AGENT: {} as any,
-  };
-
-  it('reads tenant from X-Tenant-ID header', async () => {
-    const app = buildApp();
-    const res = await app.request('/api/test', {
-      headers: { 'X-Tenant-ID': 'tenant-abc' },
-    }, env);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.tenantId).toBe('tenant-abc');
-  });
-
-  it('reads tenant from ?tenantId query param', async () => {
-    const app = buildApp();
-    const res = await app.request('/api/test?tenantId=tenant-xyz', {}, env);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.tenantId).toBe('tenant-xyz');
-  });
-
-  it('returns 400 when no tenant provided', async () => {
-    const app = buildApp();
-    const res = await app.request('/api/test', {}, env);
+  it('requires a tenant id', async () => {
+    const res = await buildApp({ storage: memberOf(TENANT), userId: USER }).request('/probe');
     expect(res.status).toBe(400);
   });
 
-  it('allows the request when the caller belongs to the tenant', async () => {
-    const getUserTenants = vi.fn().mockResolvedValue([
-      { tenant: { id: 'tenant-abc' } },
-      { tenant: { id: 'tenant-other' } },
-    ]);
-    const app = buildApp({
-      userId: 'user-123',
-      storage: { getUserTenants },
-    });
-
-    const res = await app.request('/api/test', {
-      headers: { 'X-Tenant-ID': 'tenant-abc' },
-    }, env);
-
+  it('accepts a tenant the caller belongs to', async () => {
+    const app = buildApp({ storage: memberOf(TENANT), userId: USER });
+    const res = await app.request('/probe', { headers: { 'x-tenant-id': TENANT } });
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ tenantId: 'tenant-abc' });
-    expect(getUserTenants).toHaveBeenCalledWith('user-123');
+    expect(await res.json()).toEqual({ tenantId: TENANT });
   });
 
-  it('returns 403 when the caller does not belong to the tenant', async () => {
-    const app = buildApp({
-      userId: 'user-123',
-      storage: {
-        getUserTenants: vi.fn().mockResolvedValue([{ tenant: { id: 'tenant-other' } }]),
-      },
+  it('rejects a tenant the caller does not belong to', async () => {
+    const app = buildApp({ storage: memberOf(TENANT), userId: USER });
+    const res = await app.request('/probe', { headers: { 'x-tenant-id': OTHER } });
+    expect(res.status).toBe(403);
+  });
+
+  it('checks membership for a tenant supplied via query string too', async () => {
+    // The query fallback is a legitimate input path, so it must be subject to
+    // the same membership check as the header -- not a way around it.
+    const app = buildApp({ storage: memberOf(TENANT), userId: USER });
+    expect((await app.request(`/probe?tenantId=${OTHER}`)).status).toBe(403);
+    expect((await app.request(`/probe?tenantId=${TENANT}`)).status).toBe(200);
+  });
+
+  describe('fails closed when membership cannot be verified', () => {
+    it('refuses when storage is absent', async () => {
+      const app = buildApp({ userId: USER });
+      const res = await app.request('/probe', { headers: { 'x-tenant-id': OTHER } });
+      expect(res.status).toBe(500);
+      expect((await res.json()).error).toBe('tenant_check_unavailable');
     });
 
-    const res = await app.request('/api/test', {
-      headers: { 'X-Tenant-ID': 'tenant-abc' },
-    }, env);
+    it('refuses when no caller has been resolved', async () => {
+      const app = buildApp({ storage: memberOf(TENANT) });
+      const res = await app.request('/probe', { headers: { 'x-tenant-id': OTHER } });
+      expect(res.status).toBe(500);
+    });
 
-    expect(res.status).toBe(403);
-    await expect(res.json()).resolves.toMatchObject({
-      error: 'forbidden',
+    it('refuses when the storage implementation cannot answer', async () => {
+      const app = buildApp({ storage: {}, userId: USER });
+      const res = await app.request('/probe', { headers: { 'x-tenant-id': OTHER } });
+      expect(res.status).toBe(500);
+    });
+
+    it('never sets tenantId on any of those paths', async () => {
+      for (const opts of [{ userId: USER }, { storage: memberOf(TENANT) }, { storage: {}, userId: USER }]) {
+        const res = await buildApp(opts).request('/probe', { headers: { 'x-tenant-id': OTHER } });
+        // the probe handler is never reached, so no tenant is echoed back
+        expect(await res.text()).not.toContain(OTHER);
+      }
     });
   });
 });
