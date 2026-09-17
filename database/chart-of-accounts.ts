@@ -126,10 +126,13 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   // Property Operating Expenses (5000-5499)
   { code: '5000', name: 'Advertising', type: 'expense', description: 'Listing fees, marketing', scheduleE: 'Line 5', form8825: 'Line 3', taxDeductible: true },
   { code: '5010', name: 'Auto & Travel', type: 'expense', description: 'Mileage, travel to properties', scheduleE: 'Line 6', form8825: 'Line 4', taxDeductible: true },
-  { code: '5015', name: 'Contract Labor (1099)', type: 'expense', description: 'Non-employee labor; 1099-NEC source. Form 8825 line 13 Wages and salaries', scheduleE: 'Line 19', form8825: 'Line 13', taxDeductible: true },
+  // 8825 line 13 is Wages and salaries — W-2 payroll. 1099-NEC non-employee labor is
+  // not wages, so it lands in Other (line 17) and must be itemized on Schedule A (8825).
+  { code: '5015', name: 'Contract Labor (1099)', type: 'expense', description: 'Non-employee labor; 1099-NEC source. Not wages — Form 8825 line 17 Other', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
   { code: '5025', name: 'Furnishings & Decor', type: 'expense', description: 'Furnishings below the capitalization threshold; above it capitalize to 1610', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
   { code: '5020', name: 'Cleaning & Maintenance', type: 'expense', description: 'Routine cleaning, janitorial', scheduleE: 'Line 7', form8825: 'Line 5', taxDeductible: true },
-  { code: '5030', name: 'Commissions', type: 'expense', description: 'Leasing commissions paid', scheduleE: 'Line 7', form8825: 'Line 6', taxDeductible: true },
+  // Schedule E line 7 is Cleaning and maintenance; commissions are line 8.
+  { code: '5030', name: 'Commissions', type: 'expense', description: 'Leasing commissions paid', scheduleE: 'Line 8', form8825: 'Line 6', taxDeductible: true },
   { code: '5040', name: 'Insurance', type: 'expense', description: 'Property insurance premiums', scheduleE: 'Line 9', form8825: 'Line 7', taxDeductible: true },
   { code: '5050', name: 'Legal & Professional Fees', type: 'expense', description: 'Attorney, CPA, property manager', scheduleE: 'Line 10', form8825: 'Line 9', taxDeductible: true },
   { code: '5055', name: 'Litigation - Arias', type: 'expense', description: 'Litigation costs segregated from ordinary legal fees for the recovery waterfall', scheduleE: 'Line 10', form8825: 'Line 9', taxDeductible: true },

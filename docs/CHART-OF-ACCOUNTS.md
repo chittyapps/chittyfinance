@@ -9,7 +9,11 @@ any other artifact disagree, this document wins and the other is the defect.
 
 - `database/chart-of-accounts.ts` is its machine-readable projection and must match it.
   `server/__tests__/chart-of-accounts-doc-parity.test.ts` fails CI if they diverge.
-- That file seeds `chart_of_accounts` in the database (`database/seeds/chart-of-accounts.ts`).
+- The seed that would carry the projection into the `chart_of_accounts` table
+  (`database/seeds/chart-of-accounts.ts`) **does not run today**: it imports `server/db`,
+  which was deleted in #81. The table also has no Form 8825 column — only
+  `schedule_e_line` — so the `form8825` line this document assigns lives in the
+  projection and in this document, and is not persisted. See §13.
 - Importers may only emit codes defined here, validated through `getAccountByCode()`.
 - Change this document first, then the projection, then the database. Never the reverse.
 
@@ -54,7 +58,8 @@ The two forms do not have the same lines, which drives several decisions below:
 
 | | Form 8825 | Schedule E Part I |
 |---|---|---|
-| Wages / labor | **line 13** Wages and salaries | no line — goes to Other (19) |
+| W-2 wages | **line 13** Wages and salaries | no line — goes to Other (19) |
+| Contract labor (1099-NEC) | no line — Other (17) | no line — Other (19) |
 | Supplies | no line — Other (17) | **line 15** Supplies |
 | Management fees | no line — Other (17) | **line 11** Management fees |
 | Interest | one line (8) | split: mortgage (12), other (13) |
@@ -92,13 +97,26 @@ makes that separable at filing time.
 
 ### Mid-term, not short-term
 
-Mid-term means an average stay of 30 days or more. That remains **passive rental income
-reported on Form 8825 / Schedule E**, and it is **not** subject to self-employment tax.
-The 7-day average-stay rule that pushes short-term rentals toward Schedule C and
-non-passive treatment does not apply, and neither does the "short-term rental loophole."
-That changes only if substantial services are provided (daily housekeeping, meals,
-concierge) — which would move the activity to Schedule C / 1065 page 1 and bring SE tax
-with it.
+Mid-term means an average stay of 30 days or more. Two different rules get collapsed into
+one here, and only the second decides self-employment tax.
+
+1. **Is it a rental activity? (§469 / Reg. §1.469-1T(e)(3))** An average stay of 7 days or
+   less — or 30 days or less where significant personal services are provided — takes the
+   activity outside the definition of a *rental activity*. That governs the
+   passive-activity analysis and whether material participation can make a loss
+   non-passive. It is not an SE-tax rule, and failing it does not by itself move the
+   income to Schedule C.
+2. **Is it subject to SE tax? (§1402(a)(1) / Reg. §1.1402(a)-4(c))** Rentals from real
+   estate are excluded from net earnings from self-employment *unless* services are
+   rendered to the occupant beyond those customarily supplied with the space. That is a
+   services test, not a stay-length test.
+
+At a 30+ day average stay with no substantial services, the activity is a rental activity
+under (1) and outside SE tax under (2), so it is reported on **Form 8825 / Schedule E**.
+Furnishings, bundled utilities and cleaning between stays are customary and do not change
+that. Daily housekeeping, meals or concierge service would be substantial services — which
+can both take the activity out of rental treatment under (1) and bring SE tax under (2),
+moving the revenue to Schedule C / 1065 page 1.
 
 4005 and 4008 therefore exist to **evidence** average stay length and the
 utilities-included structure, not to change the schedule. Average stay is proven from
@@ -126,13 +144,13 @@ Ordered by Form 8825 line. "E" is the Schedule E line.
 | 5120 | Utilities — Water/Sewer | 12 | 17 | |
 | 5130 | Utilities — Trash | 12 | 17 | |
 | 5140 | Utilities — Internet/Cable | 12 | 17 | |
-| 5015 | Contract Labor (1099) | **13** | 19 | NEW. No labor account exists today; 1099-NEC source |
 | 5400 | Depreciation - Building | 14 | 18 | Computed on Form 4562, not booked from bank data |
 | 5410 | Depreciation - Improvements | 14 | 18 | |
 | 5420 | Depreciation - Appliances | 14 | 18 | |
 | 5430 | Depreciation - Furniture | 14 | 18 | |
 | 5060 | Management Fees | 17 | 11 | Paid to a manager |
 | 5080 | Supplies | 17 | 15 | |
+| 5015 | Contract Labor (1099) | 17 | 19 | NEW. 1099-NEC non-employee labor — not wages, so not line 13 |
 | 5025 | Furnishings & Decor | 17 | 19 | NEW. Below the capitalization threshold; above it see §8 |
 | 5200 | HOA Dues | 17 | 19 | |
 | 5210 | Condo Fees | 17 | 19 | |
@@ -484,7 +502,7 @@ Mapping contract for history. Not yet implemented in any importer.
 | `revenue-mixed` | 9010 | needs splitting by hand |
 | `expense-repairs` | 5070 | — |
 | `expense-cleaning` | 5020 | — |
-| `expense-labor` | 5015 | 8825 line 13 |
+| `expense-labor` | 5015 | 8825 line 17 (Other), not line 13 |
 | `expense-supplies` | 5080 | — |
 | `expense-furnishings_decor` | 5025 | — |
 | `expense-insurance` | 5040 | — |
@@ -493,7 +511,7 @@ Mapping contract for history. Not yet implemented in any importer.
 | `expense-utilities` | 5100/5110/5120/5130 by utility | — |
 | `expense-connectivity` | 5140 | — |
 | `expense-hoa`, `expense-association_dues`, `expense-association-dues` | 5200 | duplicate triple |
-| `expense-late_fee`, `expense-late-fee` | 5310 | duplicate pair |
+| `expense-late_fee`, `expense-late-fee` | 5320 | duplicate pair; a vendor/card late fee is a finance charge, not loan interest |
 | `expense-software` | 6010 | — |
 | `expense-marketing` | 5000 | — |
 | `expense-travel` | 5010 | — |
@@ -538,6 +556,11 @@ holds only while nothing nets the two together.
 - `type='transfer'` does not exist; §6 is a specification.
 - `property_id` remains unpopulated; §9 is a specification.
 - No Mercury category renamed or retired; §10 is a proposal.
+- Nothing is seeded. `database/seeds/chart-of-accounts.ts` imports `server/db`, deleted
+  in #81, so the seed path is broken and no account defined here can reach the
+  `chart_of_accounts` table until it is repointed at `server/db/connection.ts`.
+- The Form 8825 line is not persisted. `chart_of_accounts` carries `schedule_e_line` and
+  no 8825 column, so `form8825` exists only in this document and in the projection.
 - Nothing here is tax advice. The line mappings are prep work for a preparer to review;
   ARIBIA's 2024 filings are delinquent and under LITC review.
 
@@ -609,10 +632,10 @@ means the account reaches neither (a balance-sheet or control account, or — fo
 | 4120 | Other Income | income | pl | 2b | 3 |
 | 5000 | Advertising | expense | pl | 3 | 5 |
 | 5010 | Auto & Travel | expense | pl | 4 | 6 |
-| 5015 * | Contract Labor (1099) | expense | pl | 13 | 19 |
+| 5015 * | Contract Labor (1099) | expense | pl | 17 | 19 |
 | 5020 | Cleaning & Maintenance | expense | pl | 5 | 7 |
 | 5025 * | Furnishings & Decor | expense | pl | 17 | 19 |
-| 5030 | Commissions | expense | pl | 6 | 7 |
+| 5030 | Commissions | expense | pl | 6 | 8 |
 | 5040 | Insurance | expense | pl | 7 | 9 |
 | 5050 | Legal & Professional Fees | expense | pl | 9 | 10 |
 | 5055 * | Litigation - Arias | expense | pl | 9 | 10 |
