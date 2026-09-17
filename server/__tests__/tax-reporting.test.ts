@@ -133,10 +133,10 @@ describe('buildScheduleEReport — line summary', () => {
     { id: 'p-b', tenantId: 't-b', name: 'Property B', address: 'B', state: 'IL' },
   ];
 
-  it('aggregates Line 14 (Repairs + Cleaning) across multiple properties with per-COA breakdown', () => {
-    // Note: per database/chart-of-accounts.ts, both 5070 (Repairs) and
-    // 5020 (Cleaning & Maintenance) map to Schedule E Line 14, so they
-    // should aggregate under the same summary row with a 2-entry breakdown.
+  it('aggregates Line 14 (Repairs) across multiple properties and keeps Cleaning on Line 7', () => {
+    // Schedule E Part I separates these: line 14 is Repairs (5070), line 7 is
+    // Cleaning and maintenance (5020). They previously shared line 14 in the
+    // projection, which was wrong — see docs/CHART-OF-ACCOUNTS.md §4.
     const transactions: ReportingTransactionRow[] = [
       { ...baseTx, id: 'r1', tenantId: 't-a', amount: '-150.00', type: 'expense', category: 'Repairs', date: '2024-03-01', propertyId: 'p-a' } as any,
       { ...baseTx, id: 'r2', tenantId: 't-b', amount: '-250.00', type: 'expense', category: 'Repairs', date: '2024-04-01', propertyId: 'p-b' } as any,
@@ -147,19 +147,19 @@ describe('buildScheduleEReport — line summary', () => {
 
     const line14 = report.lineSummary.find((l) => l.lineNumber === 'Line 14');
     expect(line14).toBeDefined();
-    expect(line14!.amount).toBe(500); // 150 + 250 + 100
-    expect(line14!.transactionCount).toBe(3);
-    expect(line14!.coaBreakdown).toHaveLength(2);
-
-    // Breakdown sorted by amount descending — Repairs (400) > Cleaning (100)
+    expect(line14!.amount).toBe(400); // 150 + 250, both Repairs
+    expect(line14!.transactionCount).toBe(2);
+    expect(line14!.coaBreakdown).toHaveLength(1);
     expect(line14!.coaBreakdown[0].coaCode).toBe('5070');
     expect(line14!.coaBreakdown[0].coaName).toBe('Repairs');
     expect(line14!.coaBreakdown[0].amount).toBe(400);
     expect(line14!.coaBreakdown[0].transactionCount).toBe(2);
 
-    expect(line14!.coaBreakdown[1].coaCode).toBe('5020');
-    expect(line14!.coaBreakdown[1].amount).toBe(100);
-    expect(line14!.coaBreakdown[1].transactionCount).toBe(1);
+    const line7 = report.lineSummary.find((l) => l.lineNumber === 'Line 7');
+    expect(line7).toBeDefined();
+    expect(line7!.amount).toBe(100);
+    expect(line7!.coaBreakdown).toHaveLength(1);
+    expect(line7!.coaBreakdown[0].coaCode).toBe('5020');
   });
 
   it('groups multiple COA codes under the same Schedule E line (Line 17 utilities)', () => {

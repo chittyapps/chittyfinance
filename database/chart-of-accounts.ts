@@ -1,5 +1,12 @@
 // REI Chart of Accounts for ARIBIA LLC Property Portfolio
-// Based on IRS Schedule E categories and real estate accounting best practices
+//
+// AUTHORITY: docs/CHART-OF-ACCOUNTS.md defines this chart. This file is its
+// machine-readable projection and must match it — enforced by
+// server/__tests__/chart-of-accounts-doc-parity.test.ts. Change the document
+// first, then this file.
+//
+// Accounts carry both IRS references: Form 8825 (partnership rental, what ARIBIA
+// files) and Schedule E (Form 1040). The two forms do not share line numbers.
 
 // Account code type for type safety
 export type AccountCode = string;
@@ -10,9 +17,33 @@ export interface AccountDefinition {
   type: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
   subtype?: string;
   description: string;
-  scheduleE?: string; // IRS Schedule E line reference
+  scheduleE?: string; // IRS Schedule E (Form 1040) Part I line
+  form8825?: string; // IRS Form 8825 line (partnership rental)
   taxDeductible?: boolean;
 }
+
+/**
+ * How an account behaves in reporting.
+ *  - 'pl'       counts toward income/expense and a tax line
+ *  - 'balance'  balance-sheet only; never a P&L or tax line
+ *  - 'transfer' movement between accounts the group controls; excluded from P&L
+ *  - 'control'  workflow//non-deductible holding; excluded from tax lines
+ */
+export type AccountTreatment = 'pl' | 'balance' | 'transfer' | 'control';
+
+/** Clearing accounts. Both legs of an internal movement land here; they net to zero. */
+export const TRANSFER_CLEARING_CODES = ['1900', '1910', '1920'] as const;
+
+/**
+ * Capitalized improvements. Typed 'expense' in the legacy chart, but a capital
+ * addition is an asset recovered through depreciation (Form 4562), never a
+ * deductible expense line. Treated as balance-sheet here so no report or tax line
+ * picks them up. See docs/CHART-OF-ACCOUNTS.md §8.
+ */
+export const CAPITAL_IMPROVEMENT_CODES = ['7000', '7010', '7020', '7030', '7040'] as const;
+
+/** Control accounts: never reported on a return line. */
+export const CONTROL_CODES = ['9000', '9010', '9020', '9030', '9040'] as const;
 
 // Standard REI Chart of Accounts
 export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
@@ -23,7 +54,13 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   { code: '1020', name: 'Cash - Reserve Fund', type: 'asset', subtype: 'cash', description: 'Capital reserves for repairs' },
   { code: '1050', name: 'Petty Cash', type: 'asset', subtype: 'cash', description: 'Petty cash on hand' },
 
+  // Clearing & Holding (1900-1999) — see docs/CHART-OF-ACCOUNTS.md §6
+  { code: '1900', name: 'Transfer Clearing - Intra-Entity', type: 'asset', subtype: 'clearing', description: 'Both legs of a movement between two accounts of the same entity; nets to zero' },
+  { code: '1910', name: 'Transfer Clearing - Intercompany', type: 'asset', subtype: 'clearing', description: 'Both legs of a movement between entities; nets to zero' },
+  { code: '1920', name: 'Payment Rail Holding', type: 'asset', subtype: 'clearing', description: 'Venmo/Zelle/cash in flight until the far side is known' },
+
   // Receivables (1100-1199)
+  { code: '1130', name: 'Due from Affiliate', type: 'asset', subtype: 'receivable', description: 'Standing inter-entity receivable; mirrors the affiliate\'s 2540' },
   { code: '1100', name: 'Accounts Receivable - Rent', type: 'asset', subtype: 'receivable', description: 'Outstanding rent due from tenants' },
   { code: '1110', name: 'Accounts Receivable - Other', type: 'asset', subtype: 'receivable', description: 'Other amounts due' },
 
@@ -51,6 +88,8 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   { code: '2040', name: 'Credit Card Payable', type: 'liability', subtype: 'current', description: 'Credit card balances' },
 
   // Long-Term Liabilities (2500-2599)
+  { code: '2045', name: 'Buy-Now-Pay-Later Payable', type: 'liability', subtype: 'payable', description: 'Affirm, Afterpay and similar financed purchases' },
+  { code: '2540', name: 'Due to Affiliate', type: 'liability', subtype: 'payable', description: 'Standing inter-entity payable; mirrors the affiliate\'s 1130' },
   { code: '2500', name: 'Mortgage Payable - Primary', type: 'liability', subtype: 'long-term', description: 'Primary mortgage balance' },
   { code: '2510', name: 'Mortgage Payable - Secondary', type: 'liability', subtype: 'long-term', description: 'Second mortgage/HELOC balance' },
   { code: '2520', name: 'Notes Payable', type: 'liability', subtype: 'long-term', description: 'Other loan balances' },
@@ -64,62 +103,72 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
 
   // ============== INCOME (4xxx) ==============
   // Rental Income (4000-4099)
-  { code: '4000', name: 'Rental Income', type: 'income', description: 'Base rent received', scheduleE: 'Line 3', taxDeductible: false },
-  { code: '4010', name: 'Late Fees', type: 'income', description: 'Late payment fees collected', scheduleE: 'Line 3', taxDeductible: false },
-  { code: '4020', name: 'Pet Fees', type: 'income', description: 'Pet rent and deposits (non-refundable)', scheduleE: 'Line 3', taxDeductible: false },
-  { code: '4030', name: 'Parking Income', type: 'income', description: 'Parking space rental', scheduleE: 'Line 3', taxDeductible: false },
-  { code: '4040', name: 'Utility Reimbursement', type: 'income', description: 'Tenant utility payments', scheduleE: 'Line 3', taxDeductible: false },
-  { code: '4050', name: 'Application Fees', type: 'income', description: 'Tenant application fees', scheduleE: 'Line 3', taxDeductible: false },
-  { code: '4060', name: 'Laundry Income', type: 'income', description: 'Coin laundry revenue', scheduleE: 'Line 3', taxDeductible: false },
+  { code: '4000', name: 'Rental Income - Long-Term', type: 'income', description: 'Base rent received on unfurnished, year-length leases', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false },
+  { code: '4005', name: 'Rental Income - Mid-Term Furnished', type: 'income', description: 'Furnished stays of 30+ days; passive rental income', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false },
+  { code: '4008', name: 'Rental Income - All-Inclusive', type: 'income', description: 'Rent with utilities bundled', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false },
+  { code: '4010', name: 'Late Fees', type: 'income', description: 'Late payment fees collected', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
+  { code: '4020', name: 'Pet Fees', type: 'income', description: 'Pet rent and deposits (non-refundable)', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
+  { code: '4030', name: 'Parking Income', type: 'income', description: 'Parking space rental', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
+  { code: '4040', name: 'Utility Reimbursement', type: 'income', description: 'Tenant utility payments', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
+  { code: '4050', name: 'Application Fees', type: 'income', description: 'Tenant application fees', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
+  { code: '4060', name: 'Laundry Income', type: 'income', description: 'Coin laundry revenue', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
 
   // Other Income (4100-4199)
   { code: '4100', name: 'Interest Income', type: 'income', description: 'Bank interest, security deposit interest', taxDeductible: false },
-  { code: '4110', name: 'Forfeited Deposits', type: 'income', description: 'Security deposits retained', taxDeductible: false },
-  { code: '4120', name: 'Other Income', type: 'income', description: 'Miscellaneous income', taxDeductible: false },
+  { code: '4110', name: 'Forfeited Deposits', type: 'income', description: 'Security deposits retained; income only on forfeiture, otherwise a 2010 liability', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
+  { code: '4120', name: 'Other Income', type: 'income', description: 'Miscellaneous income', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
+
+  // Non-rental business income — Form 1065 page 1, NOT Form 8825
+  { code: '4070', name: 'Management Income', type: 'income', description: 'Fees earned managing property for others; 1065 page 1 gross receipts', taxDeductible: false },
+  { code: '4080', name: 'Other Business Income', type: 'income', description: 'Amazon KDP and other non-rental revenue; 1065 page 1', taxDeductible: false },
 
   // ============== EXPENSES (5xxx-7xxx) ==============
   // Property Operating Expenses (5000-5499)
-  { code: '5000', name: 'Advertising', type: 'expense', description: 'Listing fees, marketing', scheduleE: 'Line 5', taxDeductible: true },
-  { code: '5010', name: 'Auto & Travel', type: 'expense', description: 'Mileage, travel to properties', scheduleE: 'Line 6', taxDeductible: true },
-  { code: '5020', name: 'Cleaning & Maintenance', type: 'expense', description: 'Routine cleaning, janitorial', scheduleE: 'Line 14', taxDeductible: true },
-  { code: '5030', name: 'Commissions', type: 'expense', description: 'Leasing commissions paid', scheduleE: 'Line 7', taxDeductible: true },
-  { code: '5040', name: 'Insurance', type: 'expense', description: 'Property insurance premiums', scheduleE: 'Line 9', taxDeductible: true },
-  { code: '5050', name: 'Legal & Professional Fees', type: 'expense', description: 'Attorney, CPA, property manager', scheduleE: 'Line 10', taxDeductible: true },
-  { code: '5060', name: 'Management Fees', type: 'expense', description: 'Property management fees', scheduleE: 'Line 11', taxDeductible: true },
-  { code: '5070', name: 'Repairs', type: 'expense', description: 'Non-capital repairs and maintenance', scheduleE: 'Line 14', taxDeductible: true },
-  { code: '5080', name: 'Supplies', type: 'expense', description: 'Office and maintenance supplies', scheduleE: 'Line 14', taxDeductible: true },
-  { code: '5090', name: 'Property Taxes', type: 'expense', description: 'Real estate taxes', scheduleE: 'Line 16', taxDeductible: true },
+  { code: '5000', name: 'Advertising', type: 'expense', description: 'Listing fees, marketing', scheduleE: 'Line 5', form8825: 'Line 3', taxDeductible: true },
+  { code: '5010', name: 'Auto & Travel', type: 'expense', description: 'Mileage, travel to properties', scheduleE: 'Line 6', form8825: 'Line 4', taxDeductible: true },
+  { code: '5015', name: 'Contract Labor (1099)', type: 'expense', description: 'Non-employee labor; 1099-NEC source. Form 8825 line 13 Wages and salaries', scheduleE: 'Line 19', form8825: 'Line 13', taxDeductible: true },
+  { code: '5025', name: 'Furnishings & Decor', type: 'expense', description: 'Furnishings below the capitalization threshold; above it capitalize to 1610', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '5020', name: 'Cleaning & Maintenance', type: 'expense', description: 'Routine cleaning, janitorial', scheduleE: 'Line 7', form8825: 'Line 5', taxDeductible: true },
+  { code: '5030', name: 'Commissions', type: 'expense', description: 'Leasing commissions paid', scheduleE: 'Line 7', form8825: 'Line 6', taxDeductible: true },
+  { code: '5040', name: 'Insurance', type: 'expense', description: 'Property insurance premiums', scheduleE: 'Line 9', form8825: 'Line 7', taxDeductible: true },
+  { code: '5050', name: 'Legal & Professional Fees', type: 'expense', description: 'Attorney, CPA, property manager', scheduleE: 'Line 10', form8825: 'Line 9', taxDeductible: true },
+  { code: '5055', name: 'Litigation - Arias', type: 'expense', description: 'Litigation costs segregated from ordinary legal fees for the recovery waterfall', scheduleE: 'Line 10', form8825: 'Line 9', taxDeductible: true },
+  { code: '5060', name: 'Management Fees', type: 'expense', description: 'Property management fees', scheduleE: 'Line 11', form8825: 'Line 17', taxDeductible: true },
+  { code: '5070', name: 'Repairs', type: 'expense', description: 'Non-capital repairs and maintenance', scheduleE: 'Line 14', form8825: 'Line 11', taxDeductible: true },
+  { code: '5080', name: 'Supplies', type: 'expense', description: 'Office and maintenance supplies', scheduleE: 'Line 15', form8825: 'Line 17', taxDeductible: true },
+  { code: '5090', name: 'Property Taxes', type: 'expense', description: 'Real estate taxes', scheduleE: 'Line 16', form8825: 'Line 10', taxDeductible: true },
 
   // Utilities (5100-5199)
-  { code: '5100', name: 'Utilities - Electric', type: 'expense', description: 'Electricity (landlord paid)', scheduleE: 'Line 17', taxDeductible: true },
-  { code: '5110', name: 'Utilities - Gas', type: 'expense', description: 'Gas (landlord paid)', scheduleE: 'Line 17', taxDeductible: true },
-  { code: '5120', name: 'Utilities - Water/Sewer', type: 'expense', description: 'Water and sewer', scheduleE: 'Line 17', taxDeductible: true },
-  { code: '5130', name: 'Utilities - Trash', type: 'expense', description: 'Garbage collection', scheduleE: 'Line 17', taxDeductible: true },
-  { code: '5140', name: 'Utilities - Internet/Cable', type: 'expense', description: 'Internet and cable (if provided)', scheduleE: 'Line 17', taxDeductible: true },
+  { code: '5100', name: 'Utilities - Electric', type: 'expense', description: 'Electricity (landlord paid)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
+  { code: '5110', name: 'Utilities - Gas', type: 'expense', description: 'Gas (landlord paid)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
+  { code: '5120', name: 'Utilities - Water/Sewer', type: 'expense', description: 'Water and sewer', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
+  { code: '5130', name: 'Utilities - Trash', type: 'expense', description: 'Garbage collection', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
+  { code: '5140', name: 'Utilities - Internet/Cable', type: 'expense', description: 'Internet and cable (if provided)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
 
   // HOA & Association Fees (5200-5299)
-  { code: '5200', name: 'HOA Dues', type: 'expense', description: 'Homeowner association fees', scheduleE: 'Line 19', taxDeductible: true },
-  { code: '5210', name: 'Condo Fees', type: 'expense', description: 'Condo association fees', scheduleE: 'Line 19', taxDeductible: true },
-  { code: '5220', name: 'Special Assessments', type: 'expense', description: 'HOA special assessments', scheduleE: 'Line 19', taxDeductible: true },
+  { code: '5200', name: 'HOA Dues', type: 'expense', description: 'Homeowner association fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '5210', name: 'Condo Fees', type: 'expense', description: 'Condo association fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '5220', name: 'Special Assessments', type: 'expense', description: 'HOA special assessments', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
 
   // Financial Expenses (5300-5399)
-  { code: '5300', name: 'Mortgage Interest', type: 'expense', description: 'Mortgage interest expense', scheduleE: 'Line 12', taxDeductible: true },
-  { code: '5310', name: 'Other Interest', type: 'expense', description: 'Other loan interest', scheduleE: 'Line 13', taxDeductible: true },
-  { code: '5320', name: 'Bank Charges', type: 'expense', description: 'Bank fees, NSF fees, wire fees', scheduleE: 'Line 19', taxDeductible: true },
-  { code: '5330', name: 'Credit Card Fees', type: 'expense', description: 'Merchant processing fees', scheduleE: 'Line 19', taxDeductible: true },
+  { code: '5300', name: 'Mortgage Interest', type: 'expense', description: 'Mortgage interest expense', scheduleE: 'Line 12', form8825: 'Line 8', taxDeductible: true },
+  { code: '5310', name: 'Other Interest', type: 'expense', description: 'Other loan interest', scheduleE: 'Line 13', form8825: 'Line 8', taxDeductible: true },
+  { code: '5320', name: 'Bank Charges', type: 'expense', description: 'Bank fees, NSF fees, wire fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '5330', name: 'Credit Card Fees', type: 'expense', description: 'Merchant processing fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
 
   // Depreciation (5400-5499)
-  { code: '5400', name: 'Depreciation - Building', type: 'expense', description: '27.5 year residential depreciation', scheduleE: 'Line 18', taxDeductible: true },
-  { code: '5410', name: 'Depreciation - Improvements', type: 'expense', description: 'Depreciation on improvements', scheduleE: 'Line 18', taxDeductible: true },
-  { code: '5420', name: 'Depreciation - Appliances', type: 'expense', description: '5-7 year depreciation', scheduleE: 'Line 18', taxDeductible: true },
-  { code: '5430', name: 'Depreciation - Furniture', type: 'expense', description: '5-7 year depreciation', scheduleE: 'Line 18', taxDeductible: true },
+  { code: '5400', name: 'Depreciation - Building', type: 'expense', description: '27.5 year residential depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true },
+  { code: '5410', name: 'Depreciation - Improvements', type: 'expense', description: 'Depreciation on improvements', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true },
+  { code: '5420', name: 'Depreciation - Appliances', type: 'expense', description: '5-7 year depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true },
+  { code: '5430', name: 'Depreciation - Furniture', type: 'expense', description: '5-7 year depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true },
 
   // Administrative Expenses (6000-6099)
-  { code: '6000', name: 'Office Expenses', type: 'expense', description: 'Office supplies, postage', scheduleE: 'Line 19', taxDeductible: true },
-  { code: '6010', name: 'Software Subscriptions', type: 'expense', description: 'Property management software, accounting', scheduleE: 'Line 19', taxDeductible: true },
-  { code: '6020', name: 'Phone & Communication', type: 'expense', description: 'Business phone, answering service', scheduleE: 'Line 19', taxDeductible: true },
-  { code: '6030', name: 'Education & Training', type: 'expense', description: 'Real estate courses, seminars', scheduleE: 'Line 19', taxDeductible: true },
-  { code: '6040', name: 'Licenses & Permits', type: 'expense', description: 'Business licenses, rental permits', scheduleE: 'Line 19', taxDeductible: true },
+  { code: '6000', name: 'Office Expenses', type: 'expense', description: 'Office supplies, postage', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '6010', name: 'Software Subscriptions', type: 'expense', description: 'Property management software, accounting', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '6050', name: 'AI & Compute', type: 'expense', description: 'Model APIs and compute (Anthropic, OpenAI and similar)', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '6020', name: 'Phone & Communication', type: 'expense', description: 'Business phone, answering service', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '6030', name: 'Education & Training', type: 'expense', description: 'Real estate courses, seminars', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '6040', name: 'Licenses & Permits', type: 'expense', description: 'Business licenses, rental permits', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
 
   // Capital Expenditures (7000-7099) - Not directly expensed, added to asset basis
   { code: '7000', name: 'Capital Improvements - Building', type: 'expense', subtype: 'capital', description: 'Major improvements (capitalize, depreciate)', taxDeductible: false },
@@ -129,6 +178,7 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   { code: '7040', name: 'Capital Improvements - Other', type: 'expense', subtype: 'capital', description: 'Other capital improvements', taxDeductible: false },
 
   // Non-Deductible / Suspense (9000-9999)
+  { code: '9040', name: 'Data Quality Hold', type: 'expense', subtype: 'suspense', description: 'Source data is broken (bad payee, epoch date); not a pending human decision', taxDeductible: false },
   { code: '9000', name: 'Owner Personal Expense', type: 'expense', subtype: 'non-deductible', description: 'Personal expenses paid from business (not deductible)', taxDeductible: false },
   { code: '9010', name: 'Suspense / Unclassified', type: 'expense', subtype: 'suspense', description: 'Transactions pending classification', taxDeductible: false },
   { code: '9020', name: 'Ask My Accountant', type: 'expense', subtype: 'suspense', description: 'Needs CPA review', taxDeductible: false },
@@ -283,4 +333,34 @@ export function isDeductible(code: string): boolean {
 export function getScheduleELine(code: string): string | undefined {
   const account = getAccountByCode(code);
   return account?.scheduleE;
+}
+
+/**
+ * Form 8825 line for a code. ARIBIA files as a partnership, so rental activity is
+ * reported here rather than directly on Schedule E. Lines differ between the forms:
+ * 8825 has Wages (13) but no Supplies or Management Fees line; Schedule E is the
+ * reverse. 8825 lines 15-16 are reserved; line 17 (Other) needs Schedule A (Form 8825),
+ * which is why 'Other' expenses stay separate accounts.
+ */
+export function getForm8825Line(code: string): string | undefined {
+  return getAccountByCode(code)?.form8825;
+}
+
+/** How this account behaves in reporting. See docs/CHART-OF-ACCOUNTS.md §1 and §6. */
+export function getAccountTreatment(code: string): AccountTreatment | undefined {
+  const account = getAccountByCode(code);
+  if (!account) return undefined;
+  if ((TRANSFER_CLEARING_CODES as readonly string[]).includes(code)) return 'transfer';
+  if ((CONTROL_CODES as readonly string[]).includes(code)) return 'control';
+  if ((CAPITAL_IMPROVEMENT_CODES as readonly string[]).includes(code)) return 'balance';
+  return account.type === 'income' || account.type === 'expense' ? 'pl' : 'balance';
+}
+
+/**
+ * Does this account belong on a profit and loss statement or a tax line?
+ * Clearing, control and balance-sheet accounts do not: booking a transfer or a
+ * card payment to an expense line is the largest error class in the imported data.
+ */
+export function isProfitAndLossAccount(code: string): boolean {
+  return getAccountTreatment(code) === 'pl';
 }
