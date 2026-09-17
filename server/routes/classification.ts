@@ -23,6 +23,8 @@ function mapClassificationError(err: unknown, c: any): Response {
         return c.json({ error: 'not_classified', message: err.message }, 400);
       case 'transaction_not_found':
         return c.json({ error: 'not_found', message: err.message }, 404);
+      case 'conflict':
+        return c.json({ error: 'conflict', message: err.message }, 409);
     }
   }
   throw err;
@@ -337,7 +339,9 @@ classificationRoutes.post('/api/classification/batch-suggest', async (c) => {
     } catch (err) {
       // Skip reconciled rows only — other errors should propagate so we
       // don't silently hide bugs like DB outages behind a batch endpoint.
-      if (err instanceof ClassificationError && err.code === 'reconciled_locked') {
+      // A conflict means the row changed after we read it; nothing was
+      // written, so skip it like a locked row rather than abort the batch.
+      if (err instanceof ClassificationError && (err.code === 'reconciled_locked' || err.code === 'conflict')) {
         continue;
       }
       throw err;
@@ -408,7 +412,9 @@ classificationRoutes.post('/api/classification/ai-suggest', async (c) => {
     } catch (err) {
       // Skip reconciled rows only — other errors should propagate so we
       // don't silently hide DB/runtime failures behind a batch endpoint.
-      if (err instanceof ClassificationError && err.code === 'reconciled_locked') {
+      // A conflict means the row changed after we read it; nothing was
+      // written, so skip it like a locked row rather than abort the batch.
+      if (err instanceof ClassificationError && (err.code === 'reconciled_locked' || err.code === 'conflict')) {
         continue;
       }
       throw err;
@@ -453,7 +459,12 @@ classificationRoutes.post('/api/classification/unreconcile', async (c) => {
     return c.json({ error: 'invalid_body', details: parsed.error.flatten() }, 400);
   }
 
-  const result = await storage.unreconciledTransaction(parsed.data.transactionId, tenantId, userId);
+  let result;
+  try {
+    result = await storage.unreconciledTransaction(parsed.data.transactionId, tenantId, userId);
+  } catch (err) {
+    return mapClassificationError(err, c);
+  }
   if (!result) return c.json({ error: 'Transaction not found' }, 404);
 
   ledgerLog(c, {

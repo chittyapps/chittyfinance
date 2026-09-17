@@ -1,4 +1,5 @@
-import { eq, and, desc, sql, inArray, isNull, asc } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, isNull, asc, is, Column, SQL, exists } from 'drizzle-orm';
+import type { AnyColumn } from 'drizzle-orm';
 import type { Database } from '../db/connection';
 import * as schema from '../db/schema';
 
@@ -14,13 +15,52 @@ export class ClassificationError extends Error {
     public readonly code:
       | 'reconciled_locked'
       | 'not_classified'
-      | 'transaction_not_found',
+      | 'transaction_not_found'
+      | 'conflict',
     message: string,
   ) {
     super(message);
     this.name = 'ClassificationError';
   }
 }
+
+// ── Trust-path write helpers (pure; unit-tested without a database) ──
+
+export type ClassificationAction = 'suggest' | 're-suggest' | 'classify' | 'reclassify';
+
+/** Only L3 (reconcile) and L4 (govern) may modify a reconciled transaction. */
+export function canWriteReconciled(trustLevel: string): boolean {
+  return trustLevel === 'L3' || trustLevel === 'L4';
+}
+
+/**
+ * Audit action label for a classification write. Suggestions (L1) are keyed
+ * off the previous suggested code; authoritative writes (L2+) off the
+ * previous coa_code.
+ */
+export function selectClassificationAction(
+  isSuggestion: boolean,
+  previousSuggested: string | null,
+  previousCoaCode: string | null,
+): ClassificationAction {
+  if (isSuggestion) return previousSuggested ? 're-suggest' : 'suggest';
+  return previousCoaCode ? 'reclassify' : 'classify';
+}
+
+/**
+ * Explain why a guarded classification UPDATE matched no row, given the row
+ * as re-read after the (atomic, no-op) batch.
+ */
+export function diagnoseBlockedClassification(
+  current: { reconciled: boolean } | undefined,
+  trustLevel: string,
+): ClassificationError['code'] {
+  if (!current) return 'transaction_not_found';
+  if (current.reconciled && !canWriteReconciled(trustLevel)) return 'reconciled_locked';
+  return 'conflict';
+}
+
+const CONFLICT_MESSAGE = 'Transaction changed concurrently — re-read and retry';
 
 export class SystemStorage {
   constructor(private db: Database) {}
@@ -981,6 +1021,93 @@ export class SystemStorage {
 
   // ── CLASSIFICATION (trust-path operations) ──
 
+  /**
+   * `prev === null ? col IS NULL : col = prev`, decided in JS so the SQL
+   * stays portable (no IS NOT DISTINCT FROM).
+   */
+  private sameAs(col: AnyColumn, prev: string | null) {
+    return prev === null ? isNull(col) : eq(col, prev);
+  }
+
+  /**
+   * One atomic, self-guarding trust-path write, as a two-statement db.batch
+   * (neon-http runs it via sql.transaction([...]); D1/libsql batches are
+   * transactional too). No interactive transaction is needed:
+   *
+   *  1. INSERT INTO classification_audit SELECT ... FROM transactions
+   *     WHERE <guard> FOR UPDATE
+   *     — writes the audit row only if the row currently satisfies the guard,
+   *     and (on Postgres) locks it so the guard cannot change before step 2.
+   *     Audit values that describe the pre-write state (previous code) are
+   *     read from the row itself.
+   *  2. UPDATE transactions SET ... WHERE <guard>
+   *        AND EXISTS (audit row inserted in step 1)
+   *     — so the row is only modified if its audit row exists.
+   *
+   * Either both statements take effect or neither does. The UPDATE's
+   * RETURNING tells the caller which.
+   *
+   * Why not an `updated_at = <this write's timestamp>` witness: production
+   * has a BEFORE UPDATE trigger (update_updated_at_column) that overwrites
+   * updated_at with CURRENT_TIMESTAMP, so such a witness never matches.
+   *
+   * Audit columns must be listed in table order (drizzle insert-select).
+   */
+  private async guardedWrite(opts: {
+    guard: SQL | undefined;
+    set: Record<string, unknown>;
+    audit: {
+      previousCoaCode: string | null | SQL | AnyColumn;
+      newCoaCode: string | SQL | AnyColumn;
+      action: string;
+      trustLevel: string;
+      actorId: string;
+      actorType: string;
+      confidence: string | null;
+      reason: string | null;
+    };
+  }): Promise<boolean> {
+    const t = schema.transactions;
+    const ca = schema.classificationAudit;
+    const auditId = crypto.randomUUID();
+    const val = (v: unknown) => (is(v, SQL) || is(v, Column) ? (v as SQL) : sql`${v}`);
+    const { audit } = opts;
+
+    const insertAudit = this.db
+      .insert(ca)
+      .select((qb) =>
+        qb
+          .select({
+            id: sql`${auditId}`,
+            transactionId: t.id,
+            tenantId: t.tenantId,
+            previousCoaCode: val(audit.previousCoaCode),
+            newCoaCode: val(audit.newCoaCode),
+            action: sql`${audit.action}`,
+            trustLevel: sql`${audit.trustLevel}`,
+            actorId: sql`${audit.actorId}`,
+            actorType: sql`${audit.actorType}`,
+            confidence: sql`${audit.confidence}`,
+            reason: sql`${audit.reason}`,
+            metadata: sql`NULL`,
+            createdAt: sql`CURRENT_TIMESTAMP`,
+          })
+          .from(t)
+          .where(opts.guard)
+          .for('update') as any,
+      )
+      .returning({ id: ca.id });
+
+    const update = this.db
+      .update(t)
+      .set(opts.set)
+      .where(and(opts.guard, exists(this.db.select({ one: sql`1` }).from(ca).where(eq(ca.id, auditId)))))
+      .returning({ id: t.id });
+
+    const [, updated] = await this.db.batch([insertAudit, update]);
+    return updated.length > 0;
+  }
+
   async classifyTransaction(
     txId: string,
     tenantId: string,
@@ -990,16 +1117,18 @@ export class SystemStorage {
     const tx = await this.getTransaction(txId, tenantId);
     if (!tx) return undefined;
 
-    const previousCoaCode = tx.coaCode;
-    const previousSuggested = tx.suggestedCoaCode;
+    const t = schema.transactions;
+    const isSuggestion = Boolean(opts.isSuggestion);
+    const previousCoaCode = tx.coaCode ?? null;
+    const previousSuggested = tx.suggestedCoaCode ?? null;
+    const confidence = opts.confidence ?? null;
     const now = new Date();
 
-    // Decide which fields to update
-    const updateSet = opts.isSuggestion
+    const set = isSuggestion
       ? {
           // L1: write to suggested_coa_code only
           suggestedCoaCode: coaCode,
-          classificationConfidence: opts.confidence ?? null,
+          classificationConfidence: confidence,
           updatedAt: now,
         }
       : {
@@ -1007,69 +1136,50 @@ export class SystemStorage {
           coaCode,
           classifiedBy: opts.actorId,
           classifiedAt: now,
-          classificationConfidence: opts.confidence ?? null,
+          classificationConfidence: confidence,
           updatedAt: now,
         };
 
-    // Reconciled lock: L0/L1/L2 writes must reject rows that were reconciled
-    // between the initial SELECT and this UPDATE. We enforce this inside the
-    // WHERE clause of the UPDATE itself (conditional update) so concurrent
-    // reconciliations can't race us.
-    const canWriteReconciled = opts.trustLevel === 'L3' || opts.trustLevel === 'L4';
-    const whereConditions = canWriteReconciled
-      ? and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId))
-      : and(
-          eq(schema.transactions.id, txId),
-          eq(schema.transactions.tenantId, tenantId),
-          eq(schema.transactions.reconciled, false),
-        );
+    // Guard: tenant scope; reconciled lock (L0/L1/L2 cannot touch reconciled
+    // rows); optimistic concurrency on the value we read as "previous", so
+    // the action label (suggest vs re-suggest, classify vs reclassify) can
+    // never be wrong for the row actually written.
+    const allowReconciled = canWriteReconciled(opts.trustLevel);
+    const guard = and(
+      eq(t.id, txId),
+      eq(t.tenantId, tenantId),
+      allowReconciled ? undefined : eq(t.reconciled, false),
+      isSuggestion ? this.sameAs(t.suggestedCoaCode, previousSuggested) : this.sameAs(t.coaCode, previousCoaCode),
+    );
 
-    // Action label distinguishes suggestion vs authoritative writes
-    // so the audit trail accurately reflects the L1 path.
-    const action = opts.isSuggestion
-      ? previousSuggested
-        ? 're-suggest'
-        : 'suggest'
-      : previousCoaCode
-        ? 'reclassify'
-        : 'classify';
-
-    await this.db.transaction(async (trx) => {
-      // Conditional update — returns the row only if the WHERE matched.
-      // If the row was already reconciled (and caller is L0/L1/L2), this
-      // returns [], letting us throw a ClassificationError and roll back
-      // the audit insert via the transaction boundary.
-      const updated = await trx
-        .update(schema.transactions)
-        .set(updateSet)
-        .where(whereConditions)
-        .returning({ id: schema.transactions.id });
-
-      if (updated.length === 0) {
-        // Distinguish "reconciled lock triggered" vs "row vanished"
-        const current = await trx
-          .select({ id: schema.transactions.id, reconciled: schema.transactions.reconciled })
-          .from(schema.transactions)
-          .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
-        if (current[0]?.reconciled) {
-          throw new ClassificationError('reconciled_locked', 'Transaction is reconciled — only L3/L4 can modify');
-        }
-        throw new ClassificationError('transaction_not_found', 'Transaction not found');
-      }
-
-      await trx.insert(schema.classificationAudit).values({
-        transactionId: txId,
-        tenantId,
-        previousCoaCode: opts.isSuggestion ? (previousSuggested ?? null) : previousCoaCode,
+    const written = await this.guardedWrite({
+      guard,
+      set,
+      audit: {
+        previousCoaCode: isSuggestion ? t.suggestedCoaCode : t.coaCode,
         newCoaCode: coaCode,
-        action,
+        action: selectClassificationAction(isSuggestion, previousSuggested, previousCoaCode),
         trustLevel: opts.trustLevel,
         actorId: opts.actorId,
         actorType: opts.actorType,
-        confidence: opts.confidence ?? null,
+        confidence,
         reason: opts.reason ?? null,
-      });
+      },
     });
+
+    if (!written) {
+      // Nothing was written: the audit insert and the update share a guard.
+      const current = await this.getTransaction(txId, tenantId);
+      const code = diagnoseBlockedClassification(current, opts.trustLevel);
+      throw new ClassificationError(
+        code,
+        code === 'reconciled_locked'
+          ? 'Transaction is reconciled — only L3/L4 can modify'
+          : code === 'transaction_not_found'
+            ? 'Transaction not found'
+            : CONFLICT_MESSAGE,
+      );
+    }
 
     return this.getTransaction(txId, tenantId);
   }
@@ -1085,26 +1195,34 @@ export class SystemStorage {
     if (!coaCode) {
       throw new ClassificationError('not_classified', 'Cannot reconcile — transaction has no COA classification');
     }
+    // Already locked: nothing to do (mirrors unreconciledTransaction), and
+    // avoids a second reconcile audit row for the same lock.
+    if (tx.reconciled) return tx;
 
+    const t = schema.transactions;
     const now = new Date();
 
-    await this.db.transaction(async (trx) => {
-      await trx
-        .update(schema.transactions)
-        .set({ reconciled: true, reconciledBy: actorId, reconciledAt: now, updatedAt: now })
-        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
-
-      await trx.insert(schema.classificationAudit).values({
-        transactionId: txId,
-        tenantId,
-        previousCoaCode: coaCode,
-        newCoaCode: coaCode,
+    const written = await this.guardedWrite({
+      // Still unreconciled and still carrying the coa_code we read.
+      guard: and(eq(t.id, txId), eq(t.tenantId, tenantId), eq(t.reconciled, false), eq(t.coaCode, coaCode)),
+      set: { reconciled: true, reconciledBy: actorId, reconciledAt: now, updatedAt: now },
+      audit: {
+        previousCoaCode: t.coaCode,
+        newCoaCode: t.coaCode,
         action: 'reconcile',
         trustLevel: 'L3',
         actorId,
         actorType: 'user',
-      });
+        confidence: null,
+        reason: null,
+      },
     });
+
+    if (!written) {
+      const current = await this.getTransaction(txId, tenantId);
+      if (!current) throw new ClassificationError('transaction_not_found', 'Transaction not found');
+      throw new ClassificationError('conflict', CONFLICT_MESSAGE);
+    }
 
     return this.getTransaction(txId, tenantId);
   }
@@ -1140,24 +1258,30 @@ export class SystemStorage {
     if (!tx) return undefined;
     if (!tx.reconciled) return tx;
 
+    const t = schema.transactions;
     const now = new Date();
-    await this.db.transaction(async (trx) => {
-      await trx
-        .update(schema.transactions)
-        .set({ reconciled: false, reconciledBy: null, reconciledAt: null, updatedAt: now })
-        .where(and(eq(schema.transactions.id, txId), eq(schema.transactions.tenantId, tenantId)));
 
-      await trx.insert(schema.classificationAudit).values({
-        transactionId: txId,
-        tenantId,
-        previousCoaCode: tx.coaCode,
-        newCoaCode: tx.coaCode ?? '9010',
+    const written = await this.guardedWrite({
+      // Still reconciled and still carrying the coa_code we read.
+      guard: and(eq(t.id, txId), eq(t.tenantId, tenantId), eq(t.reconciled, true), this.sameAs(t.coaCode, tx.coaCode ?? null)),
+      set: { reconciled: false, reconciledBy: null, reconciledAt: null, updatedAt: now },
+      audit: {
+        previousCoaCode: t.coaCode,
+        newCoaCode: sql`COALESCE(${t.coaCode}, '9010')`,
         action: 'unreconcile',
         trustLevel: 'L3',
         actorId,
         actorType: 'user',
-      });
+        confidence: null,
+        reason: null,
+      },
     });
+
+    if (!written) {
+      const current = await this.getTransaction(txId, tenantId);
+      if (!current) throw new ClassificationError('transaction_not_found', 'Transaction not found');
+      throw new ClassificationError('conflict', CONFLICT_MESSAGE);
+    }
 
     return this.getTransaction(txId, tenantId);
   }
