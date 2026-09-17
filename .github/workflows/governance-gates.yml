@@ -25,7 +25,7 @@ jobs:
           violations=0
           # Exact whole-line match: a substring match lets API_KEY pass because
           # OPENAI_API_KEY is listed.
-          allowed=$(grep -vE '^[[:space:]]*(#|$)' "$ALLOWLIST" | tr -d '[:blank:]')
+          allowed=$(sed 's/#.*//' "$ALLOWLIST" | tr -d '[:blank:]' | grep -v '^$' || true)
           shopt -s nullglob
           for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
             while IFS= read -r secret; do
