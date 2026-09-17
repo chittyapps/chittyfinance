@@ -363,7 +363,13 @@ export function getAccountTreatment(code: string): AccountTreatment | undefined 
  * Does this account belong on a profit and loss statement or a tax line?
  * Clearing, control and balance-sheet accounts do not: booking a transfer or a
  * card payment to an expense line is the largest error class in the imported data.
+ *
+ * A null/undefined/unknown code is not P&L: a row carrying no code, or a code that
+ * is not in this chart, cannot be asserted to belong on a return line. Callers on
+ * the ingest path hold `suggested_coa_code`, which is nullable, so the guard lives
+ * here rather than at every call site.
  */
-export function isProfitAndLossAccount(code: string): boolean {
+export function isProfitAndLossAccount(code: string | null | undefined): boolean {
+  if (!code) return false;
   return getAccountTreatment(code) === 'pl';
 }

@@ -4,6 +4,11 @@ import type { HonoEnv } from '../env';
 import { createDb } from '../db/connection';
 import { SystemStorage } from '../storage/system';
 import { findAccountCode } from '../../database/chart-of-accounts';
+import {
+  classifyMercuryInternalTransfer,
+  isMercuryInternalTransfer,
+  type TransactionType,
+} from './transfers';
 import { validateRow } from '../lib/chittyschema';
 import { ledgerLog } from '../lib/ledger-client';
 import { checkLegalPersonBinding, type LegalPersonBindingFlag } from '../lib/legal-person-binding';
@@ -271,10 +276,44 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
 
   const externalId = `mercury:${event.resourceId}`;
 
+  // Transfer detection runs BEFORE keyword classification: Mercury flags both
+  // legs of an internal movement with kind='internalTransfer', and such a row
+  // must never be offered an income or expense code however its bank
+  // description reads (docs/CHART-OF-ACCOUNTS.md §5).
+  const mercuryKind = typeof patch.kind === 'string' ? patch.kind : null;
+  const counterpartyNickname =
+    typeof patch.counterpartyNickname === 'string' ? patch.counterpartyNickname : null;
+  const bankDescription = typeof patch.bankDescription === 'string' ? patch.bankDescription : null;
+
+  // The counterparty account is given as a nickname string, not an id we can
+  // resolve to a tenant, so 1910 is not yet reachable from this path — see the
+  // follow-up note in the PR. `selectTransferClearingCode` returns 1900 when the
+  // counterparty tenant is unknown, which is the documented default.
+  const transferClassification =
+    mercuryKind && isMercuryInternalTransfer(mercuryKind) && postedAt
+      ? classifyMercuryInternalTransfer({
+          tenantId,
+          amount,
+          postedAt,
+          kind: mercuryKind,
+          bankDescription,
+          counterpartyNickname,
+          counterpartyTenantId: null,
+        })
+      : null;
+
   // Auto-classify
-  const suggestedCoaCode = findAccountCode(description);
+  const transactionType: TransactionType = transferClassification
+    ? 'transfer'
+    : amount >= 0
+      ? 'income'
+      : 'expense';
+  const suggestedCoaCode = transferClassification
+    ? transferClassification.suggestedCoaCode
+    : findAccountCode(description);
   const isSuspense = suggestedCoaCode === '9010';
-  const classificationConfidence = isSuspense ? '0.100' : '0.700';
+  // A Mercury-flagged internal transfer is a fact from the bank, not a guess.
+  const classificationConfidence = transferClassification ? '0.950' : isSuspense ? '0.100' : '0.700';
 
   const db = createDb(c.env.DATABASE_URL);
   const storage = new SystemStorage(db);
@@ -335,7 +374,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     tenantId,
     accountId,
     amount: String(amount),
-    type: amount >= 0 ? 'income' : 'expense',
+    type: transactionType,
     description,
     date: postedAt ?? new Date().toISOString(),
     externalId,
@@ -349,7 +388,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     tenantId,
     accountId,
     amount: String(amount),
-    type: amount >= 0 ? 'income' : 'expense',
+    type: transactionType,
     category: null,
     description,
     date: postedAt ? new Date(postedAt) : new Date(),
@@ -363,6 +402,9 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
       mercuryAccountId,
       eventId: event.id,
       operationType: event.operationType,
+      // Both legs of one movement carry the same transfer_group, so the pair can
+      // be matched later even though their Mercury ids differ.
+      ...(transferClassification?.metadata ?? {}),
     },
   });
 
@@ -373,8 +415,10 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
       tenantId,
       accountId,
       transactionId: created.id,
+      transactionType,
       suggestedCoaCode,
       confidence: classificationConfidence,
+      transferGroup: transferClassification?.transferGroup ?? null,
       schemaAdvisory: schemaResult.advisory,
       schemaValid: schemaResult.ok,
       reconciliationFlag: bindingFlag,
@@ -384,8 +428,10 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   return c.json({
     received: true,
     transactionId: created.id,
+    type: transactionType,
     suggestedCoaCode,
     classificationConfidence,
+    transferGroup: transferClassification?.transferGroup ?? null,
     schemaAdvisory: schemaResult.advisory,
     reconciliationFlags: bindingFlag ? [bindingFlag] : [],
   }, 201);
