@@ -23,16 +23,20 @@ jobs:
             exit 1
           fi
           violations=0
-          for wf in .github/workflows/*.yml; do
+          # Exact whole-line match: a substring match lets API_KEY pass because
+          # OPENAI_API_KEY is listed.
+          allowed=$(grep -vE '^[[:space:]]*(#|$)' "$ALLOWLIST" | tr -d '[:blank:]')
+          shopt -s nullglob
+          for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
             while IFS= read -r secret; do
               secret=$(echo "$secret" | xargs)
               [ -z "$secret" ] && continue
               [[ "$secret" == \#* ]] && continue
-              if ! grep -q "$secret" "$ALLOWLIST"; then
+              if ! grep -qxF -- "$secret" <<<"$allowed"; then
                 echo "::error file=$wf::Secret '$secret' referenced but not in allowlist"
                 violations=$((violations + 1))
               fi
-            done < <(grep -oP 'secrets\.\K[A-Z_]+' "$wf" 2>/dev/null | sort -u || true)
+            done < <(grep -oP 'secrets\.\K[A-Z0-9_]+' "$wf" 2>/dev/null | sort -u || true)
           done
           if [ "$violations" -gt 0 ]; then
             echo "::error::$violations secret policy violation(s) found"
