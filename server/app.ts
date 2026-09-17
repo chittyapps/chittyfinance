@@ -39,6 +39,7 @@ import { chittyIdAuthRoutes } from './routes/chittyid-auth';
 import { allocationRoutes } from './accounting/allocations';
 import { classificationRoutes } from './routes/classification';
 import { emailRoutes } from './routes/email';
+import { vendorChargeRoutes } from './routes/vendor-charge';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -102,6 +103,7 @@ export function createApp() {
     '/api/integrations', '/api/tasks', '/api/ai-messages', '/api/ai', '/api/summary',
     '/api/mercury', '/api/github', '/api/charges', '/api/forensics', '/api/portfolio', '/api/import', '/api/reports',
     '/api/google', '/api/comms', '/api/workflows', '/api/leases', '/api/coa', '/api/classification', '/mcp',
+    '/api/vendor-charge',
   ];
   app.use('/api/tenants', ...authAndContext);
   app.use('/api/tenants/*', ...authAndContext);
@@ -133,6 +135,7 @@ export function createApp() {
   app.route('/', allocationRoutes);
   app.route('/', classificationRoutes);
   app.route('/', emailRoutes);
+  app.route('/', vendorChargeRoutes);
   app.route('/', googleRoutes);
   app.route('/', commsRoutes);
   app.route('/', workflowRoutes);
