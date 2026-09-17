@@ -98,6 +98,13 @@ export function transferGroupKey(params: {
   return `${magnitude}|${params.postedAt.trim()}`;
 }
 
+/** A transfer with no usable `postedAt` cannot be paired. It is still a
+ *  transfer — it is booked to clearing with no `transfer_group` and surfaces as
+ *  an ungrouped leg, never as income or expense. */
+export function canDeriveTransferGroup(postedAt: string | null | undefined): boolean {
+  return typeof postedAt === 'string' && postedAt.trim().length > 0;
+}
+
 /** FNV-1a (32-bit, two rounds → 16 hex chars). Synchronous and dependency-free,
  *  so it runs identically in Workers and in tests. Not a security primitive —
  *  this is a grouping key, never an authorization token. */
@@ -125,7 +132,9 @@ export function transferGroupId(params: { amount: number; postedAt: string }): s
 export interface TransferClassification {
   type: 'transfer';
   suggestedCoaCode: string;
-  transferGroup: string;
+  /** Null when `postedAt` was absent — the leg cannot be paired, but it is
+   *  still a transfer and is still kept off the P&L. */
+  transferGroup: string | null;
   /** Merge into the row's `metadata` column. */
   metadata: Record<string, unknown>;
 }
@@ -138,13 +147,17 @@ export interface TransferClassification {
 export function classifyMercuryInternalTransfer(params: {
   tenantId: string;
   amount: number;
-  postedAt: string;
+  /** Null when the event carried no timestamp — the leg is then ungroupable,
+   *  but still a transfer. */
+  postedAt: string | null | undefined;
   kind: string;
   bankDescription?: string | null;
   counterpartyNickname?: string | null;
   counterpartyTenantId?: string | null;
 }): TransferClassification {
-  const transferGroup = transferGroupId({ amount: params.amount, postedAt: params.postedAt });
+  const transferGroup = canDeriveTransferGroup(params.postedAt)
+    ? transferGroupId({ amount: params.amount, postedAt: params.postedAt as string })
+    : null;
   const suggestedCoaCode = selectTransferClearingCode({
     tenantId: params.tenantId,
     counterpartyTenantId: params.counterpartyTenantId,
@@ -155,7 +168,7 @@ export function classifyMercuryInternalTransfer(params: {
     suggestedCoaCode,
     transferGroup,
     metadata: {
-      transfer_group: transferGroup,
+      ...(transferGroup ? { transfer_group: transferGroup } : {}),
       transfer_direction: params.amount >= 0 ? 'in' : 'out',
       mercury_kind: params.kind,
       bank_description: params.bankDescription ?? null,

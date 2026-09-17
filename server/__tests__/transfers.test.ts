@@ -10,6 +10,7 @@ import {
   isTransactionType,
   isTransferClearingCode,
   isTransferType,
+  canDeriveTransferGroup,
   selectTransferClearingCode,
   transferGroupId,
   transferGroupKey,
@@ -141,6 +142,42 @@ describe('1900 vs 1910 selection', () => {
     expect(classified.metadata.counterparty_nickname).toBe(LEG_OUT.counterpartyNickname);
     expect(classified.metadata.transfer_group).toBe(classified.transferGroup);
     expect(classified.metadata.transfer_direction).toBe('out');
+  });
+});
+
+describe('a transfer with no postedAt is still a transfer', () => {
+  it('books to clearing with no transfer_group rather than falling back to income/expense', () => {
+    const classified = classifyMercuryInternalTransfer({
+      tenantId: TENANT_A,
+      amount: 4250,
+      postedAt: null,
+      kind: 'internalTransfer',
+      bankDescription: 'Transfer from Rental Income',
+      counterpartyNickname: 'Rental Income - City 3372',
+    });
+    expect(classified.type).toBe('transfer');
+    expect(classified.suggestedCoaCode).toBe(TRANSFER_CLEARING_INTRA_ENTITY);
+    expect(classified.transferGroup).toBeNull();
+    expect(classified.metadata.transfer_group).toBeUndefined();
+    // Still recorded, so the row is traceable back to the bank fact.
+    expect(classified.metadata.mercury_kind).toBe('internalTransfer');
+  });
+
+  it('canDeriveTransferGroup rejects empty and missing timestamps', () => {
+    expect(canDeriveTransferGroup('2026-03-14T18:22:09.481732Z')).toBe(true);
+    expect(canDeriveTransferGroup('')).toBe(false);
+    expect(canDeriveTransferGroup('   ')).toBe(false);
+    expect(canDeriveTransferGroup(null)).toBe(false);
+    expect(canDeriveTransferGroup(undefined)).toBe(false);
+  });
+
+  it('surfaces as an ungrouped leg in the clearing check, never silently balanced', () => {
+    const result = checkTransferClearingBalance([
+      leg({ id: 'no-timestamp', amount: '4250.00', metadata: { mercury_kind: 'internalTransfer' } }),
+    ]);
+    expect(result.legCount).toBe(1);
+    expect(result.ungroupedRows.map((r) => r.id)).toEqual(['no-timestamp']);
+    expect(result.balanced).toBe(false);
   });
 });
 

@@ -86,6 +86,13 @@ const normalizedTransactionSchema = z.object({
   category: z.string().optional().nullable(),
   postedAt: z.string(),
   payee: z.string().optional().nullable(),
+  // Transfer detection. ChittyConnect does not forward these today, so both are
+  // optional and the path behaves exactly as before when they are absent. When
+  // ChittyConnect starts forwarding Mercury's `kind`, internal transfers are
+  // detected here too without a second change.
+  kind: z.string().optional().nullable(),
+  counterpartyNickname: z.string().optional().nullable(),
+  bankDescription: z.string().optional().nullable(),
 });
 
 const normalizedEnvelopeSchema = z.object({
@@ -289,8 +296,13 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   // resolve to a tenant, so 1910 is not yet reachable from this path — see the
   // follow-up note in the PR. `selectTransferClearingCode` returns 1900 when the
   // counterparty tenant is unknown, which is the documented default.
+  // The bank's `kind` decides the TYPE; only the grouping key depends on
+  // postedAt. A known internal transfer with no postedAt is still a transfer —
+  // falling back to income/expense there would reintroduce exactly this bug. It
+  // is booked to 1900 with no transfer_group, and surfaces in the clearing
+  // check's `ungroupedRows` as a leg that cannot be paired.
   const transferClassification =
-    mercuryKind && isMercuryInternalTransfer(mercuryKind) && postedAt
+    mercuryKind && isMercuryInternalTransfer(mercuryKind)
       ? classifyMercuryInternalTransfer({
           tenantId,
           amount,
@@ -474,16 +486,37 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     return c.json({ received: true }, 202);
   }
 
-  const suggestedCoaCode = findAccountCode(tx.description, tx.category ?? undefined);
+  // Same rule as the native path: Mercury's own `kind` decides, and an internal
+  // movement is never offered an income or expense code.
+  const transferClassification = isMercuryInternalTransfer(tx.kind)
+    ? classifyMercuryInternalTransfer({
+        tenantId: tx.tenantId,
+        amount: tx.amount,
+        postedAt: tx.postedAt,
+        kind: tx.kind as string,
+        bankDescription: tx.bankDescription ?? null,
+        counterpartyNickname: tx.counterpartyNickname ?? null,
+        counterpartyTenantId: null,
+      })
+    : null;
+
+  const transactionType: TransactionType = transferClassification
+    ? 'transfer'
+    : tx.amount >= 0
+      ? 'income'
+      : 'expense';
+  const suggestedCoaCode = transferClassification
+    ? transferClassification.suggestedCoaCode
+    : findAccountCode(tx.description, tx.category ?? undefined);
   const isSuspense = suggestedCoaCode === '9010';
-  const classificationConfidence = isSuspense ? '0.100' : '0.700';
+  const classificationConfidence = transferClassification ? '0.950' : isSuspense ? '0.100' : '0.700';
   const externalId = `mercury:${tx.mercuryTransactionId}`;
 
   const schemaResult = await validateRow(c.env, 'FinancialTransactionsInsertSchema', {
     tenantId: tx.tenantId,
     accountId: tx.accountId,
     amount: String(tx.amount),
-    type: tx.amount >= 0 ? 'income' : 'expense',
+    type: transactionType,
     description: tx.description,
     date: tx.postedAt,
     externalId,
@@ -518,7 +551,7 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     tenantId: tx.tenantId,
     accountId: tx.accountId,
     amount: String(tx.amount),
-    type: tx.amount >= 0 ? 'income' : 'expense',
+    type: transactionType,
     category: tx.category ?? null,
     description: tx.description,
     date: new Date(tx.postedAt),
@@ -526,7 +559,12 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     externalId,
     suggestedCoaCode,
     classificationConfidence,
-    metadata: { source: 'mercury_webhook', mercuryTransactionId: tx.mercuryTransactionId, eventId },
+    metadata: {
+      source: 'mercury_webhook',
+      mercuryTransactionId: tx.mercuryTransactionId,
+      eventId,
+      ...(transferClassification?.metadata ?? {}),
+    },
   });
 
   ledgerLog(c, {
