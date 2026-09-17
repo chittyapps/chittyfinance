@@ -48,8 +48,9 @@ Measured against production Neon on 2026-09-17: 12,522 transactions, 80 accounts
    Whether ARIBIA answers "Yes" is the preparer's call; either way none of these accounts
    reaches an 8825 or Schedule E line.
 2. **One dimension per field.** An account code says *what kind of money movement* this
-   is. It never encodes which property, which entity, or what state a row is in. Those
-   are `property_id`, `unit_id`, `tenant_id` and the classification fields.
+   is. It never encodes which property, which entity, or what state a row is in. Property
+   is `property_id` / `unit_id`, state is the classification fields, and `tenant_id` is
+   the **data scope** — *not* the legal entity, which has no field today (§9).
 3. **Every emitted code must exist.** Importers may only emit codes in this document,
    validated with `getAccountByCode()`. COA 3200 — a code no account ever had — reached
    1,199 live rows because nothing enforced this (remediated in #149).
@@ -127,7 +128,7 @@ accounts is what makes the two destinations separable at filing time.
 
 ## 3. Income accounts
 
-| Code | Name | 8825 | Sch E | Note |
+| Code | Name | 8825 | Sch E I (direct) | Note |
 |---|---|---|---|---|
 | 4000 | Rental Income - Long-Term | 2a | 3 | Unfurnished, year-length leases |
 | 4005 | Rental Income — Mid-Term Furnished | 2a | 3 | NEW. The core business: furnished stays of 30+ days |
@@ -227,9 +228,10 @@ utilities-included structure, not to change the schedule. Average stay is proven
 
 ## 4. Expense accounts
 
-Ordered by Form 8825 line. "E" is the Schedule E line.
+Ordered by Form 8825 line. "E I" is the Schedule E **Part I** line for a directly held
+property — not ARIBIA's destination as a partnership; see §2.
 
-| Code | Name | 8825 | E | Note |
+| Code | Name | 8825 | E I (direct) | Note |
 |---|---|---|---|---|
 | 5000 | Advertising | 3 | 5 | |
 | 5010 | Auto & Travel | 4 | 6 | Mileage log required |
