@@ -28,6 +28,21 @@ export function isTransferType(value: unknown): boolean {
 export const TRANSFER_CLEARING_INTRA_ENTITY = '1900';
 export const TRANSFER_CLEARING_INTERCOMPANY = '1910';
 
+/**
+ * The two codes the net-to-zero assertion runs over — and deliberately NOT the
+ * same list as `TRANSFER_CLEARING_CODES` in `database/chart-of-accounts.ts`,
+ * which also carries 1920 Payment Rail Holding.
+ *
+ * The two constants answer different questions. The chart's list is "which
+ * accounts carry `transfer` treatment", used to keep them off every P&L and
+ * return line (§14). This list is "which accounts must net to zero per period"
+ * (§6 step 5). 1920 holds a Venmo/Zelle/cash movement while the far side is
+ * still unknown, so it may have no sibling leg and no counterparty inside the
+ * group — asserting it nets to zero would fail on correct data.
+ *
+ * docs/CHART-OF-ACCOUNTS.md §6 documents this divergence by name and states the
+ * two lists are not expected to be equal. Do not "fix" one to match the other.
+ */
 export const TRANSFER_CLEARING_CODES: readonly string[] = [
   TRANSFER_CLEARING_INTRA_ENTITY,
   TRANSFER_CLEARING_INTERCOMPANY,

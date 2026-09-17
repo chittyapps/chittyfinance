@@ -1,4 +1,3 @@
-import { isTransferType } from '../books/transfers';
 /**
  * Tax reporting engine for ChittyFinance.
  * Pure functions — no DB calls, no side effects.
@@ -14,6 +13,7 @@ import {
   isProfitAndLossAccount,
   type AccountDefinition,
 } from '../../database/chart-of-accounts';
+import { isTransferType } from '../books/transfers';
 import type { ReportingTransactionRow } from './consolidated-reporting';
 
 // ── IRS Schedule E line labels ──
