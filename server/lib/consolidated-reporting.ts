@@ -1,3 +1,5 @@
+import { isProfitAndLossAccount } from '../../database/chart-of-accounts';
+
 type NumberLike = string | number | null | undefined;
 
 const NON_DEDUCTIBLE_EXPENSE_CATEGORIES = new Set([
@@ -60,6 +62,13 @@ export interface ConsolidatedReportOptions extends TaxRateConfig {
 export interface ReportQuality {
   totalTransactions: number;
   uncategorizedTransactions: number;
+  /**
+   * Rows excluded from every income and expense total because their COA code is
+   * not a profit-and-loss account — clearing (1900-1920), control and suspense
+   * (9000-9040), capitalized improvements (7000-7040). Rows carrying no
+   * `coa_code` at all are untouched: there is nothing to gate on.
+   */
+  nonPLExcludedTransactions: number;
   unreconciledTransactions: number;
   unassignedStateTransactions: number;
   futureDatedTransactions: number;
@@ -172,6 +181,7 @@ export function buildConsolidatedReport(params: {
   const quality: ReportQuality = {
     totalTransactions: 0,
     uncategorizedTransactions: 0,
+    nonPLExcludedTransactions: 0,
     unreconciledTransactions: 0,
     unassignedStateTransactions: 0,
     futureDatedTransactions: 0,
@@ -201,6 +211,16 @@ export function buildConsolidatedReport(params: {
 
     const rawAmount = amount(tx.amount);
     const absAmount = Math.abs(rawAmount);
+
+    // Gate on the ACCOUNT. A balance-sheet, clearing or control code is not a P&L
+    // event, so it must not reach income, expenses or the deductible split — a
+    // card payment booked as an expense is the largest error class in this data
+    // (docs/CHART-OF-ACCOUNTS.md §6). Rows with no coa_code keep their existing
+    // treatment; there is nothing to decide from.
+    if (tx.coaCode && !isProfitAndLossAccount(tx.coaCode)) {
+      quality.nonPLExcludedTransactions += 1;
+      continue;
+    }
 
     if (!entityMap.has(tx.tenantId)) {
       entityMap.set(tx.tenantId, {

@@ -10,6 +10,7 @@ import {
   findAccountCode,
   getScheduleELine,
   getAccountByCode,
+  isProfitAndLossAccount,
   type AccountDefinition,
 } from '../../database/chart-of-accounts';
 import type { ReportingTransactionRow } from './consolidated-reporting';
@@ -137,6 +138,19 @@ export interface ClassificationQuality {
   readyToFile: boolean;
 }
 
+/**
+ * A P&L account that maps to no Schedule E / Form 8825 rental line — management
+ * income (4070), other business income (4080) and interest income (4100) are
+ * Form 1065 page 1 / Schedule K portfolio items, not rents. Surfaced here so the
+ * money is visible rather than silently dropped, and never summed into Line 3.
+ */
+export interface NonRentalItem {
+  coaCode: string;
+  coaName: string;
+  amount: number;
+  transactionCount: number;
+}
+
 export interface ScheduleEReport {
   taxYear: number;
   properties: ScheduleEPropertyColumn[];
@@ -145,6 +159,18 @@ export interface ScheduleEReport {
   uncategorizedAmount: number;
   uncategorizedCount: number;
   unmappedCategories: string[];
+  /** Income that is not rental income. Reported beside the form, never on it. */
+  nonRentalItems: NonRentalItem[];
+  nonRentalTotal: number;
+  /**
+   * Rows whose account reaches no return line at all — clearing (1900-1920),
+   * control and suspense (9000-9040) and capital improvements (7000-7040).
+   * Counted, not hidden: suspense alone is ~48% of the production table, and a
+   * report that drops half its rows must say so.
+   */
+  excludedNonPLCount: number;
+  /** Gross magnitude of those rows (|amount| across income and expense alike), not an expense figure. */
+  excludedNonPLAmount: number;
   /** Aggregated line totals across all properties (what you file on the form). */
   lineSummary: ScheduleELineSummaryItem[];
   /** Classification trust-path quality stats. */
@@ -287,6 +313,11 @@ export function buildScheduleEReport(params: {
   let uncategorizedCount = 0;
   const unmappedSet = new Set<string>();
 
+  // Money that reaches no Schedule E line, kept visible rather than defaulted onto one.
+  const nonRentalAgg = new Map<string, { amount: number; count: number }>();
+  let excludedNonPLCount = 0;
+  let excludedNonPLAmount = 0;
+
   // Classification quality counters — track every transaction that makes it
   // into this report, regardless of property attribution. This is what the
   // filer uses to decide whether the report is safe to file.
@@ -303,9 +334,12 @@ export function buildScheduleEReport(params: {
   for (const tx of transactions) {
     const rawAmount = amount(tx.amount);
     const absAmount = Math.abs(rawAmount);
-    const { lineNumber, coaCode } = resolveScheduleELine(tx.category, tx.description, tx.coaCode);
+    const { coaCode } = resolveScheduleELine(tx.category, tx.description, tx.coaCode);
 
-    // Track unmapped categories (hit suspense 9010)
+    // Track unmapped categories (hit suspense 9010). This runs before the treatment
+    // gate below: 9010 is a control account, and gating first would empty
+    // unmappedCategories and uncategorizedAmount — the signals that tell the filer
+    // how much of the report is unclassified.
     if (coaCode === '9010' && tx.category) {
       unmappedSet.add(tx.category);
       uncategorizedAmount += absAmount;
@@ -313,54 +347,19 @@ export function buildScheduleEReport(params: {
     }
 
     const propId = (tx as any).propertyId as string | null;
-    let contributed = false;
+    const attributed = Boolean(propId && propertyMap.has(propId));
 
-    if (propId && propertyMap.has(propId)) {
-      // Property-attributed transaction → Schedule E property column
-      if (!propertyLines.has(propId)) {
-        propertyLines.set(propId, new Map());
-      }
-      const lines = propertyLines.get(propId)!;
-      const key = tx.type === 'income' ? 'Line 3' : lineNumber;
-      const existing = lines.get(key) || { amount: 0, count: 0 };
-      existing.amount += tx.type === 'income' ? rawAmount : absAmount;
-      existing.count += 1;
-      lines.set(key, existing);
-      contributed = true;
-    } else {
-      // No property attribution — only include in Schedule E entity-level
-      // if the transaction's tenant is NOT a partnership type (those go to Form 1065)
+    if (!attributed) {
+      // No property attribution — belongs to Schedule E entity-level only if the
+      // transaction's tenant is NOT a partnership type (those go to Form 1065).
       const txTenantType = tenantTypeMap.get(tx.tenantId) || '';
-      if (partnershipTypes.has(txTenantType)) {
-        continue; // Skip — will be reported on Form 1065 instead
-      }
-      const key = tx.type === 'income' ? 'Line 3' : lineNumber;
-      const existing = entityLines.get(key) || { amount: 0, count: 0 };
-      existing.amount += tx.type === 'income' ? rawAmount : absAmount;
-      existing.count += 1;
-      entityLines.set(key, existing);
-      contributed = true;
+      if (partnershipTypes.has(txTenantType)) continue;
     }
 
-    if (!contributed) continue;
-
-    // Roll up into cross-property line summary (amount sign-normalized:
-    // income positive, expenses positive magnitudes)
-    const summaryKey = tx.type === 'income' ? 'Line 3' : lineNumber;
-    let summaryBucket = lineSummaryAgg.get(summaryKey);
-    if (!summaryBucket) {
-      summaryBucket = { amount: 0, count: 0, coaBreakdown: new Map() };
-      lineSummaryAgg.set(summaryKey, summaryBucket);
-    }
-    const normalized = tx.type === 'income' ? rawAmount : absAmount;
-    summaryBucket.amount += normalized;
-    summaryBucket.count += 1;
-    const coaBucket = summaryBucket.coaBreakdown.get(coaCode) || { amount: 0, count: 0 };
-    coaBucket.amount += normalized;
-    coaBucket.count += 1;
-    summaryBucket.coaBreakdown.set(coaCode, coaBucket);
-
-    // Classification quality tally — one bucket per contributing transaction
+    // Classification quality tallies every row this report is responsible for,
+    // including the ones excluded below. An unclassified row resolves to 9010 and is
+    // excluded from the tax lines; counting it here too would let the report claim
+    // 100% confirmed while half its rows had never been reviewed.
     contributingTxCount += 1;
     const hasL2 = Boolean(tx.coaCode);
     const hasL1 = Boolean(tx.suggestedCoaCode);
@@ -372,6 +371,61 @@ export function buildScheduleEReport(params: {
     } else {
       unclassifiedCount += 1;
     }
+
+    // The account decides the line, not the transaction type. Clearing, control and
+    // suspense, and capitalized improvements reach no return line; the `|| 'Line 19'`
+    // fallback in resolveScheduleELine would otherwise file all of them as deductible
+    // "Other" — including 9010, which is ~48% of the production table.
+    if (!isProfitAndLossAccount(coaCode)) {
+      excludedNonPLCount += 1;
+      excludedNonPLAmount += absAmount;
+      continue;
+    }
+
+    // A P&L account with no Schedule E line is not rental income: 4070 management
+    // income, 4080 other business income and 4100 interest are Form 1065 page 1 /
+    // Schedule K items. Report them beside the form rather than as rents received.
+    const accountLine = getScheduleELine(coaCode);
+    if (!accountLine) {
+      const bucket = nonRentalAgg.get(coaCode) || { amount: 0, count: 0 };
+      bucket.amount += tx.type === 'income' ? rawAmount : absAmount;
+      bucket.count += 1;
+      nonRentalAgg.set(coaCode, bucket);
+      continue;
+    }
+
+    const signed = tx.type === 'income' ? rawAmount : absAmount;
+
+    if (attributed) {
+      // Property-attributed transaction → Schedule E property column
+      if (!propertyLines.has(propId!)) {
+        propertyLines.set(propId!, new Map());
+      }
+      const lines = propertyLines.get(propId!)!;
+      const existing = lines.get(accountLine) || { amount: 0, count: 0 };
+      existing.amount += signed;
+      existing.count += 1;
+      lines.set(accountLine, existing);
+    } else {
+      const existing = entityLines.get(accountLine) || { amount: 0, count: 0 };
+      existing.amount += signed;
+      existing.count += 1;
+      entityLines.set(accountLine, existing);
+    }
+
+    // Roll up into cross-property line summary (amount sign-normalized:
+    // income positive, expenses positive magnitudes)
+    let summaryBucket = lineSummaryAgg.get(accountLine);
+    if (!summaryBucket) {
+      summaryBucket = { amount: 0, count: 0, coaBreakdown: new Map() };
+      lineSummaryAgg.set(accountLine, summaryBucket);
+    }
+    summaryBucket.amount += signed;
+    summaryBucket.count += 1;
+    const coaBucket = summaryBucket.coaBreakdown.get(coaCode) || { amount: 0, count: 0 };
+    coaBucket.amount += signed;
+    coaBucket.count += 1;
+    summaryBucket.coaBreakdown.set(coaCode, coaBucket);
   }
 
   // Build property columns
@@ -489,6 +543,15 @@ export function buildScheduleEReport(params: {
     readyToFile: contributingTxCount === 0 || confirmedPct >= 95,
   };
 
+  const nonRentalItems: NonRentalItem[] = Array.from(nonRentalAgg.entries())
+    .map(([coaCode, data]) => ({
+      coaCode,
+      coaName: getAccountByCode(coaCode)?.name || 'Unknown',
+      amount: round2(data.amount),
+      transactionCount: data.count,
+    }))
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+
   return {
     taxYear,
     properties: propertyColumns,
@@ -497,6 +560,10 @@ export function buildScheduleEReport(params: {
     uncategorizedAmount: round2(uncategorizedAmount),
     uncategorizedCount,
     unmappedCategories: Array.from(unmappedSet).sort(),
+    nonRentalItems,
+    nonRentalTotal: round2(nonRentalItems.reduce((sum, i) => sum + i.amount, 0)),
+    excludedNonPLCount,
+    excludedNonPLAmount: round2(excludedNonPLAmount),
     lineSummary,
     classificationQuality,
   };
@@ -705,6 +772,10 @@ export function buildForm1065Report(params: {
       const rawAmount = amount(tx.amount);
       const absAmount = Math.abs(rawAmount);
       const { coaCode, lineNumber } = resolveScheduleELine(tx.category, tx.description, tx.coaCode);
+      // Same account gate as Schedule E: clearing, control/suspense and capitalized
+      // improvements are not income or deductions, and letting them through here
+      // flows straight into netIncome and every member's K-1 allocation.
+      if (!isProfitAndLossAccount(coaCode)) continue;
       const acctDef = getAccountByCode(coaCode);
       const label = acctDef?.name || tx.category || 'Uncategorized';
 
@@ -791,7 +862,12 @@ export function buildTaxPackage(params: {
   form1065: Form1065Report[];
   transactionCount: number;
 }): TaxPackage {
+  // nonRentalTotal is income that carries no Schedule E line (4070, 4080, 4100) and
+  // therefore no longer reaches a property column. It is still income: leaving it
+  // out of the package summary would understate the year by exactly the amount the
+  // form correctly refuses to report.
   const totalIncome = params.scheduleE.properties.reduce((s, p) => s + p.totalIncome, 0)
+    + params.scheduleE.nonRentalTotal
     + params.form1065.reduce((s, r) => s + r.ordinaryIncome, 0);
   const totalExpenses = params.scheduleE.properties.reduce((s, p) => s + p.totalExpenses, 0)
     + params.form1065.reduce((s, r) => s + r.totalDeductions, 0);
@@ -869,6 +945,26 @@ export function serializeScheduleECsv(report: ScheduleEReport): string {
     for (const item of report.entityLevelItems) {
       rows.push([item.lineNumber, item.lineLabel, item.amount.toFixed(2)].map(csvEscape).join(','));
     }
+  }
+
+  // Money that is real but reaches no Schedule E line. Rendered here because the
+  // CSV is the artifact a preparer actually receives: excluding an amount from the
+  // form and then omitting it from the export is the same silent drop, moved.
+  if (report.nonRentalItems.length > 0) {
+    rows.push('');
+    rows.push('Not rental income — Form 1065 page 1 / Schedule K, not reported on this form');
+    rows.push(['COA Code', 'Account', 'Amount'].join(','));
+    for (const item of report.nonRentalItems) {
+      rows.push([item.coaCode, item.coaName, item.amount.toFixed(2)].map(csvEscape).join(','));
+    }
+    rows.push(['', 'Total', report.nonRentalTotal.toFixed(2)].map(csvEscape).join(','));
+  }
+
+  if (report.excludedNonPLCount > 0) {
+    rows.push('');
+    rows.push(
+      `EXCLUDED: ${report.excludedNonPLCount} transactions ($${report.excludedNonPLAmount.toFixed(2)} gross) sit in clearing, control/suspense or capitalized-improvement accounts and reach no return line. Clear them before filing.`,
+    );
   }
 
   // Warnings

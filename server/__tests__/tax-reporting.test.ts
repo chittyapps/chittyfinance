@@ -133,10 +133,10 @@ describe('buildScheduleEReport — line summary', () => {
     { id: 'p-b', tenantId: 't-b', name: 'Property B', address: 'B', state: 'IL' },
   ];
 
-  it('aggregates Line 14 (Repairs + Cleaning) across multiple properties with per-COA breakdown', () => {
-    // Note: per database/chart-of-accounts.ts, both 5070 (Repairs) and
-    // 5020 (Cleaning & Maintenance) map to Schedule E Line 14, so they
-    // should aggregate under the same summary row with a 2-entry breakdown.
+  it('aggregates Line 14 (Repairs) across multiple properties and keeps Cleaning on Line 7', () => {
+    // Schedule E Part I separates these: line 14 is Repairs (5070), line 7 is
+    // Cleaning and maintenance (5020). They previously shared line 14 in the
+    // projection, which was wrong — see docs/CHART-OF-ACCOUNTS.md §4.
     const transactions: ReportingTransactionRow[] = [
       { ...baseTx, id: 'r1', tenantId: 't-a', amount: '-150.00', type: 'expense', category: 'Repairs', date: '2024-03-01', propertyId: 'p-a' } as any,
       { ...baseTx, id: 'r2', tenantId: 't-b', amount: '-250.00', type: 'expense', category: 'Repairs', date: '2024-04-01', propertyId: 'p-b' } as any,
@@ -147,19 +147,19 @@ describe('buildScheduleEReport — line summary', () => {
 
     const line14 = report.lineSummary.find((l) => l.lineNumber === 'Line 14');
     expect(line14).toBeDefined();
-    expect(line14!.amount).toBe(500); // 150 + 250 + 100
-    expect(line14!.transactionCount).toBe(3);
-    expect(line14!.coaBreakdown).toHaveLength(2);
-
-    // Breakdown sorted by amount descending — Repairs (400) > Cleaning (100)
+    expect(line14!.amount).toBe(400); // 150 + 250, both Repairs
+    expect(line14!.transactionCount).toBe(2);
+    expect(line14!.coaBreakdown).toHaveLength(1);
     expect(line14!.coaBreakdown[0].coaCode).toBe('5070');
     expect(line14!.coaBreakdown[0].coaName).toBe('Repairs');
     expect(line14!.coaBreakdown[0].amount).toBe(400);
     expect(line14!.coaBreakdown[0].transactionCount).toBe(2);
 
-    expect(line14!.coaBreakdown[1].coaCode).toBe('5020');
-    expect(line14!.coaBreakdown[1].amount).toBe(100);
-    expect(line14!.coaBreakdown[1].transactionCount).toBe(1);
+    const line7 = report.lineSummary.find((l) => l.lineNumber === 'Line 7');
+    expect(line7).toBeDefined();
+    expect(line7!.amount).toBe(100);
+    expect(line7!.coaBreakdown).toHaveLength(1);
+    expect(line7!.coaBreakdown[0].coaCode).toBe('5020');
   });
 
   it('groups multiple COA codes under the same Schedule E line (Line 17 utilities)', () => {
@@ -598,5 +598,188 @@ describe('taxRoutes', () => {
 
     const res = await app.request('/api/reports/tax/schedule-e?taxYear=abc', {}, env);
     expect(res.status).toBe(400);
+  });
+});
+
+// ── The account decides the line, not the transaction type ──
+
+describe('buildScheduleEReport — the account decides the line', () => {
+  const baseTx = {
+    tenantId: 't-acct',
+    tenantName: 'ARIBIA',
+    tenantType: 'property',
+    tenantMetadata: {},
+    reconciled: true,
+    metadata: {},
+    propertyState: 'IL',
+    category: null,
+    description: '',
+    date: '2024-06-01',
+    propertyId: 'p-acct',
+  };
+  const properties = [{ id: 'p-acct', tenantId: 't-acct', name: 'City Studio', address: '550 W Surf C211', state: 'IL' }];
+  const tenants = [{ id: 't-acct', name: 'ARIBIA', type: 'property', metadata: {} }];
+
+  const run = (transactions: ReportingTransactionRow[]) =>
+    buildScheduleEReport({ taxYear: 2024, transactions, properties, tenants });
+
+  it('keeps cleaning (Line 7) and commissions (Line 8) in different buckets', () => {
+    // Schedule E line 7 is Cleaning and maintenance; line 8 is Commissions. While
+    // 5030 carried 'Line 7' the two merged and line 8 reported zero.
+    const report = run([
+      { ...baseTx, id: 'clean', amount: '-400.00', type: 'expense', coaCode: '5020' } as any,
+      { ...baseTx, id: 'comm', amount: '-1500.00', type: 'expense', coaCode: '5030' } as any,
+    ]);
+
+    const line7 = report.lineSummary.find((l) => l.lineNumber === 'Line 7');
+    const line8 = report.lineSummary.find((l) => l.lineNumber === 'Line 8');
+
+    expect(line7?.lineLabel).toBe('Cleaning and maintenance');
+    expect(line7?.amount).toBe(400);
+    expect(line7?.coaBreakdown.map((c) => c.coaCode)).toEqual(['5020']);
+
+    expect(line8?.lineLabel).toBe('Commissions');
+    expect(line8?.amount).toBe(1500);
+    expect(line8?.coaBreakdown.map((c) => c.coaCode)).toEqual(['5030']);
+  });
+
+  it('reports rental income on the line its own account maps to', () => {
+    const report = run([
+      { ...baseTx, id: 'rent', amount: '3000.00', type: 'income', coaCode: '4005' } as any,
+      { ...baseTx, id: 'pet', amount: '250.00', type: 'income', coaCode: '4020' } as any,
+    ]);
+    const line3 = report.lineSummary.find((l) => l.lineNumber === 'Line 3');
+    expect(line3?.amount).toBe(3250);
+    expect(report.nonRentalItems).toEqual([]);
+    expect(report.nonRentalTotal).toBe(0);
+  });
+
+  it('keeps non-rental income off the rental form and reports it separately', () => {
+    // 4070, 4080 and 4100 deliberately carry no Schedule E or Form 8825 line: they
+    // are Form 1065 page 1 / Schedule K items. Filing them as rents received
+    // overstates rental income and understates ordinary business income.
+    const report = run([
+      { ...baseTx, id: 'rent', amount: '3000.00', type: 'income', coaCode: '4000' } as any,
+      { ...baseTx, id: 'mgmt', amount: '900.00', type: 'income', coaCode: '4070' } as any,
+      { ...baseTx, id: 'kdp', amount: '120.00', type: 'income', coaCode: '4080' } as any,
+      { ...baseTx, id: 'int', amount: '15.00', type: 'income', coaCode: '4100' } as any,
+    ]);
+
+    const line3 = report.lineSummary.find((l) => l.lineNumber === 'Line 3');
+    expect(line3?.amount).toBe(3000);
+    expect(line3?.coaBreakdown.map((c) => c.coaCode)).toEqual(['4000']);
+
+    // Excluded from the form, but visible — not silently dropped.
+    expect(report.nonRentalItems.map((i) => i.coaCode).sort()).toEqual(['4070', '4080', '4100']);
+    expect(report.nonRentalTotal).toBe(1035);
+
+    // And they are absent from every Schedule E line, not just Line 3.
+    const everyCoaOnForm = report.lineSummary.flatMap((l) => l.coaBreakdown.map((c) => c.coaCode));
+    expect(everyCoaOnForm).not.toContain('4070');
+    expect(everyCoaOnForm).not.toContain('4080');
+    expect(everyCoaOnForm).not.toContain('4100');
+
+    // The property column tells the same story.
+    expect(report.properties[0].totalIncome).toBe(3000);
+  });
+
+  it('excludes accounts that reach no return line instead of defaulting them to Other', () => {
+    // 9010 suspense, the 7000-series capital improvements and the 1900 clearing
+    // account all resolved to 'Line 19' Other through the fallback and were filed as
+    // deductible expenses. 9010 alone is ~48% of the production table.
+    const report = run([
+      { ...baseTx, id: 'repair', amount: '-300.00', type: 'expense', coaCode: '5070' } as any,
+      { ...baseTx, id: 'susp', amount: '-1000.00', type: 'expense', coaCode: '9010' } as any,
+      { ...baseTx, id: 'roof', amount: '-8000.00', type: 'expense', coaCode: '7020' } as any,
+      { ...baseTx, id: 'hop', amount: '-4250.00', type: 'expense', coaCode: '1900' } as any,
+    ]);
+
+    const line19 = report.lineSummary.find((l) => l.lineNumber === 'Line 19');
+    expect(line19).toBeUndefined();
+    expect(report.properties[0].totalExpenses).toBe(300);
+
+    expect(report.excludedNonPLCount).toBe(3);
+    expect(report.excludedNonPLAmount).toBe(13250);
+
+    // Still counted against filing readiness — exclusion is not absolution.
+    expect(report.classificationQuality.totalTransactions).toBe(4);
+  });
+});
+
+describe('buildForm1065Report — the account decides the deduction', () => {
+  const baseTx = {
+    tenantName: 'IT CAN BE LLC',
+    tenantType: 'holding',
+    tenantMetadata: {},
+    reconciled: true,
+    metadata: {},
+    propertyState: 'IL',
+    category: null,
+    description: '',
+    date: '2024-06-01',
+    tenantId: 'e-1',
+  };
+  const entityTenants = [{ id: 'e-1', name: 'IT CAN BE LLC', type: 'holding', metadata: {} }];
+
+  it('keeps suspense and capitalized improvements out of total deductions', () => {
+    const [report] = buildForm1065Report({
+      taxYear: 2024,
+      entityTenants,
+      transactions: [
+        { ...baseTx, id: 'i1', amount: '5000.00', type: 'income', coaCode: '4070' } as any,
+        { ...baseTx, id: 'd1', amount: '-500.00', type: 'expense', coaCode: '5050' } as any,
+        { ...baseTx, id: 'd2', amount: '-9000.00', type: 'expense', coaCode: '9010' } as any,
+        { ...baseTx, id: 'd3', amount: '-7000.00', type: 'expense', coaCode: '7000' } as any,
+      ],
+    });
+
+    expect(report.totalDeductions).toBe(500);
+    expect(report.netIncome).toBe(4500);
+    expect(report.deductionsByCategory.map((d) => d.coaCode)).toEqual(['5050']);
+    // netIncome feeds every member allocation, so a bad deduction reaches each K-1.
+    expect(report.memberAllocations[0].totalAllocated).toBe(4500);
+  });
+});
+
+describe('the exported artifacts do not re-hide what the form excludes', () => {
+  const baseTx = {
+    tenantId: 't-x',
+    tenantName: 'ARIBIA',
+    tenantType: 'property',
+    tenantMetadata: {},
+    reconciled: true,
+    metadata: {},
+    propertyState: 'IL',
+    category: null,
+    description: '',
+    date: '2024-06-01',
+    propertyId: 'p-x',
+  };
+  const properties = [{ id: 'p-x', tenantId: 't-x', name: 'Lakeside Loft', address: '541 W Addison 3S', state: 'IL' }];
+  const tenants = [{ id: 't-x', name: 'ARIBIA', type: 'property', metadata: {} }];
+
+  const report = buildScheduleEReport({
+    taxYear: 2024,
+    transactions: [
+      { ...baseTx, id: 'rent', amount: '3000.00', type: 'income', coaCode: '4000' } as any,
+      { ...baseTx, id: 'mgmt', amount: '900.00', type: 'income', coaCode: '4070' } as any,
+      { ...baseTx, id: 'susp', amount: '-1000.00', type: 'expense', coaCode: '9010' } as any,
+    ],
+    properties,
+    tenants,
+  });
+
+  it('the Schedule E CSV names the non-rental income and the excluded rows', () => {
+    const csv = serializeScheduleECsv(report);
+    expect(csv).toContain('Not rental income');
+    expect(csv).toContain('4070');
+    expect(csv).toContain('900.00');
+    expect(csv).toMatch(/EXCLUDED: 1 transactions/);
+  });
+
+  it('the package summary still counts income the form cannot report', () => {
+    const pkg = buildTaxPackage({ taxYear: 2024, scheduleE: report, form1065: [], transactionCount: 3 });
+    // 3000 rents on the form + 900 management income beside it.
+    expect(pkg.summary.totalIncome).toBe(3900);
   });
 });
