@@ -1272,7 +1272,18 @@ export class SystemStorage {
     return this.db
       .select()
       .from(schema.transactions)
-      .where(and(eq(schema.transactions.tenantId, tenantId), isNull(schema.transactions.coaCode)))
+      .where(and(
+        eq(schema.transactions.tenantId, tenantId),
+        isNull(schema.transactions.coaCode),
+        // Transfers are NOT classification work. Ingest is L1 — it writes
+        // `suggested_coa_code = 1900/1910` and leaves `coa_code` NULL — so a
+        // transfer leg otherwise looks unclassified, and a batch-suggest or
+        // ai-suggest run would overwrite its clearing code with an
+        // income/expense guess. The row would keep type='transfer' (so reports
+        // still exclude it) but the clearing check would stop finding the leg
+        // and report "no transfer activity" instead of flagging the imbalance.
+        sql`${schema.transactions.type} <> 'transfer'`,
+      ))
       .orderBy(desc(schema.transactions.date))
       .limit(limit);
   }
