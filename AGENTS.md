@@ -58,6 +58,7 @@ Authentication: Bearer service token. See [SECURITY.md](SECURITY.md).
 | `chittyagent-connect` | Outbound (runtime) | Mercury Bank proxy — every bank API call routes through ChittyConnect |
 | `chittyagent-canon` | Inbound (CI) | Audits this repo for canonical pattern adherence |
 | `chittyagent-cloudflare` | Outbound (admin) | Hyperdrive, KV, Email Service, WAF rules |
+| `chittyagent-google` | Outbound (runtime) | Google Workspace MCP gateway — Gmail (bank notifications, evidence), Drive (document storage), Sheets (export targets), Calendar (scheduling). Hybrid: dynamic MCP discovery + static gap-fillers. Trust level: none — read/export only, writes no financial state (no `transactions`/`coa_code` path; not yet referenced from `server/`). Any future write must go through the L1 suggestion path and `classification_audit` |
 | `chittyagent-notion` | Outbound (state) | Project + Actions DB updates from session lifecycle hooks |
 
 ## ChittyOS Subagents Useful for Development
