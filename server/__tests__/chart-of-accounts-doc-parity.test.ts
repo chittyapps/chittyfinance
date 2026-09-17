@@ -6,9 +6,11 @@ import {
   TRANSFER_CLEARING_CODES,
   CONTROL_CODES,
   CAPITAL_IMPROVEMENT_CODES,
+  getAccountByCode,
   getAccountTreatment,
   isProfitAndLossAccount,
   getForm8825Line,
+  getScheduleELine,
 } from '../../database/chart-of-accounts';
 
 /**
@@ -66,6 +68,89 @@ describe('chart of accounts: document and projection agree', () => {
 
   it('has no duplicate codes', () => {
     expect(REI_CHART_OF_ACCOUNTS.length).toBe(codeCodes.size);
+  });
+});
+
+/**
+ * §14 of the document is the complete register and says it is normative for the
+ * name, type and treatment of every account. These rows are what make that true:
+ * the register is parsed and each field held against the projection.
+ */
+interface RegisterRow {
+  code: string;
+  name: string;
+  type: string;
+  treatment: string;
+  form8825?: string;
+  scheduleE?: string;
+}
+
+function registerRows(): RegisterRow[] {
+  const section = DOC.split('## 14. Complete account register')[1];
+  if (!section) throw new Error('the document has no §14 register');
+  const rows: RegisterRow[] = [];
+  for (const line of section.split('\n')) {
+    if (!line.startsWith('| ')) continue;
+    const cells = line.split('|').slice(1, -1).map((c) => c.trim());
+    if (cells.length !== 6 || !/^\d{4}/.test(cells[0])) continue;
+    // A leading code may carry ' *' marking an account not yet seeded.
+    const line8825 = cells[4] === '—' ? undefined : `Line ${cells[4]}`;
+    const lineE = cells[5] === '—' ? undefined : `Line ${cells[5]}`;
+    rows.push({
+      code: cells[0].replace(/\s*\*$/, ''),
+      name: cells[1],
+      type: cells[2],
+      treatment: cells[3],
+      form8825: line8825,
+      scheduleE: lineE,
+    });
+  }
+  return rows;
+}
+
+describe('the §14 register is normative', () => {
+  const rows = registerRows();
+
+  it('registers every account exactly once', () => {
+    expect(rows.length).toBe(REI_CHART_OF_ACCOUNTS.length);
+    expect(new Set(rows.map((r) => r.code)).size).toBe(rows.length);
+  });
+
+  it('marks exactly the accounts not yet seeded to production', () => {
+    // 80 accounts live; this document adds 15.
+    const marked = DOC.split('## 14. Complete account register')[1]
+      .split('\n')
+      .filter((l) => /^\| \d{4} \*/.test(l));
+    expect(marked.length).toBe(15);
+    expect(REI_CHART_OF_ACCOUNTS.length - marked.length).toBe(80);
+  });
+
+  it('gives every account the name, type and treatment the projection carries', () => {
+    const mismatches = rows
+      .map((r) => {
+        const account = getAccountByCode(r.code);
+        if (!account) return `${r.code}: not in the projection`;
+        if (account.name !== r.name) return `${r.code} name: doc "${r.name}" vs code "${account.name}"`;
+        if (account.type !== r.type) return `${r.code} type: doc "${r.type}" vs code "${account.type}"`;
+        const treatment = getAccountTreatment(r.code);
+        if (treatment !== r.treatment) return `${r.code} treatment: doc "${r.treatment}" vs code "${treatment}"`;
+        return null;
+      })
+      .filter(Boolean);
+    expect(mismatches).toEqual([]);
+  });
+
+  it('gives every account the IRS lines the projection carries', () => {
+    const mismatches = rows
+      .map((r) => {
+        const f = getForm8825Line(r.code);
+        if (f !== r.form8825) return `${r.code} 8825: doc ${r.form8825 ?? 'none'} vs code ${f ?? 'none'}`;
+        const e = getScheduleELine(r.code);
+        if (e !== r.scheduleE) return `${r.code} Sch E: doc ${r.scheduleE ?? 'none'} vs code ${e ?? 'none'}`;
+        return null;
+      })
+      .filter(Boolean);
+    expect(mismatches).toEqual([]);
   });
 });
 
