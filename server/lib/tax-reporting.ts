@@ -169,6 +169,7 @@ export interface ScheduleEReport {
    * report that drops half its rows must say so.
    */
   excludedNonPLCount: number;
+  /** Gross magnitude of those rows (|amount| across income and expense alike), not an expense figure. */
   excludedNonPLAmount: number;
   /** Aggregated line totals across all properties (what you file on the form). */
   lineSummary: ScheduleELineSummaryItem[];
@@ -861,7 +862,12 @@ export function buildTaxPackage(params: {
   form1065: Form1065Report[];
   transactionCount: number;
 }): TaxPackage {
+  // nonRentalTotal is income that carries no Schedule E line (4070, 4080, 4100) and
+  // therefore no longer reaches a property column. It is still income: leaving it
+  // out of the package summary would understate the year by exactly the amount the
+  // form correctly refuses to report.
   const totalIncome = params.scheduleE.properties.reduce((s, p) => s + p.totalIncome, 0)
+    + params.scheduleE.nonRentalTotal
     + params.form1065.reduce((s, r) => s + r.ordinaryIncome, 0);
   const totalExpenses = params.scheduleE.properties.reduce((s, p) => s + p.totalExpenses, 0)
     + params.form1065.reduce((s, r) => s + r.totalDeductions, 0);
@@ -939,6 +945,26 @@ export function serializeScheduleECsv(report: ScheduleEReport): string {
     for (const item of report.entityLevelItems) {
       rows.push([item.lineNumber, item.lineLabel, item.amount.toFixed(2)].map(csvEscape).join(','));
     }
+  }
+
+  // Money that is real but reaches no Schedule E line. Rendered here because the
+  // CSV is the artifact a preparer actually receives: excluding an amount from the
+  // form and then omitting it from the export is the same silent drop, moved.
+  if (report.nonRentalItems.length > 0) {
+    rows.push('');
+    rows.push('Not rental income — Form 1065 page 1 / Schedule K, not reported on this form');
+    rows.push(['COA Code', 'Account', 'Amount'].join(','));
+    for (const item of report.nonRentalItems) {
+      rows.push([item.coaCode, item.coaName, item.amount.toFixed(2)].map(csvEscape).join(','));
+    }
+    rows.push(['', 'Total', report.nonRentalTotal.toFixed(2)].map(csvEscape).join(','));
+  }
+
+  if (report.excludedNonPLCount > 0) {
+    rows.push('');
+    rows.push(
+      `EXCLUDED: ${report.excludedNonPLCount} transactions ($${report.excludedNonPLAmount.toFixed(2)} gross) sit in clearing, control/suspense or capitalized-improvement accounts and reach no return line. Clear them before filing.`,
+    );
   }
 
   // Warnings

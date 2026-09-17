@@ -740,3 +740,46 @@ describe('buildForm1065Report — the account decides the deduction', () => {
     expect(report.memberAllocations[0].totalAllocated).toBe(4500);
   });
 });
+
+describe('the exported artifacts do not re-hide what the form excludes', () => {
+  const baseTx = {
+    tenantId: 't-x',
+    tenantName: 'ARIBIA',
+    tenantType: 'property',
+    tenantMetadata: {},
+    reconciled: true,
+    metadata: {},
+    propertyState: 'IL',
+    category: null,
+    description: '',
+    date: '2024-06-01',
+    propertyId: 'p-x',
+  };
+  const properties = [{ id: 'p-x', tenantId: 't-x', name: 'Lakeside Loft', address: '541 W Addison 3S', state: 'IL' }];
+  const tenants = [{ id: 't-x', name: 'ARIBIA', type: 'property', metadata: {} }];
+
+  const report = buildScheduleEReport({
+    taxYear: 2024,
+    transactions: [
+      { ...baseTx, id: 'rent', amount: '3000.00', type: 'income', coaCode: '4000' } as any,
+      { ...baseTx, id: 'mgmt', amount: '900.00', type: 'income', coaCode: '4070' } as any,
+      { ...baseTx, id: 'susp', amount: '-1000.00', type: 'expense', coaCode: '9010' } as any,
+    ],
+    properties,
+    tenants,
+  });
+
+  it('the Schedule E CSV names the non-rental income and the excluded rows', () => {
+    const csv = serializeScheduleECsv(report);
+    expect(csv).toContain('Not rental income');
+    expect(csv).toContain('4070');
+    expect(csv).toContain('900.00');
+    expect(csv).toMatch(/EXCLUDED: 1 transactions/);
+  });
+
+  it('the package summary still counts income the form cannot report', () => {
+    const pkg = buildTaxPackage({ taxYear: 2024, scheduleE: report, form1065: [], transactionCount: 3 });
+    // 3000 rents on the form + 900 management income beside it.
+    expect(pkg.summary.totalIncome).toBe(3900);
+  });
+});
