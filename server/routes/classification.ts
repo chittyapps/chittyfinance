@@ -526,13 +526,18 @@ classificationRoutes.post('/api/classification/unreconcile', async (c) => {
     return c.json({ error: 'invalid_body', details: parsed.error.flatten() }, 400);
   }
 
-  let result;
+  let outcome;
   try {
-    result = await storage.unreconciledTransaction(parsed.data.transactionId, tenantId, userId);
+    outcome = await storage.unreconciledTransaction(parsed.data.transactionId, tenantId, userId);
   } catch (err) {
     return mapClassificationError(err, c);
   }
-  if (!result) return c.json({ error: 'Transaction not found' }, 404);
+  if (!outcome) return c.json({ error: 'Transaction not found' }, 404);
+  const result = outcome.row;
+
+  // Already unreconciled: nothing was written, so don't record an event for a
+  // write that never happened (double-click / retry).
+  if (!outcome.written) return c.json(result);
 
   ledgerLog(c, {
     entityType: 'audit',

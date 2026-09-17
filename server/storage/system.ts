@@ -1122,8 +1122,8 @@ export class SystemStorage {
     const previousCoaCode = tx.coaCode ?? null;
     const previousSuggested = tx.suggestedCoaCode ?? null;
     // An omitted confidence leaves the stored value alone (bulk-accept sends
-    // no confidence and must not wipe the suggestion's score); an explicit
-    // null clears it.
+    // no confidence and must not wipe the suggestion's score). No route can
+    // send an explicit null — confidenceSchema accepts only a number in [0,1].
     const confidenceProvided = opts.confidence !== undefined;
     const confidence = opts.confidence ?? null;
     const confidenceSet = confidenceProvided ? { classificationConfidence: confidence } : {};
@@ -1264,7 +1264,9 @@ export class SystemStorage {
   async unreconciledTransaction(txId: string, tenantId: string, actorId: string) {
     const tx = await this.getTransaction(txId, tenantId);
     if (!tx) return undefined;
-    if (!tx.reconciled) return tx;
+    // Already unreconciled: nothing to do (mirrors reconcileTransaction).
+    // `written: false` lets the route skip the ledger/Chronicle events.
+    if (!tx.reconciled) return { row: tx, written: false };
 
     const t = schema.transactions;
     const now = new Date();
@@ -1291,7 +1293,7 @@ export class SystemStorage {
       throw new ClassificationError('conflict', CONFLICT_MESSAGE);
     }
 
-    return this.getTransaction(txId, tenantId);
+    return { row: await this.getTransaction(txId, tenantId), written: true };
   }
 
   async getClassificationAudit(transactionId: string, tenantId: string) {
