@@ -403,6 +403,51 @@ const COLUMN_TO_FIELD: Record<string, keyof ExistingAccountRow> = {
   is_active: 'isActive',
 };
 
+/** The ExistingAccountRow key -> the snake_case column it is written to. */
+const FIELD_TO_COLUMN = Object.fromEntries(
+  Object.entries(COLUMN_TO_FIELD).map(([column, field]) => [field, column]),
+) as Record<keyof ExistingAccountRow, string>;
+
+/**
+ * The value drizzle sent for one column of an INSERT, or NOT_BOUND when it sent the
+ * literal `default` keyword instead — i.e. when nothing was supplied for that column and
+ * the server-side column default decides the value.
+ */
+const NOT_BOUND = Symbol('default');
+
+/**
+ * Zip a compiled INSERT's column list against its VALUES tuple, resolving each `$n` to
+ * the parameter actually bound and every `default` to NOT_BOUND.
+ *
+ * This is the only way to tell an omitted column from a written one. Drizzle builds the
+ * column list from the TABLE definition, not from the keys of `.values()` — every column
+ * of chart_of_accounts appears in every compiled INSERT no matter what was supplied, so
+ * asserting a column NAME appears in the SQL is vacuous. An omitted column shows up
+ * solely as `default` occupying its slot in the VALUES tuple and consuming no parameter.
+ */
+function insertedValues(call: RecordedCall): Record<string, unknown> {
+  const shape = call.sql.match(/\(([^)]*)\)\s+values\s+\(([^)]*)\)/i);
+  if (!shape) throw new Error(`Not a compiled single-row INSERT: ${call.sql}`);
+  const columns = shape[1].split(',').map((c) => c.trim().replace(/"/g, ''));
+  const slots = shape[2].split(',').map((s) => s.trim());
+  if (columns.length !== slots.length) {
+    throw new Error(`INSERT has ${columns.length} columns and ${slots.length} values`);
+  }
+  return Object.fromEntries(
+    columns.map((column, i) => {
+      const slot = slots[i];
+      const bound = slot.match(/^\$(\d+)$/);
+      return [column, bound ? call.params[Number(bound[1]) - 1] : NOT_BOUND];
+    }),
+  );
+}
+
+/**
+ * The columns an INSERT is expected to leave to the server: the generated id, and the
+ * four columns with a table default the seed deliberately does not override.
+ */
+const UNBOUND_COLUMNS = ['created_at', 'effective_date', 'id', 'metadata', 'updated_at'];
+
 /** The columns a compiled SELECT projects, in order. */
 function selectedColumns(sql: string): string[] {
   const list = sql.slice(sql.search(/\bselect\b/i) + 6, sql.search(/\bfrom\b/i));
@@ -466,6 +511,11 @@ describe('seedChartOfAccounts: the statements it emits', () => {
   });
 
   it('sets exactly the persisted fields plus updated_at, and nothing else', async () => {
+    // Unlike the INSERT column list, an UPDATE's SET list IS built from the keys of
+    // `.set()`, so parsing it does detect an omitted column: dropping taxDeductible from
+    // the seed's `.set({...})` fails this assertion. Its limits, both deliberate: it
+    // inspects one statement, and it checks column names rather than bound values — the
+    // per-column value check lives on the insert guard below.
     const { calls } = await runApply(devBranchRows());
     const setClause = UPDATES(calls)[0].sql.split(/\bset\b/i)[1].split(/\bwhere\b/i)[0];
     const columns = [...setClause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]).sort();
@@ -492,24 +542,63 @@ describe('seedChartOfAccounts: the statements it emits', () => {
     const { calls } = await runApply(devBranchRows());
     const inserts = INSERTS(calls);
     expect(inserts).toHaveLength(25);
+
+    // Every insert is checked against the row the projection says it is inserting, column
+    // by column, on the VALUE drizzle actually bound. Asserting on the SQL text cannot do
+    // this: drizzle emits the whole table's column list regardless of what `.values()`
+    // supplied, so `sql` names tax_deductible and parent_code even when neither is
+    // written. Only the VALUES tuple distinguishes a bound column from `default` —
+    // which is exactly how the 2026-09-18 production apply
+    // (scripts/remediation/2026-09-18-chart-of-accounts-seed.sql) silently left four
+    // deductible accounts at the column default of false.
     for (const call of inserts) {
-      const tenantIdIndex = [...call.sql.matchAll(/"([a-z_]+)"/g)]
-        .map((m) => m[1])
-        .filter((c) => c !== 'chart_of_accounts')
-        .indexOf('tenant_id');
-      expect(tenantIdIndex).toBe(1); // after "id"
-      expect(call.params[0]).toBeNull();
-      expect(call.params).toContain('seed:chart-of-accounts');
-      // The insert path carries parent_code too. It does today only because the values
-      // are a spread of the projected row; enumerating the columns by hand and omitting
-      // this one would leave the ten headers and 1130/4005/4008 with NULL, and the
-      // plan-level tests would not notice.
-      expect(call.sql).toContain('"parent_code"');
+      const written = insertedValues(call);
+      const code = written.code;
+      const row = PROJECTED.find((r) => r.code === code);
+      expect(row, `insert for an unprojected code ${String(code)}`).toBeDefined();
+
+      for (const field of PERSISTED_FIELDS) {
+        const column = FIELD_TO_COLUMN[field];
+        expect(column, `${field} has no column mapping`).toBeDefined();
+        expect(
+          written[column],
+          `${String(code)}: ${column} is not written (drizzle sent \`default\`)`,
+        ).not.toBe(NOT_BOUND);
+        expect(written[column], `${String(code)}: ${column} written wrong`).toStrictEqual(
+          row![field],
+        );
+      }
+
+      // The three columns the seed sets itself rather than taking from the projection.
+      expect(written.tenant_id).toBeNull();
+      expect(written.is_active).toBe(true);
+      expect(written.modified_by).toBe('seed:chart-of-accounts');
+
+      // …and exactly these are left to the table's own defaults. Both directions matter:
+      // a column that stops being written joins this set, and a column that starts being
+      // hardcoded leaves it.
+      const unbound = Object.entries(written)
+        .filter(([, value]) => value === NOT_BOUND)
+        .map(([column]) => column)
+        .sort();
+      expect(unbound, `${String(code)}: unexpected default columns`).toEqual(UNBOUND_COLUMNS);
     }
+
+    // The four codes whose tax_deductible the production apply got wrong are inserts here,
+    // and land as true. Non-vacuity for the check above: if every projected row were
+    // tax_deductible false, omitting the column would still satisfy it by accident.
+    for (const code of ['5015', '5025', '5055', '6050']) {
+      const call = inserts.find((c) => insertedValues(c).code === code);
+      expect(call, `${code} is not among the inserts`).toBeDefined();
+      expect(insertedValues(call!).tax_deductible, `${code} tax_deductible`).toBe(true);
+    }
+
     // 4005 is a child that arrives by insert: it must land already pointing at 4090.
-    const midTerm = inserts.find((c) => c.params.includes('Rental Income - Mid-Term Furnished'));
+    const midTerm = inserts.find(
+      (c) => insertedValues(c).name === 'Rental Income - Mid-Term Furnished',
+    );
     expect(midTerm).toBeDefined();
-    expect(midTerm?.params).toContain('4090');
+    expect(insertedValues(midTerm!).parent_code).toBe('4090');
   });
 
   it('never emits a delete', async () => {

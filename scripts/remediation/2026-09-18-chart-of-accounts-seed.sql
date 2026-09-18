@@ -104,3 +104,72 @@ COMMIT;
 -- A rollback restores data but not the reasoning: 5020/5030/5080 were mapped to lines
 -- that belong to other expense kinds, verified against the 2025 Schedule E. Rolling back
 -- reinstates those errors.
+
+-- ═══════════════════════════════════════════════════════════════════════════════════
+-- CORRECTION — appended 2026-09-18. Nothing above this line has been altered; the
+-- record of what was executed stays as it was executed. This block records what that
+-- execution got wrong.
+--
+-- THE DEFECT: the INSERT above omits `tax_deductible` from its column list.
+--
+--   (id, tenant_id, code, name, type, subtype, description, schedule_e_line,
+--    is_active, modified_by)
+--
+-- All fifteen inserted rows therefore took the schema default — `taxDeductible:
+-- boolean('tax_deductible').notNull().default(false)` in database/system.schema.ts.
+-- For eleven of the fifteen, false is correct. For four it is not: the authoritative
+-- chart (docs/CHART-OF-ACCOUNTS.md, projected in database/chart-of-accounts.ts) marks
+-- them taxDeductible = true.
+--
+--   5015  Contract Labor (1099)
+--   5025  Furnishings & Decor
+--   5055  Litigation - Arias
+--   6050  AI & Compute
+--
+-- Confirmed against production (read-only, Neon project solitary-rice-14149088,
+-- database chittyfinance, main branch), all four:
+--   tax_deductible = false, modified_by = 'seed:chart-of-accounts',
+--   created_at = updated_at = 2026-09-18T02:16:34.545Z
+--
+-- The seed script's own TypeScript insert is NOT affected — it spreads the whole
+-- projected row (`.values({ tenantId: null, ...row, ... })`), so it has always carried
+-- tax_deductible. The defect is confined to this hand-written SQL, which was used
+-- instead of the seed because no DATABASE_URL was handled in that session.
+--
+-- TWO CLAIMS IN THE HEADER ABOVE ARE FALSE AS A RESULT:
+--   1. "bringing the production table in line with docs/CHART-OF-ACCOUNTS.md" — it does
+--      not; four rows diverge from the authoritative chart on tax_deductible.
+--   2. "The seed remains idempotent afterwards: a later `--apply` run over this state
+--      plans 0 inserts, 0 updates" — false when written. tax_deductible was already in
+--      PERSISTED_FIELDS, so a seed run over this state plans 4 updates with
+--      'taxDeductible' in changedFields. (Post-#171 it also plans parent_code updates,
+--      for an unrelated and intended reason.)
+--
+-- THE ROLLBACK RECIPE ABOVE CANNOT RESTORE THIS. It is exact for every column the apply
+-- actually wrote, but "restores every column this script touched" describes a narrower
+-- set than the header implies: a column the apply never wrote has no pre-state to
+-- restore, and rolling the inserts back DELETEs those rows outright, so tax_deductible
+-- does not arise. Rollback is not the remedy here; a forward correction is.
+--
+-- CORRECTIVE SQL — **NOT APPLIED**. Recorded for the audit trail and as the statement a
+-- manual correction would use. Do not run it as part of reading this file: the pending
+-- operator-approved seed apply supersedes it. computeSeedPlan() reports these same four
+-- codes as updates with 'taxDeductible' in changedFields, so
+-- `pnpm db:seed:coa -- --apply` corrects them along with everything else it plans, and
+-- emits the per-row ledger and chronicle events this hand-written path never did.
+--
+-- UPDATE chart_of_accounts SET tax_deductible = true, updated_at = now()
+--  WHERE tenant_id IS NULL AND code IN ('5015','5025','5055','6050');
+--
+-- Verification after whichever path is taken (read-only):
+--   SELECT code, tax_deductible FROM chart_of_accounts
+--    WHERE tenant_id IS NULL AND code IN ('5015','5025','5055','6050');   -- expect 4x true
+--
+-- HOW THIS SURVIVED REVIEW, and what now catches it: the seed's insert test asserted
+-- `expect(call.sql).toContain('"parent_code"')`. Drizzle builds a compiled INSERT's
+-- column list from the TABLE definition, not from the keys of `.values()`, so every
+-- column of chart_of_accounts appears in the SQL text whether or not it is written; an
+-- omitted column appears only as the literal `default` in the VALUES tuple, consuming no
+-- bound parameter. The assertion was therefore true of any insert whatsoever. It has
+-- been replaced with a check on the values actually bound, per column — see
+-- server/__tests__/chart-of-accounts-seed.test.ts.
