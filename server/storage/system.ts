@@ -9,6 +9,12 @@ import {
   isTransferClearingCode,
   TRANSFER_CLEARING_CODES,
 } from '../books/transfers';
+import {
+  assertPostableAccount,
+  getAccountByCode,
+  isHeaderAccount,
+  NonPostableAccountError,
+} from '../../database/chart-of-accounts';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -37,11 +43,40 @@ function assertTransactionType(value: unknown): asserts value is (typeof TRANSAC
  */
 export class StorageValidationError extends Error {
   constructor(
-    public readonly code: 'invalid_transaction_type',
+    public readonly code: 'invalid_transaction_type' | 'header_not_postable',
     message: string,
   ) {
     super(message);
     this.name = 'StorageValidationError';
+  }
+}
+
+/**
+ * Refuse a header account on any column that assigns a chart code to a transaction.
+ *
+ * This is the COA 3200 gap inverted. That bug was a code no account ever had reaching
+ * 1,199 rows because nothing checked existence; a header is the opposite — it exists, so
+ * `getAccountByCode()` returns it and every existence check passes, yet nothing may be
+ * booked to it. The guard belongs here rather than in routes because `createTransaction`
+ * and `updateTransaction` are the only ways a row acquires a code: the Mercury webhooks,
+ * every importer and every route reach the table through them.
+ */
+function assertPostableCodes(data: {
+  coaCode?: string | null;
+  suggestedCoaCode?: string | null;
+}): void {
+  for (const [column, value] of [
+    ['coa_code', data.coaCode],
+    ['suggested_coa_code', data.suggestedCoaCode],
+  ] as const) {
+    try {
+      assertPostableAccount(value);
+    } catch (err) {
+      if (err instanceof NonPostableAccountError) {
+        throw new StorageValidationError('header_not_postable', `${column}: ${err.message}`);
+      }
+      throw err;
+    }
   }
 }
 
@@ -57,7 +92,8 @@ export class ClassificationError extends Error {
       | 'not_classified'
       | 'transaction_not_found'
       | 'conflict'
-      | 'transfer_not_classifiable',
+      | 'transfer_not_classifiable'
+      | 'header_not_postable',
     message: string,
   ) {
     super(message);
@@ -239,12 +275,14 @@ export class SystemStorage {
 
   async createTransaction(data: typeof schema.transactions.$inferInsert) {
     assertTransactionType(data.type);
+    assertPostableCodes(data);
     const [row] = await this.db.insert(schema.transactions).values(data).returning();
     return row;
   }
 
   async updateTransaction(id: string, tenantId: string, data: Partial<typeof schema.transactions.$inferInsert>) {
     if (data.type !== undefined) assertTransactionType(data.type);
+    assertPostableCodes(data);
     const [row] = await this.db
       .update(schema.transactions)
       .set({ ...data, updatedAt: new Date() })
@@ -1186,6 +1224,18 @@ export class SystemStorage {
     coaCode: string,
     opts: { actorId: string; actorType: 'user' | 'agent' | 'system'; trustLevel: string; confidence?: string; reason?: string; isSuggestion?: boolean },
   ) {
+    // Before anything is read: a header holds no transaction, whether the write would
+    // land on coa_code (L2+) or suggested_coa_code (L1). This covers the routes that
+    // reach classification — single classify, bulk accept, batch-suggest and the AI
+    // suggester — because all four call this method.
+    if (isHeaderAccount(coaCode)) {
+      throw new ClassificationError(
+        'header_not_postable',
+        `${coaCode} (${getAccountByCode(coaCode)?.name ?? 'unknown'}) is a header account ` +
+          'and holds no transaction. Classify to one of its children instead.',
+      );
+    }
+
     const tx = await this.getTransaction(txId, tenantId);
     if (!tx) return undefined;
 

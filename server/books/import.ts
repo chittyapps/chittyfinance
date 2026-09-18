@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { ledgerLog } from '../lib/ledger-client';
-import { findAccountCode, getAccountByCode } from '../../database/chart-of-accounts';
+import { findAccountCode, getAccountByCode, isHeaderAccount } from '../../database/chart-of-accounts';
 import { classifyMercuryInternalTransfer, isMercuryInternalTransfer } from './transfers';
 
 export const importRoutes = new Hono<HonoEnv>();
@@ -864,8 +864,11 @@ export function classifyAmazonItem(
   // auto-approve into a nonexistent account. Trust it only when it resolves in
   // the chart of accounts, and at the same 0.850 the Mercury CSV path uses for
   // the identical class of input.
+  // A header account resolves through getAccountByCode() — it exists — but holds no
+  // transaction, so it is rejected here alongside a code that does not exist at all.
   const gl = glCode.trim();
-  const glAccount = gl && /^\d{4}$/.test(gl) ? getAccountByCode(gl) : undefined;
+  const glAccount =
+    gl && /^\d{4}$/.test(gl) && !isHeaderAccount(gl) ? getAccountByCode(gl) : undefined;
   let glRejected = Boolean(gl) && !glAccount;
 
   // Personal spend is decided before the GL column is consulted. The GL column
@@ -2059,7 +2062,14 @@ importRoutes.post('/api/import/mercury-csv', async (c) => {
       } else {
         if (glCode) {
           const codeMatch = glCode.match(/^\d{4}/);
-          if (codeMatch) { suggestedCoaCode = codeMatch[0]; confidence = '0.850'; }
+          // A header account is a rollup and holds no transaction. Mercury's GL list
+          // will carry our header codes once the chart is exported to it, so this
+          // column can name one; treat that as no match and fall through to keywords
+          // rather than booking a rollup.
+          if (codeMatch && !isHeaderAccount(codeMatch[0])) {
+            suggestedCoaCode = codeMatch[0];
+            confidence = '0.850';
+          }
         }
         if (suggestedCoaCode === '9010') {
           suggestedCoaCode = findAccountCode(bankDesc || description, mercuryCategory || undefined);
