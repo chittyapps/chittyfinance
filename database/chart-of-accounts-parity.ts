@@ -154,9 +154,9 @@ export function chartParityMismatches(doc: string): string[] {
     if (e !== row.scheduleE) {
       mismatches.push(`${row.code} Sch E: doc ${row.scheduleE ?? 'none'} vs code ${e ?? 'none'}`);
     }
-    // The seed does not yet write parent_code, but the document defines it, so a
+    // The seed writes parent_code (since #171), and the document defines it, so a
     // projection that disagrees about the hierarchy is drift like any other — and it
-    // must be caught before the seed starts writing the column.
+    // must be caught before an apply carries the wrong parent into the table.
     if ((account.parentCode ?? undefined) !== row.parentCode) {
       mismatches.push(
         `${row.code} parent: doc ${row.parentCode ?? 'none'} vs code ${account.parentCode ?? 'none'}`,
