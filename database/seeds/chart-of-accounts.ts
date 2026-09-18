@@ -14,8 +14,8 @@
 // (tenant_id NOT NULL) are never selected, updated or deleted.
 //
 // The seed writes only what the authoritative document defines: code, name, type,
-// subtype, description, schedule_e_line, tax_deductible. It deliberately does NOT write
-// parent_code, metadata, is_active or modified_by on existing rows — see §"What this
+// subtype, description, schedule_e_line, tax_deductible, parent_code. It deliberately
+// does NOT write metadata, is_active or modified_by on existing rows — see §"What this
 // seed does not write" below.
 
 import { readFileSync, realpathSync } from 'node:fs';
@@ -33,23 +33,29 @@ import { logToChronicle } from '../../server/lib/chittychronicle';
  * The projected shape of one global account, limited to the columns the authoritative
  * document defines.
  *
+ * `parent_code` IS written, and the one rule that governs it: it is READ OFF THE
+ * DOCUMENT, never derived. docs/CHART-OF-ACCOUNTS.md §1.7 and §14 define the hierarchy
+ * explicitly — ten header accounts and a written-down `parent_code` for 37 children —
+ * and `chartParityMismatches()` fails the apply if the projection and the document
+ * disagree about a single parent. That is what makes persisting it safe, and it needed
+ * no DDL: the column has always existed.
+ *
+ * Do not reintroduce a derived parent. An earlier revision computed one arithmetically
+ * (floor(code/100)*100) and pointed children at sibling POSTING accounts rather than
+ * headers — 5055 Litigation at 5000 Advertising, the 90x0 suspense accounts at 9000
+ * Owner Personal Expense, 2540 Due to Affiliate at 2500 Mortgage Payable. A dangling
+ * parent is detectable; a valid-but-wrong one is indistinguishable from a deliberate
+ * choice, and any rollup built on it would silently double-count. The field was pulled
+ * for exactly that reason and comes back only because the document now says what the
+ * parents are.
+ *
+ * A row the document gives no parent — every header, and every account outside the ten
+ * groups — projects `parentCode: null` and is written as NULL. So an apply also CLEARS a
+ * stray `parent_code` sitting on a live row, which is the intended effect, not a
+ * side effect: the document is the only source of the hierarchy.
+ *
  * What this seed does not write, and why:
  *
- * - `parent_code`. NOT YET, but no longer for the original reason. It was removed because
- *   the document contained no notion of parent and the previous revision derived one
- *   arithmetically (floor(code/100)*100), which pointed children at sibling POSTING
- *   accounts rather than headers — 5055 Litigation at 5000 Advertising, the 90x0 suspense
- *   accounts at 9000 Owner Personal Expense, 2540 Due to Affiliate at 2500 Mortgage
- *   Payable. A dangling parent is detectable; a valid-but-wrong one is indistinguishable
- *   from a deliberate choice, and any future rollup would silently double-count.
- *
- *   docs/CHART-OF-ACCOUNTS.md §1.7 and §14 now define the hierarchy explicitly — ten
- *   header accounts and a written-down `parent_code` for 37 children, parity-tested
- *   against the projection by `chartParityMismatches()`. The condition that removed the
- *   field is therefore met, and restoring `parentCode` to PERSISTED_FIELDS (and to
- *   projectSeedRows) is the next change; it needs no DDL, the column already exists.
- *   Applying the seed before that lands inserts the ten headers and leaves every
- *   `parent_code` NULL, which is a coherent intermediate state, not a broken one.
  * - `metadata.keywords`. Derived from TURBOTENANT_CATEGORY_MAP, which every consumer
  *   already reads directly from the projection. Persisting a second copy buys a drift
  *   surface and nothing usable today — the same reasoning §13 gives for not persisting
@@ -72,6 +78,12 @@ export interface SeedAccountRow {
    */
   scheduleELine: string | null;
   taxDeductible: boolean;
+  /**
+   * The code of this account's header, straight from docs/CHART-OF-ACCOUNTS.md §14.
+   * NULL for a header and for any account the document places in no group. Never derived
+   * from the code — see the note above this interface.
+   */
+  parentCode: string | null;
 }
 
 /**
@@ -117,6 +129,7 @@ export const PERSISTED_FIELDS = [
   'description',
   'scheduleELine',
   'taxDeductible',
+  'parentCode',
 ] as const;
 
 /** Project REI_CHART_OF_ACCOUNTS into the rows the table should hold. */
@@ -129,6 +142,7 @@ export function projectSeedRows(): SeedAccountRow[] {
     description: acct.description ?? null,
     scheduleELine: acct.scheduleE ?? null,
     taxDeductible: acct.taxDeductible ?? false,
+    parentCode: acct.parentCode ?? null,
   }));
 }
 
@@ -293,6 +307,7 @@ async function readGlobalRows(db: Database): Promise<ExistingAccountRow[]> {
       description: chartOfAccounts.description,
       scheduleELine: chartOfAccounts.scheduleELine,
       taxDeductible: chartOfAccounts.taxDeductible,
+      parentCode: chartOfAccounts.parentCode,
       isActive: chartOfAccounts.isActive,
     })
     .from(chartOfAccounts)
@@ -382,6 +397,7 @@ export async function seedChartOfAccounts(options: SeedOptions = {}): Promise<Se
         description: update.row.description,
         scheduleELine: update.row.scheduleELine,
         taxDeductible: update.row.taxDeductible,
+        parentCode: update.row.parentCode,
         updatedAt: new Date(),
       })
       // Scoped by id AND tenant_id IS NULL: a tenant override can never be reached.
