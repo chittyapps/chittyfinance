@@ -67,7 +67,8 @@ const PROJECTED = projectSeedRows();
  *
  * This replaces a fixture that was built from the projection plus six hand-injected
  * pre-#157 values, and therefore asserted properties of itself. Nothing below derives a
- * field from PROJECTED; every value comes out of the recorded file.
+ * field from PROJECTED; every recorded value comes out of the file. The one column the
+ * file does not record is parent_code — see the note at that field.
  */
 function devBranchRows(): ExistingAccountRow[] {
   return snapshotLines().map((line, index) => {
@@ -499,7 +500,16 @@ describe('seedChartOfAccounts: the statements it emits', () => {
       expect(tenantIdIndex).toBe(1); // after "id"
       expect(call.params[0]).toBeNull();
       expect(call.params).toContain('seed:chart-of-accounts');
+      // The insert path carries parent_code too. It does today only because the values
+      // are a spread of the projected row; enumerating the columns by hand and omitting
+      // this one would leave the ten headers and 1130/4005/4008 with NULL, and the
+      // plan-level tests would not notice.
+      expect(call.sql).toContain('"parent_code"');
     }
+    // 4005 is a child that arrives by insert: it must land already pointing at 4090.
+    const midTerm = inserts.find((c) => c.params.includes('Rental Income - Mid-Term Furnished'));
+    expect(midTerm).toBeDefined();
+    expect(midTerm?.params).toContain('4090');
   });
 
   it('never emits a delete', async () => {
