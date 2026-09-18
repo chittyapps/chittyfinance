@@ -34,6 +34,8 @@ export interface RegisterRow {
   treatment: string;
   form8825?: string;
   scheduleE?: string;
+  /** The header account this one rolls up into. `—` in the register becomes undefined. */
+  parentCode?: string;
   /** `*` in the register: defined by the document but not yet seeded to production. */
   isNew: boolean;
 }
@@ -46,7 +48,7 @@ export function registerRows(doc: string): RegisterRow[] {
   for (const line of register.split('\n')) {
     if (!line.startsWith('| ')) continue;
     const cells = line.split('|').slice(1, -1).map((c) => c.trim());
-    if (cells.length !== 6 || !/^\d{4}/.test(cells[0])) continue;
+    if (cells.length !== 7 || !/^\d{4}/.test(cells[0])) continue;
     // A leading code may carry ' *' marking an account not yet seeded.
     rows.push({
       code: cells[0].replace(/\s*\*$/, ''),
@@ -55,6 +57,7 @@ export function registerRows(doc: string): RegisterRow[] {
       treatment: cells[3],
       form8825: cells[4] === '—' ? undefined : `Line ${cells[4]}`,
       scheduleE: cells[5] === '—' ? undefined : `Line ${cells[5]}`,
+      parentCode: cells[6] === '—' ? undefined : cells[6],
       isNew: /\*$/.test(cells[0]),
     });
   }
@@ -150,6 +153,14 @@ export function chartParityMismatches(doc: string): string[] {
     const e = getScheduleELine(row.code);
     if (e !== row.scheduleE) {
       mismatches.push(`${row.code} Sch E: doc ${row.scheduleE ?? 'none'} vs code ${e ?? 'none'}`);
+    }
+    // The seed does not yet write parent_code, but the document defines it, so a
+    // projection that disagrees about the hierarchy is drift like any other — and it
+    // must be caught before the seed starts writing the column.
+    if ((account.parentCode ?? undefined) !== row.parentCode) {
+      mismatches.push(
+        `${row.code} parent: doc ${row.parentCode ?? 'none'} vs code ${account.parentCode ?? 'none'}`,
+      );
     }
   }
 

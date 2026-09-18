@@ -28,6 +28,8 @@ function mapClassificationError(err: unknown, c: any): Response {
         return c.json({ error: 'conflict', message: err.message }, 409);
       case 'transfer_not_classifiable':
         return c.json({ error: 'transfer_not_classifiable', message: err.message }, 400);
+      case 'header_not_postable':
+        return c.json({ error: 'header_not_postable', message: err.message }, 400);
     }
   }
   throw err;

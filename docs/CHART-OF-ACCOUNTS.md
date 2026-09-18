@@ -14,15 +14,22 @@ any other artifact disagree, this document wins and the other is the defect.
   the insert/update/unchanged delta against the global rows (`tenant_id IS NULL`) and
   writes nothing without `--apply` (`pnpm db:seed:coa` dry-runs; `pnpm db:seed:coa -- --apply`
   writes). Running it against production is an operator-approved step and has not been done.
-  Measured against the Neon dev branch on 2026-09-18 it is 15 inserts and 70 updates, of
-  which 6 change a name, description or Schedule E line and 64 only backfill the
-  `parent_code` and keyword `metadata` the seed derives and the existing rows never carried. The table has no Form 8825 column — only `schedule_e_line` —
-  so the `form8825` line this document assigns is resolved at read time through
-  `getForm8825Line()` rather than persisted. See §13.
+  Against the 80 global rows recorded from the Neon dev branch on 2026-09-18 it is 25
+  inserts — the 25 accounts §14 marks `*`, of which 10 are the new headers — and 6
+  updates, each changing a name, description or Schedule E line. The table has no Form
+  8825 column — only `schedule_e_line` — so the `form8825` line this document assigns is
+  resolved at read time through `getForm8825Line()` rather than persisted. See §13.
+- The seed does **not yet write `parent_code`**, so applying it would create the ten
+  header rows without attaching any child to them. The column exists on
+  `chart_of_accounts` and is NULL on every row; the hierarchy §14 now defines is what was
+  missing when `parentCode` was removed from the seed's `PERSISTED_FIELDS`. Restoring it
+  is a separate change, and it is 34 `parent_code` updates on live rows, not 37: three of
+  the 37 children (4005, 4008, 1130) are themselves marked `*`, so they arrive by insert
+  carrying their parent rather than by update. See §13.
 - Importers may only emit codes defined here, validated through `getAccountByCode()`.
 - Change this document first, then the projection, then the database. Never the reverse.
 
-**Applied state:** the 95 accounts registered in §14 are defined in the projection. The 15
+**Applied state:** the 105 accounts registered in §14 are defined in the projection. The 25
 marked NEW below (and `*` in §14) are not yet in the production table (80 accounts there,
 verified identical to the pre-change projection on 2026-09-17); seeding them is a separate
 approved step, and it would also rename 4000 to `Rental Income - Long-Term`. No
@@ -64,6 +71,41 @@ Measured against production Neon on 2026-09-17: 12,522 transactions, 80 accounts
 5. **Transfers are not income or expense.** See §5 (flow of funds) and §6 (clearing).
 6. **Suggestions are not classifications.** Importers and agents write
    `suggested_coa_code` (L1). Only a human or an L2+ actor writes `coa_code`.
+7. **A header account is a rollup, never a posting account.** Ten accounts in §14 carry
+   treatment `header`: they exist so a report can present a group as one line and so
+   Mercury can render `Parent: Child`. Nothing is ever booked to one.
+
+   **The code convention.** A header takes the `x90` slot of the block its children
+   occupy — 1090 for the 10xx cash accounts, 5190 for the 51xx utilities — and `x95`
+   where one block holds two groups (4090 Rental Income and 4095 Tenant Fees both sit in
+   the 40xx income block). The slots are chosen, not computed: an earlier revision of the
+   seed derived a parent arithmetically as `floor(code/100)*100`, which pointed children
+   at sibling *posting* accounts (5055 Litigation at 5000 Advertising, the 90x0 suspense
+   accounts at 9000 Owner Personal Expense) — a valid-looking parent that would silently
+   double-count in any rollup. Every parent in §14 is written down, not derived.
+
+   **Three rules the grouping obeys**, enforced by
+   `server/__tests__/chart-of-accounts-doc-parity.test.ts`:
+
+   - *A header is not a P&L row.* `isProfitAndLossAccount()` is false for one, so a
+     header never renders as its own zero-value line beside the children it sums. The
+     header carries its children's `type` so the rollup lands in the right statement
+     section, but its treatment is `header`, not `pl`.
+   - *Every child shares its header's Form 8825 line.* A grouping whose children would
+     land on different 8825 lines is the wrong grouping — 5320 Bank Charges and 5330
+     Credit Card Fees (line 17) are therefore **not** under 5390 Interest (line 8), and
+     2520 Notes Payable, 2530 Owner Loan Payable and 2540 Due to Affiliate are not under
+     2590 Mortgage Payable, which covers only the two mortgage instruments.
+   - *Grouping does not change Schedule E.* `getScheduleELine()` stays per account.
+     5300 Mortgage Interest (Schedule E line 12) and 5310 Other Interest (line 13) roll
+     up together on 8825 line 8 and stay on separate Schedule E lines; 5390 Interest
+     accordingly carries an 8825 line and **no** Schedule E line, because its children do
+     not agree on one.
+
+   Fixed assets (15xx, 16xx) are deliberately **not** grouped: each block mixes cost
+   accounts with their contra accumulated-depreciation accounts, and a header over both
+   would roll up to net book value, which is a different figure from either. Nor are the
+   1900-series clearing accounts, which must net to zero on their own (§6).
 
 ## 2. The forms this chart feeds
 
@@ -284,7 +326,7 @@ required for the directly-held case regardless.
 
 ## 5. Flow of funds
 
-The Mercury account structure already encodes how money moves. 39 accounts, named by
+The Mercury account structure already encodes how money moves. 38 accounts, named by
 role, are effectively a ledger drawn in bank accounts. Reading them in order gives the
 rule for what is a P&L event and what is merely a hop.
 
@@ -353,7 +395,7 @@ exclude from P&L. Everything else is real income or expense.
 
 ### Mercury account structure: review and proposal
 
-The 39 accounts are a ledger drawn in bank accounts, which is a genuine strength — the
+The 38 accounts are a ledger drawn in bank accounts, which is a genuine strength — the
 structure is legible and each account states its job. Four problems are worth fixing.
 
 **1. The 100% sweep destroys property attribution (most important).** Per-property
@@ -378,7 +420,7 @@ capital repairs; the chart has 1020 Cash — Reserve Fund with no bank account b
 sweep, mapped to 1020.
 
 **4. Entity boundaries: intra-entity and inter-entity are different things, and today's
-structure conflates them.** All 39 accounts sit under one legal entity, **ARIBIA LLC -
+structure conflates them.** All 38 accounts sit under one legal entity, **ARIBIA LLC -
 MGMT**, while three accounts are named for transfers to ARIBIA LLC, City Studio and IT
 CAN BE LLC. Under the current structure those are *intra-entity* movements wearing
 inter-entity labels. That today's accounts are arranged this way is not a reason to keep
@@ -839,8 +881,18 @@ holds only while nothing nets the two together.
 ## 13. What this document does not do
 
 - No account created, renamed, retyped or retired in production — including the
-  7000-series typing error in §8. The 4000 rename and the 15 new accounts exist only in
+  7000-series typing error in §8. The 4000 rename and the 25 new accounts exist only in
   the projection until the seed step is run.
+- The hierarchy is not persisted. §14 defines a `parent_code` for 37 accounts and ten
+  header accounts to hold them, but the seed's `PERSISTED_FIELDS` does not include
+  `parentCode`, so applying it today would insert the headers and leave every
+  `parent_code` NULL. Restoring that field to the seed is a separate change; it needs no
+  DDL, because `chart_of_accounts` already has both the `parent_code` and `subtype`
+  columns.
+- No report groups by header yet. `getAccountTreatment()` returns `header`,
+  `isProfitAndLossAccount()` is false for one, and every posting path refuses one — so a
+  header is safe to exist — but no statement rolls children into it. The rollup is the
+  next change, not this one.
 - No transaction reclassified.
 - `type='transfer'` does not exist; §6 is a specification.
 - `property_id` remains unpopulated; §9 is a specification.
@@ -867,10 +919,10 @@ carry a decision; this one is the whole chart, and it is **normative for the nam
 and treatment strings** — the projection must reproduce them character for character.
 Where §3–§8 spell a name with a typographic dash, the register's form is the name.
 
-`*` marks the 15 accounts added by this document and not yet seeded to production.
+`*` marks the 25 accounts added by this document and not yet seeded to production.
 Treatment is defined in §1 and §6: `pl` reaches a return line, `balance` is balance-sheet
 only, `transfer` is an internal movement, `control` is a work queue or a non-deductible
-holding. `8825` and `Sch E` give the line on Form 8825 and on Schedule E **Part I**. Part I is the
+holding, `header` is a rollup that holds no transaction (§1.7). `8825` and `Sch E` give the line on Form 8825 and on Schedule E **Part I**. Part I is the
 **directly-held-property equivalent**, not ARIBIA's destination: as a partnership its
 rental activity runs Form 8825 → Form 1065 Schedule K line 2 → Schedule K-1 box 2 → the
 partner's **Schedule E Part II** (§2). The Part I column is what a member filing a
@@ -881,100 +933,115 @@ directly held property would use, and it is what the projection's `scheduleE` fi
 gross receipts, 4080 Other Business Income to Schedule K line 7 (royalties), and 4100
 Interest Income to Schedule K line 5 (portfolio interest). See §3.
 
-| Code | Name | Type | Treatment | 8825 | Sch E |
-|---|---|---|---|---|---|
-| 1000 | Cash - Operating | asset | balance | — | — |
-| 1010 | Cash - Security Deposits | asset | balance | — | — |
-| 1020 | Cash - Reserve Fund | asset | balance | — | — |
-| 1050 | Petty Cash | asset | balance | — | — |
-| 1100 | Accounts Receivable - Rent | asset | balance | — | — |
-| 1110 | Accounts Receivable - Other | asset | balance | — | — |
-| 1130 * | Due from Affiliate | asset | balance | — | — |
-| 1500 | Land | asset | balance | — | — |
-| 1510 | Buildings | asset | balance | — | — |
-| 1515 | Accumulated Depreciation - Buildings | asset | balance | — | — |
-| 1520 | Land Improvements | asset | balance | — | — |
-| 1525 | Accumulated Depreciation - Improvements | asset | balance | — | — |
-| 1600 | Appliances | asset | balance | — | — |
-| 1605 | Accumulated Depreciation - Appliances | asset | balance | — | — |
-| 1610 | Furniture & Fixtures | asset | balance | — | — |
-| 1615 | Accumulated Depreciation - Furniture | asset | balance | — | — |
-| 1620 | HVAC Equipment | asset | balance | — | — |
-| 1625 | Accumulated Depreciation - HVAC | asset | balance | — | — |
-| 1900 * | Transfer Clearing - Intra-Entity | asset | transfer | — | — |
-| 1910 * | Transfer Clearing - Intercompany | asset | transfer | — | — |
-| 1920 * | Payment Rail Holding | asset | transfer | — | — |
-| 2000 | Accounts Payable | liability | balance | — | — |
-| 2010 | Security Deposits Held | liability | balance | — | — |
-| 2020 | Prepaid Rent | liability | balance | — | — |
-| 2030 | Accrued Expenses | liability | balance | — | — |
-| 2040 | Credit Card Payable | liability | balance | — | — |
-| 2045 * | Buy-Now-Pay-Later Payable | liability | balance | — | — |
-| 2500 | Mortgage Payable - Primary | liability | balance | — | — |
-| 2510 | Mortgage Payable - Secondary | liability | balance | — | — |
-| 2520 | Notes Payable | liability | balance | — | — |
-| 2530 | Owner Loan Payable | liability | balance | — | — |
-| 2540 * | Due to Affiliate | liability | balance | — | — |
-| 3000 | Owner Capital | equity | balance | — | — |
-| 3010 | Owner Draws | equity | balance | — | — |
-| 3020 | Retained Earnings | equity | balance | — | — |
-| 3030 | Current Year Earnings | equity | balance | — | — |
-| 4000 | Rental Income - Long-Term | income | pl | 2a | 3 |
-| 4005 * | Rental Income - Mid-Term Furnished | income | pl | 2a | 3 |
-| 4008 * | Rental Income - All-Inclusive | income | pl | 2a | 3 |
-| 4010 | Late Fees | income | pl | 2b | 3 |
-| 4020 | Pet Fees | income | pl | 2b | 3 |
-| 4030 | Parking Income | income | pl | 2b | 3 |
-| 4040 | Utility Reimbursement | income | pl | 2b | 3 |
-| 4050 | Application Fees | income | pl | 2b | 3 |
-| 4060 | Laundry Income | income | pl | 2b | 3 |
-| 4070 * | Management Income | income | pl | — | — |
-| 4080 * | Other Business Income | income | pl | — | — |
-| 4100 | Interest Income | income | pl | — | — |
-| 4110 | Forfeited Deposits | income | pl | 2b | 3 |
-| 4120 | Other Income | income | pl | 2b | 3 |
-| 5000 | Advertising | expense | pl | 3 | 5 |
-| 5010 | Auto & Travel | expense | pl | 4 | 6 |
-| 5015 * | Contract Labor (1099) | expense | pl | 17 | 19 |
-| 5020 | Cleaning & Maintenance | expense | pl | 5 | 7 |
-| 5025 * | Furnishings & Decor | expense | pl | 17 | 19 |
-| 5030 | Commissions | expense | pl | 6 | 8 |
-| 5040 | Insurance | expense | pl | 7 | 9 |
-| 5050 | Legal & Professional Fees | expense | pl | 9 | 10 |
-| 5055 * | Litigation - Arias | expense | pl | 9 | 10 |
-| 5060 | Management Fees | expense | pl | 17 | 11 |
-| 5070 | Repairs | expense | pl | 11 | 14 |
-| 5080 | Supplies | expense | pl | 17 | 15 |
-| 5090 | Property Taxes | expense | pl | 10 | 16 |
-| 5100 | Utilities - Electric | expense | pl | 12 | 17 |
-| 5110 | Utilities - Gas | expense | pl | 12 | 17 |
-| 5120 | Utilities - Water/Sewer | expense | pl | 12 | 17 |
-| 5130 | Utilities - Trash | expense | pl | 12 | 17 |
-| 5140 | Utilities - Internet/Cable | expense | pl | 12 | 17 |
-| 5200 | HOA Dues | expense | pl | 17 | 19 |
-| 5210 | Condo Fees | expense | pl | 17 | 19 |
-| 5220 | Special Assessments | expense | pl | 17 | 19 |
-| 5300 | Mortgage Interest | expense | pl | 8 | 12 |
-| 5310 | Other Interest | expense | pl | 8 | 13 |
-| 5320 | Bank Charges | expense | pl | 17 | 19 |
-| 5330 | Credit Card Fees | expense | pl | 17 | 19 |
-| 5400 | Depreciation - Building | expense | pl | 14 | 18 |
-| 5410 | Depreciation - Improvements | expense | pl | 14 | 18 |
-| 5420 | Depreciation - Appliances | expense | pl | 14 | 18 |
-| 5430 | Depreciation - Furniture | expense | pl | 14 | 18 |
-| 6000 | Office Expenses | expense | pl | 17 | 19 |
-| 6010 | Software Subscriptions | expense | pl | 17 | 19 |
-| 6020 | Phone & Communication | expense | pl | 17 | 19 |
-| 6030 | Education & Training | expense | pl | 17 | 19 |
-| 6040 | Licenses & Permits | expense | pl | 17 | 19 |
-| 6050 * | AI & Compute | expense | pl | 17 | 19 |
-| 7000 | Capital Improvements - Building | expense | balance | — | — |
-| 7010 | Capital Improvements - HVAC | expense | balance | — | — |
-| 7020 | Capital Improvements - Roof | expense | balance | — | — |
-| 7030 | Capital Improvements - Appliances | expense | balance | — | — |
-| 7040 | Capital Improvements - Other | expense | balance | — | — |
-| 9000 | Owner Personal Expense | expense | control | — | — |
-| 9010 | Suspense / Unclassified | expense | control | — | — |
-| 9020 | Ask My Accountant | expense | control | — | — |
-| 9030 | Reconciliation Adjustments | expense | control | — | — |
-| 9040 * | Data Quality Hold | expense | control | — | — |
+`Parent` is the header account this one rolls up into, or `—` for an account that has no
+parent. It is the `parent_code` column of `chart_of_accounts` and the `parentCode` field of
+the projection. A header never has a parent of its own: the hierarchy is exactly one level
+deep (§1.7), so no code is both a parent and a child.
+
+| Code | Name | Type | Treatment | 8825 | Sch E | Parent |
+|---|---|---|---|---|---|---|
+| 1000 | Cash - Operating | asset | balance | — | — | 1090 |
+| 1010 | Cash - Security Deposits | asset | balance | — | — | 1090 |
+| 1020 | Cash - Reserve Fund | asset | balance | — | — | 1090 |
+| 1050 | Petty Cash | asset | balance | — | — | 1090 |
+| 1090 * | Cash | asset | header | — | — | — |
+| 1100 | Accounts Receivable - Rent | asset | balance | — | — | 1190 |
+| 1110 | Accounts Receivable - Other | asset | balance | — | — | 1190 |
+| 1130 * | Due from Affiliate | asset | balance | — | — | 1190 |
+| 1190 * | Accounts Receivable | asset | header | — | — | — |
+| 1500 | Land | asset | balance | — | — | — |
+| 1510 | Buildings | asset | balance | — | — | — |
+| 1515 | Accumulated Depreciation - Buildings | asset | balance | — | — | — |
+| 1520 | Land Improvements | asset | balance | — | — | — |
+| 1525 | Accumulated Depreciation - Improvements | asset | balance | — | — | — |
+| 1600 | Appliances | asset | balance | — | — | — |
+| 1605 | Accumulated Depreciation - Appliances | asset | balance | — | — | — |
+| 1610 | Furniture & Fixtures | asset | balance | — | — | — |
+| 1615 | Accumulated Depreciation - Furniture | asset | balance | — | — | — |
+| 1620 | HVAC Equipment | asset | balance | — | — | — |
+| 1625 | Accumulated Depreciation - HVAC | asset | balance | — | — | — |
+| 1900 * | Transfer Clearing - Intra-Entity | asset | transfer | — | — | — |
+| 1910 * | Transfer Clearing - Intercompany | asset | transfer | — | — | — |
+| 1920 * | Payment Rail Holding | asset | transfer | — | — | — |
+| 2000 | Accounts Payable | liability | balance | — | — | — |
+| 2010 | Security Deposits Held | liability | balance | — | — | — |
+| 2020 | Prepaid Rent | liability | balance | — | — | — |
+| 2030 | Accrued Expenses | liability | balance | — | — | — |
+| 2040 | Credit Card Payable | liability | balance | — | — | — |
+| 2045 * | Buy-Now-Pay-Later Payable | liability | balance | — | — | — |
+| 2500 | Mortgage Payable - Primary | liability | balance | — | — | 2590 |
+| 2510 | Mortgage Payable - Secondary | liability | balance | — | — | 2590 |
+| 2520 | Notes Payable | liability | balance | — | — | — |
+| 2530 | Owner Loan Payable | liability | balance | — | — | — |
+| 2540 * | Due to Affiliate | liability | balance | — | — | — |
+| 2590 * | Mortgage Payable | liability | header | — | — | — |
+| 3000 | Owner Capital | equity | balance | — | — | — |
+| 3010 | Owner Draws | equity | balance | — | — | — |
+| 3020 | Retained Earnings | equity | balance | — | — | — |
+| 3030 | Current Year Earnings | equity | balance | — | — | — |
+| 4000 | Rental Income - Long-Term | income | pl | 2a | 3 | 4090 |
+| 4005 * | Rental Income - Mid-Term Furnished | income | pl | 2a | 3 | 4090 |
+| 4008 * | Rental Income - All-Inclusive | income | pl | 2a | 3 | 4090 |
+| 4010 | Late Fees | income | pl | 2b | 3 | 4095 |
+| 4020 | Pet Fees | income | pl | 2b | 3 | 4095 |
+| 4030 | Parking Income | income | pl | 2b | 3 | 4095 |
+| 4040 | Utility Reimbursement | income | pl | 2b | 3 | 4095 |
+| 4050 | Application Fees | income | pl | 2b | 3 | 4095 |
+| 4060 | Laundry Income | income | pl | 2b | 3 | 4095 |
+| 4070 * | Management Income | income | pl | — | — | — |
+| 4080 * | Other Business Income | income | pl | — | — | — |
+| 4090 * | Rental Income | income | header | 2a | 3 | — |
+| 4095 * | Tenant Fees | income | header | 2b | 3 | — |
+| 4100 | Interest Income | income | pl | — | — | — |
+| 4110 | Forfeited Deposits | income | pl | 2b | 3 | — |
+| 4120 | Other Income | income | pl | 2b | 3 | — |
+| 5000 | Advertising | expense | pl | 3 | 5 | — |
+| 5010 | Auto & Travel | expense | pl | 4 | 6 | — |
+| 5015 * | Contract Labor (1099) | expense | pl | 17 | 19 | — |
+| 5020 | Cleaning & Maintenance | expense | pl | 5 | 7 | — |
+| 5025 * | Furnishings & Decor | expense | pl | 17 | 19 | — |
+| 5030 | Commissions | expense | pl | 6 | 8 | — |
+| 5040 | Insurance | expense | pl | 7 | 9 | — |
+| 5050 | Legal & Professional Fees | expense | pl | 9 | 10 | — |
+| 5055 * | Litigation - Arias | expense | pl | 9 | 10 | — |
+| 5060 | Management Fees | expense | pl | 17 | 11 | — |
+| 5070 | Repairs | expense | pl | 11 | 14 | — |
+| 5080 | Supplies | expense | pl | 17 | 15 | — |
+| 5090 | Property Taxes | expense | pl | 10 | 16 | — |
+| 5100 | Utilities - Electric | expense | pl | 12 | 17 | 5190 |
+| 5110 | Utilities - Gas | expense | pl | 12 | 17 | 5190 |
+| 5120 | Utilities - Water/Sewer | expense | pl | 12 | 17 | 5190 |
+| 5130 | Utilities - Trash | expense | pl | 12 | 17 | 5190 |
+| 5140 | Utilities - Internet/Cable | expense | pl | 12 | 17 | 5190 |
+| 5190 * | Utilities | expense | header | 12 | 17 | — |
+| 5200 | HOA Dues | expense | pl | 17 | 19 | 5290 |
+| 5210 | Condo Fees | expense | pl | 17 | 19 | 5290 |
+| 5220 | Special Assessments | expense | pl | 17 | 19 | 5290 |
+| 5290 * | Association Dues | expense | header | 17 | 19 | — |
+| 5300 | Mortgage Interest | expense | pl | 8 | 12 | 5390 |
+| 5310 | Other Interest | expense | pl | 8 | 13 | 5390 |
+| 5320 | Bank Charges | expense | pl | 17 | 19 | — |
+| 5330 | Credit Card Fees | expense | pl | 17 | 19 | — |
+| 5390 * | Interest | expense | header | 8 | — | — |
+| 5400 | Depreciation - Building | expense | pl | 14 | 18 | 5490 |
+| 5410 | Depreciation - Improvements | expense | pl | 14 | 18 | 5490 |
+| 5420 | Depreciation - Appliances | expense | pl | 14 | 18 | 5490 |
+| 5430 | Depreciation - Furniture | expense | pl | 14 | 18 | 5490 |
+| 5490 * | Depreciation | expense | header | 14 | 18 | — |
+| 6000 | Office Expenses | expense | pl | 17 | 19 | — |
+| 6010 | Software Subscriptions | expense | pl | 17 | 19 | — |
+| 6020 | Phone & Communication | expense | pl | 17 | 19 | — |
+| 6030 | Education & Training | expense | pl | 17 | 19 | — |
+| 6040 | Licenses & Permits | expense | pl | 17 | 19 | — |
+| 6050 * | AI & Compute | expense | pl | 17 | 19 | — |
+| 7000 | Capital Improvements - Building | expense | balance | — | — | 7090 |
+| 7010 | Capital Improvements - HVAC | expense | balance | — | — | 7090 |
+| 7020 | Capital Improvements - Roof | expense | balance | — | — | 7090 |
+| 7030 | Capital Improvements - Appliances | expense | balance | — | — | 7090 |
+| 7040 | Capital Improvements - Other | expense | balance | — | — | 7090 |
+| 7090 * | Capital Improvements | expense | header | — | — | — |
+| 9000 | Owner Personal Expense | expense | control | — | — | — |
+| 9010 | Suspense / Unclassified | expense | control | — | — | — |
+| 9020 | Ask My Accountant | expense | control | — | — | — |
+| 9030 | Reconciliation Adjustments | expense | control | — | — | — |
+| 9040 * | Data Quality Hold | expense | control | — | — | — |

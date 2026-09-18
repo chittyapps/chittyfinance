@@ -35,14 +35,21 @@ import { logToChronicle } from '../../server/lib/chittychronicle';
  *
  * What this seed does not write, and why:
  *
- * - `parent_code`. The document contains no notion of parent, hierarchy or rollup. The
- *   previous revision derived one arithmetically (floor(code/100)*100), which pointed
- *   children at sibling POSTING accounts rather than headers — 5055 Litigation at 5000
- *   Advertising, the 90x0 suspense accounts at 9000 Owner Personal Expense, 2540 Due to
- *   Affiliate at 2500 Mortgage Payable. A dangling parent is detectable; a valid-but-wrong
- *   one is indistinguishable from a deliberate choice, and any future rollup would
- *   silently double-count. If a hierarchy belongs in the chart it belongs in the
- *   authoritative document, where it can be defined and parity-tested.
+ * - `parent_code`. NOT YET, but no longer for the original reason. It was removed because
+ *   the document contained no notion of parent and the previous revision derived one
+ *   arithmetically (floor(code/100)*100), which pointed children at sibling POSTING
+ *   accounts rather than headers — 5055 Litigation at 5000 Advertising, the 90x0 suspense
+ *   accounts at 9000 Owner Personal Expense, 2540 Due to Affiliate at 2500 Mortgage
+ *   Payable. A dangling parent is detectable; a valid-but-wrong one is indistinguishable
+ *   from a deliberate choice, and any future rollup would silently double-count.
+ *
+ *   docs/CHART-OF-ACCOUNTS.md §1.7 and §14 now define the hierarchy explicitly — ten
+ *   header accounts and a written-down `parent_code` for 37 children, parity-tested
+ *   against the projection by `chartParityMismatches()`. The condition that removed the
+ *   field is therefore met, and restoring `parentCode` to PERSISTED_FIELDS (and to
+ *   projectSeedRows) is the next change; it needs no DDL, the column already exists.
+ *   Applying the seed before that lands inserts the ten headers and leaves every
+ *   `parent_code` NULL, which is a coherent intermediate state, not a broken one.
  * - `metadata.keywords`. Derived from TURBOTENANT_CATEGORY_MAP, which every consumer
  *   already reads directly from the projection. Persisting a second copy buys a drift
  *   surface and nothing usable today — the same reasoning §13 gives for not persisting
