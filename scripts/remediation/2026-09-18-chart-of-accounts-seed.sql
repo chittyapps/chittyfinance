@@ -78,18 +78,28 @@ COMMIT;
 --   SELECT COUNT(*) FROM chart_of_accounts
 --    WHERE tenant_id IS NULL AND modified_by IS NOT NULL;                        -- expect 15
 --
--- ROLLBACK RECIPE (restores the exact pre-state above):
+-- ROLLBACK RECIPE (restores every column this script touched, including updated_at):
 --
 -- BEGIN;
 -- DELETE FROM chart_of_accounts WHERE tenant_id IS NULL AND modified_by = 'seed:chart-of-accounts'
 --   AND code IN ('1130','1900','1910','1920','2045','2540','4005','4008','4070','4080','5015','5025','5055','6050','9040');
--- UPDATE chart_of_accounts SET name='Rental Income', description='Base rent received' WHERE tenant_id IS NULL AND code='4000';
--- UPDATE chart_of_accounts SET schedule_e_line=NULL, description='Security deposits retained' WHERE tenant_id IS NULL AND code='4110';
--- UPDATE chart_of_accounts SET schedule_e_line=NULL WHERE tenant_id IS NULL AND code='4120';
--- UPDATE chart_of_accounts SET schedule_e_line='Line 14' WHERE tenant_id IS NULL AND code='5020';
--- UPDATE chart_of_accounts SET schedule_e_line='Line 7'  WHERE tenant_id IS NULL AND code='5030';
--- UPDATE chart_of_accounts SET schedule_e_line='Line 14' WHERE tenant_id IS NULL AND code='5080';
+-- UPDATE chart_of_accounts SET name='Rental Income', description='Base rent received',
+--   updated_at='2026-04-18T16:49:51.312741+00' WHERE tenant_id IS NULL AND code='4000';
+-- UPDATE chart_of_accounts SET schedule_e_line=NULL, description='Security deposits retained',
+--   updated_at='2026-04-18T16:49:51.312741+00' WHERE tenant_id IS NULL AND code='4110';
+-- UPDATE chart_of_accounts SET schedule_e_line=NULL,
+--   updated_at='2026-04-18T16:49:51.312741+00' WHERE tenant_id IS NULL AND code='4120';
+-- UPDATE chart_of_accounts SET schedule_e_line='Line 14',
+--   updated_at='2026-04-18T16:49:58.86112+00'  WHERE tenant_id IS NULL AND code='5020';
+-- UPDATE chart_of_accounts SET schedule_e_line='Line 7',
+--   updated_at='2026-04-18T16:49:58.86112+00'  WHERE tenant_id IS NULL AND code='5030';
+-- UPDATE chart_of_accounts SET schedule_e_line='Line 14',
+--   updated_at='2026-04-18T16:49:58.86112+00'  WHERE tenant_id IS NULL AND code='5080';
 -- COMMIT;
+--
+-- The updated_at values above are the rows' originals, captured in the same read as
+-- the digest below. With them the rollback is exact for every column this script
+-- touches; created_at was never modified.
 --
 -- A rollback restores data but not the reasoning: 5020/5030/5080 were mapped to lines
 -- that belong to other expense kinds, verified against the 2025 Schedule E. Rolling back
