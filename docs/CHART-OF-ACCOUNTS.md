@@ -9,11 +9,16 @@ any other artifact disagree, this document wins and the other is the defect.
 
 - `database/chart-of-accounts.ts` is its machine-readable projection and must match it.
   `server/__tests__/chart-of-accounts-doc-parity.test.ts` fails CI if they diverge.
-- The seed that would carry the projection into the `chart_of_accounts` table
-  (`database/seeds/chart-of-accounts.ts`) **does not run today**: it imports `server/db`,
-  which was deleted in #81. The table also has no Form 8825 column — only
-  `schedule_e_line` — so the `form8825` line this document assigns lives in the
-  projection and in this document, and is not persisted. See §13.
+- The seed that carries the projection into the `chart_of_accounts` table
+  (`database/seeds/chart-of-accounts.ts`) runs, and is a **dry run by default**: it prints
+  the insert/update/unchanged delta against the global rows (`tenant_id IS NULL`) and
+  writes nothing without `--apply` (`pnpm db:seed:coa` dry-runs; `pnpm db:seed:coa -- --apply`
+  writes). Running it against production is an operator-approved step and has not been done.
+  Measured against the Neon dev branch on 2026-09-18 it is 15 inserts and 70 updates, of
+  which 6 change a name, description or Schedule E line and 64 only backfill the
+  `parent_code` and keyword `metadata` the seed derives and the existing rows never carried. The table has no Form 8825 column — only `schedule_e_line` —
+  so the `form8825` line this document assigns is resolved at read time through
+  `getForm8825Line()` rather than persisted. See §13.
 - Importers may only emit codes defined here, validated through `getAccountByCode()`.
 - Change this document first, then the projection, then the database. Never the reverse.
 
@@ -844,11 +849,14 @@ holds only while nothing nets the two together.
 - The sign convention in §6 documents `server/books/transfers.ts` on PR #160, which is not
   merged. Nothing on this branch enforces it.
 - No Mercury category renamed or retired; §10 is a proposal.
-- Nothing is seeded. `database/seeds/chart-of-accounts.ts` imports `server/db`, deleted
-  in #81, so the seed path is broken and no account defined here can reach the
-  `chart_of_accounts` table until it is repointed at `server/db/connection.ts`.
+- Nothing is seeded. The seed path itself is repaired and runnable, but it has not been
+  run against production: `database/seeds/chart-of-accounts.ts` is a dry run unless given
+  `--apply`, and applying it is a separate operator-approved step. Until then no account
+  defined here has reached the `chart_of_accounts` table.
 - The Form 8825 line is not persisted. `chart_of_accounts` carries `schedule_e_line` and
-  no 8825 column, so `form8825` exists only in this document and in the projection.
+  no 8825 column, so `form8825` lives in this document and in the projection and is
+  resolved at read time by `getForm8825Line()`. Adding a `form_8825_line` column stays
+  available if a report ever needs to group by 8825 line in SQL.
 - Nothing here is tax advice. The line mappings are prep work for a preparer to review;
   ARIBIA's 2024 filings are delinquent and under LITC review.
 
