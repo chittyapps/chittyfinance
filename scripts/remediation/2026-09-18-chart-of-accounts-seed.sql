@@ -142,8 +142,11 @@ COMMIT;
 --   2. "The seed remains idempotent afterwards: a later `--apply` run over this state
 --      plans 0 inserts, 0 updates" — false when written. tax_deductible was already in
 --      PERSISTED_FIELDS, so a seed run over this state plans 4 updates with
---      'taxDeductible' in changedFields. (Post-#171 it also plans parent_code updates,
---      for an unrelated and intended reason.)
+--      'taxDeductible' in changedFields. Verified against the tree as it stood at the
+--      commit that recorded this apply — `git show 8125cff:database/seeds/chart-of-
+--      accounts.ts` has PERSISTED_FIELDS = [name, type, subtype, description,
+--      scheduleELine, taxDeductible]. (parentCode joined that list later, in #171, so
+--      a seed run today plans parent_code updates too — unrelated, and intended.)
 --
 -- THE ROLLBACK RECIPE ABOVE CANNOT RESTORE THIS. It is exact for every column the apply
 -- actually wrote, but "restores every column this script touched" describes a narrower
