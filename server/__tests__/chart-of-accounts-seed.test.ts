@@ -115,7 +115,15 @@ describe('projectSeedRows', () => {
 
   it('projects only the columns the authoritative document defines', () => {
     // parent_code and metadata were derived here and written to 77 of 95 rows; the
-    // document defines neither. Nothing may reintroduce them without defining them there.
+    // document defined neither, so both were removed.
+    //
+    // The document now DOES define parent_code (§1.7, §14 Parent column) and the
+    // projection carries it, so the reason this assertion holds has changed: the seed
+    // has simply not been taught to write the column yet, and applying it today inserts
+    // the ten header accounts with every parent_code left NULL. Restoring `parentCode`
+    // to PERSISTED_FIELDS and to projectSeedRows() is the follow-up; when it lands this
+    // assertion is what has to be updated deliberately rather than drifted past.
+    // `metadata` stays out either way — the document still defines nothing for it.
     expect(Object.keys(PROJECTED[0]).sort()).toEqual([
       'code',
       'description',
@@ -237,12 +245,13 @@ describe('the delta this seed would apply to the dev branch as it stands', () =>
 
   it('starts from the 80 global accounts the snapshot holds', () => {
     expect(existing).toHaveLength(80);
-    expect(PROJECTED).toHaveLength(95);
+    expect(PROJECTED).toHaveLength(105);
   });
 
-  it('inserts exactly the 15 accounts the register marks as not yet seeded', () => {
+  it('inserts exactly the 25 accounts the register marks as not yet seeded', () => {
+    // 15 from #157 plus the 10 header accounts the hierarchy adds.
     expect(plan.inserts.map((r) => r.code).sort()).toEqual([...starredCodes(DOC)].sort());
-    expect(plan.inserts).toHaveLength(15);
+    expect(plan.inserts).toHaveLength(25);
   });
 
   it('updates exactly the six accounts #157 changed, and nothing else', () => {
@@ -408,7 +417,7 @@ describe('seedChartOfAccounts: the statements it emits', () => {
   it('inserts global rows: tenant_id bound null, modified_by the seed', async () => {
     const { calls } = await runApply(devBranchRows());
     const inserts = INSERTS(calls);
-    expect(inserts).toHaveLength(15);
+    expect(inserts).toHaveLength(25);
     for (const call of inserts) {
       const tenantIdIndex = [...call.sql.matchAll(/"([a-z_]+)"/g)]
         .map((m) => m[1])
@@ -453,7 +462,7 @@ describe('seedChartOfAccounts: the statements it emits', () => {
   it('writes nothing in a dry run', async () => {
     const { db, calls } = recordingDb(devBranchRows());
     const plan = await seedChartOfAccounts({ db });
-    expect(plan.inserts).toHaveLength(15);
+    expect(plan.inserts).toHaveLength(25);
     expect(INSERTS(calls)).toHaveLength(0);
     expect(UPDATES(calls)).toHaveLength(0);
   });
@@ -463,7 +472,7 @@ describe('seedChartOfAccounts: the audit trail', () => {
   it('emits one record per written row, naming the fields that changed', async () => {
     const { audit, plan } = await runApply(devBranchRows());
     expect(audit).toHaveLength(plan.inserts.length + plan.updates.length);
-    expect(audit.filter((e) => e.action === 'create')).toHaveLength(15);
+    expect(audit.filter((e) => e.action === 'create')).toHaveLength(25);
     const updates = audit.filter((e) => e.action === 'update');
     expect(updates.map((e) => e.code).sort()).toEqual([
       '4000',

@@ -14,7 +14,7 @@
  */
 
 import OpenAI from 'openai';
-import { findAccountCode } from '../../database/chart-of-accounts';
+import { findAccountCode, isHeaderAccount } from '../../database/chart-of-accounts';
 
 export interface ClassifiableTransaction {
   id: string;
@@ -67,6 +67,14 @@ export async function classifyBatchWithAI(
     throw new Error(`Batch size ${transactions.length} exceeds max ${MAX_BATCH}`);
   }
 
+  // Header accounts hold no transaction, so the model must never see one: `coa` arrives
+  // from `chart_of_accounts`, which will hold the ten headers once the chart is seeded.
+  // Dropping them here rather than at the write is deliberate — `classifyTransaction`
+  // rejects a header with `header_not_postable`, and the batch routes rethrow anything
+  // that is not `reconciled_locked` or `conflict`, so one hallucinated header would
+  // abort the whole batch instead of costing one row.
+  const postable = coa.filter((a) => !isHeaderAccount(a.code));
+
   // Fallback path if no API key or OpenAI unavailable
   if (!apiKey) {
     return transactions.map((tx) => keywordFallback(tx));
@@ -77,7 +85,7 @@ export async function classifyBatchWithAI(
     ...(opts?.gatewayUrl ? { baseURL: opts.gatewayUrl } : {}),
   });
 
-  const coaReference = buildCoaReference(coa);
+  const coaReference = buildCoaReference(postable);
   const txPayload = transactions.map((tx) => ({
     id: tx.id,
     description: tx.description.slice(0, 200), // truncate noise
@@ -118,7 +126,7 @@ export async function classifyBatchWithAI(
       suggestions?: Array<{ id?: string; code?: string; confidence?: number; reason?: string }>;
     };
 
-    const validCodes = new Set(coa.map((a) => a.code));
+    const validCodes = new Set(postable.map((a) => a.code));
     const suggestionMap = new Map<string, AiSuggestion>();
 
     for (const s of parsed.suggestions ?? []) {

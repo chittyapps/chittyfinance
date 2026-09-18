@@ -15,11 +15,17 @@ export interface AccountDefinition {
   code: string;
   name: string;
   type: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+  /** `'header'` marks a rollup that holds no transaction. See HEADER_CODES. */
   subtype?: string;
   description: string;
   scheduleE?: string; // IRS Schedule E (Form 1040) Part I line
   form8825?: string; // IRS Form 8825 line (partnership rental)
   taxDeductible?: boolean;
+  /**
+   * The header account this one rolls up into, or undefined. Exactly one level deep:
+   * a header never carries a parent of its own. See docs/CHART-OF-ACCOUNTS.md §1.7.
+   */
+  parentCode?: string;
 }
 
 /**
@@ -28,8 +34,9 @@ export interface AccountDefinition {
  *  - 'balance'  balance-sheet only; never a P&L or tax line
  *  - 'transfer' movement between accounts the group controls; excluded from P&L
  *  - 'control'  workflow//non-deductible holding; excluded from tax lines
+ *  - 'header'   a rollup of its children; holds no transaction and is never a P&L row
  */
-export type AccountTreatment = 'pl' | 'balance' | 'transfer' | 'control';
+export type AccountTreatment = 'pl' | 'balance' | 'transfer' | 'control' | 'header';
 
 /** Clearing accounts. Both legs of an internal movement land here; they net to zero. */
 export const TRANSFER_CLEARING_CODES = ['1900', '1910', '1920'] as const;
@@ -45,14 +52,42 @@ export const CAPITAL_IMPROVEMENT_CODES = ['7000', '7010', '7020', '7030', '7040'
 /** Control accounts: never reported on a return line. */
 export const CONTROL_CODES = ['9000', '9010', '9020', '9030', '9040'] as const;
 
+/**
+ * Header accounts: rollups that hold no transaction.
+ *
+ * They exist so a report can present a group as one line, and so an external ledger that
+ * understands hierarchy (Mercury reads `Parent: Child`) can be given ours. Nothing may be
+ * booked to one — `assertPostableAccount()` is the guard, and every path that assigns a
+ * code to a transaction runs it.
+ *
+ * Codes are chosen, not derived. A header takes the `x90` slot of the block its children
+ * occupy, and `x95` where one block holds two groups. An earlier revision of the seed
+ * derived a parent as `floor(code/100)*100`, which pointed children at sibling *posting*
+ * accounts — a valid-looking parent that would silently double-count in any rollup.
+ * See docs/CHART-OF-ACCOUNTS.md §1.7.
+ */
+export const HEADER_CODES = [
+  '1090',
+  '1190',
+  '2590',
+  '4090',
+  '4095',
+  '5190',
+  '5290',
+  '5390',
+  '5490',
+  '7090',
+] as const;
+
 // Standard REI Chart of Accounts
 export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   // ============== ASSETS (1xxx) ==============
   // Cash & Bank Accounts (1000-1099)
-  { code: '1000', name: 'Cash - Operating', type: 'asset', subtype: 'cash', description: 'Primary operating bank account' },
-  { code: '1010', name: 'Cash - Security Deposits', type: 'asset', subtype: 'cash', description: 'Tenant security deposit escrow' },
-  { code: '1020', name: 'Cash - Reserve Fund', type: 'asset', subtype: 'cash', description: 'Capital reserves for repairs' },
-  { code: '1050', name: 'Petty Cash', type: 'asset', subtype: 'cash', description: 'Petty cash on hand' },
+  { code: '1000', name: 'Cash - Operating', type: 'asset', subtype: 'cash', description: 'Primary operating bank account', parentCode: '1090' },
+  { code: '1010', name: 'Cash - Security Deposits', type: 'asset', subtype: 'cash', description: 'Tenant security deposit escrow', parentCode: '1090' },
+  { code: '1020', name: 'Cash - Reserve Fund', type: 'asset', subtype: 'cash', description: 'Capital reserves for repairs', parentCode: '1090' },
+  { code: '1050', name: 'Petty Cash', type: 'asset', subtype: 'cash', description: 'Petty cash on hand', parentCode: '1090' },
+  { code: '1090', name: 'Cash', type: 'asset', subtype: 'header', description: 'Header: rolls up the cash and bank accounts. Holds no transaction' },
 
   // Clearing & Holding (1900-1999) — see docs/CHART-OF-ACCOUNTS.md §6
   { code: '1900', name: 'Transfer Clearing - Intra-Entity', type: 'asset', subtype: 'clearing', description: 'Both legs of a movement between two accounts of the same entity; nets to zero' },
@@ -60,9 +95,10 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   { code: '1920', name: 'Payment Rail Holding', type: 'asset', subtype: 'clearing', description: 'Venmo/Zelle/cash in flight until the far side is known' },
 
   // Receivables (1100-1199)
-  { code: '1130', name: 'Due from Affiliate', type: 'asset', subtype: 'receivable', description: 'Standing inter-entity receivable; mirrors the affiliate\'s 2540' },
-  { code: '1100', name: 'Accounts Receivable - Rent', type: 'asset', subtype: 'receivable', description: 'Outstanding rent due from tenants' },
-  { code: '1110', name: 'Accounts Receivable - Other', type: 'asset', subtype: 'receivable', description: 'Other amounts due' },
+  { code: '1130', name: 'Due from Affiliate', type: 'asset', subtype: 'receivable', description: 'Standing inter-entity receivable; mirrors the affiliate\'s 2540', parentCode: '1190' },
+  { code: '1100', name: 'Accounts Receivable - Rent', type: 'asset', subtype: 'receivable', description: 'Outstanding rent due from tenants', parentCode: '1190' },
+  { code: '1110', name: 'Accounts Receivable - Other', type: 'asset', subtype: 'receivable', description: 'Other amounts due', parentCode: '1190' },
+  { code: '1190', name: 'Accounts Receivable', type: 'asset', subtype: 'header', description: 'Header: rolls up the receivables. Holds no transaction' },
 
   // Fixed Assets - Real Property (1500-1599)
   { code: '1500', name: 'Land', type: 'asset', subtype: 'fixed', description: 'Land value (not depreciable)' },
@@ -90,8 +126,9 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   // Long-Term Liabilities (2500-2599)
   { code: '2045', name: 'Buy-Now-Pay-Later Payable', type: 'liability', subtype: 'payable', description: 'Affirm, Afterpay and similar financed purchases' },
   { code: '2540', name: 'Due to Affiliate', type: 'liability', subtype: 'payable', description: 'Standing inter-entity payable; mirrors the affiliate\'s 1130' },
-  { code: '2500', name: 'Mortgage Payable - Primary', type: 'liability', subtype: 'long-term', description: 'Primary mortgage balance' },
-  { code: '2510', name: 'Mortgage Payable - Secondary', type: 'liability', subtype: 'long-term', description: 'Second mortgage/HELOC balance' },
+  { code: '2500', name: 'Mortgage Payable - Primary', type: 'liability', subtype: 'long-term', description: 'Primary mortgage balance', parentCode: '2590' },
+  { code: '2510', name: 'Mortgage Payable - Secondary', type: 'liability', subtype: 'long-term', description: 'Second mortgage/HELOC balance', parentCode: '2590' },
+  { code: '2590', name: 'Mortgage Payable', type: 'liability', subtype: 'header', description: 'Header: rolls up the mortgage instruments (2500, 2510). Other borrowings are not children. Holds no transaction' },
   { code: '2520', name: 'Notes Payable', type: 'liability', subtype: 'long-term', description: 'Other loan balances' },
   { code: '2530', name: 'Owner Loan Payable', type: 'liability', subtype: 'long-term', description: 'Loans from owners to entity' },
 
@@ -103,15 +140,17 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
 
   // ============== INCOME (4xxx) ==============
   // Rental Income (4000-4099)
-  { code: '4000', name: 'Rental Income - Long-Term', type: 'income', description: 'Base rent received on unfurnished, year-length leases', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false },
-  { code: '4005', name: 'Rental Income - Mid-Term Furnished', type: 'income', description: 'Furnished stays of 30+ days; passive rental income', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false },
-  { code: '4008', name: 'Rental Income - All-Inclusive', type: 'income', description: 'Rent with utilities bundled', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false },
-  { code: '4010', name: 'Late Fees', type: 'income', description: 'Late payment fees collected', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
-  { code: '4020', name: 'Pet Fees', type: 'income', description: 'Pet rent and deposits (non-refundable)', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
-  { code: '4030', name: 'Parking Income', type: 'income', description: 'Parking space rental', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
-  { code: '4040', name: 'Utility Reimbursement', type: 'income', description: 'Tenant utility payments', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
-  { code: '4050', name: 'Application Fees', type: 'income', description: 'Tenant application fees', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
-  { code: '4060', name: 'Laundry Income', type: 'income', description: 'Coin laundry revenue', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
+  { code: '4000', name: 'Rental Income - Long-Term', type: 'income', description: 'Base rent received on unfurnished, year-length leases', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false, parentCode: '4090' },
+  { code: '4005', name: 'Rental Income - Mid-Term Furnished', type: 'income', description: 'Furnished stays of 30+ days; passive rental income', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false, parentCode: '4090' },
+  { code: '4008', name: 'Rental Income - All-Inclusive', type: 'income', description: 'Rent with utilities bundled', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false, parentCode: '4090' },
+  { code: '4090', name: 'Rental Income', type: 'income', subtype: 'header', description: 'Header: rolls up gross rents, Form 8825 line 2a. Holds no transaction', scheduleE: 'Line 3', form8825: 'Line 2a', taxDeductible: false },
+  { code: '4010', name: 'Late Fees', type: 'income', description: 'Late payment fees collected', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false, parentCode: '4095' },
+  { code: '4020', name: 'Pet Fees', type: 'income', description: 'Pet rent and deposits (non-refundable)', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false, parentCode: '4095' },
+  { code: '4030', name: 'Parking Income', type: 'income', description: 'Parking space rental', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false, parentCode: '4095' },
+  { code: '4040', name: 'Utility Reimbursement', type: 'income', description: 'Tenant utility payments', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false, parentCode: '4095' },
+  { code: '4050', name: 'Application Fees', type: 'income', description: 'Tenant application fees', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false, parentCode: '4095' },
+  { code: '4060', name: 'Laundry Income', type: 'income', description: 'Coin laundry revenue', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false, parentCode: '4095' },
+  { code: '4095', name: 'Tenant Fees', type: 'income', subtype: 'header', description: 'Header: rolls up other rental income, Form 8825 line 2b. Holds no transaction', scheduleE: 'Line 3', form8825: 'Line 2b', taxDeductible: false },
 
   // Other Income (4100-4199)
   { code: '4100', name: 'Interest Income', type: 'income', description: 'Bank interest, security deposit interest', taxDeductible: false },
@@ -142,28 +181,32 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   { code: '5090', name: 'Property Taxes', type: 'expense', description: 'Real estate taxes', scheduleE: 'Line 16', form8825: 'Line 10', taxDeductible: true },
 
   // Utilities (5100-5199)
-  { code: '5100', name: 'Utilities - Electric', type: 'expense', description: 'Electricity (landlord paid)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
-  { code: '5110', name: 'Utilities - Gas', type: 'expense', description: 'Gas (landlord paid)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
-  { code: '5120', name: 'Utilities - Water/Sewer', type: 'expense', description: 'Water and sewer', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
-  { code: '5130', name: 'Utilities - Trash', type: 'expense', description: 'Garbage collection', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
-  { code: '5140', name: 'Utilities - Internet/Cable', type: 'expense', description: 'Internet and cable (if provided)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true },
+  { code: '5100', name: 'Utilities - Electric', type: 'expense', description: 'Electricity (landlord paid)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true, parentCode: '5190' },
+  { code: '5110', name: 'Utilities - Gas', type: 'expense', description: 'Gas (landlord paid)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true, parentCode: '5190' },
+  { code: '5120', name: 'Utilities - Water/Sewer', type: 'expense', description: 'Water and sewer', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true, parentCode: '5190' },
+  { code: '5130', name: 'Utilities - Trash', type: 'expense', description: 'Garbage collection', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true, parentCode: '5190' },
+  { code: '5140', name: 'Utilities - Internet/Cable', type: 'expense', description: 'Internet and cable (if provided)', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: true, parentCode: '5190' },
+  { code: '5190', name: 'Utilities', type: 'expense', subtype: 'header', description: 'Header: rolls up the landlord-paid utilities, Form 8825 line 12. Holds no transaction', scheduleE: 'Line 17', form8825: 'Line 12', taxDeductible: false },
 
   // HOA & Association Fees (5200-5299)
-  { code: '5200', name: 'HOA Dues', type: 'expense', description: 'Homeowner association fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
-  { code: '5210', name: 'Condo Fees', type: 'expense', description: 'Condo association fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
-  { code: '5220', name: 'Special Assessments', type: 'expense', description: 'HOA special assessments', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
+  { code: '5200', name: 'HOA Dues', type: 'expense', description: 'Homeowner association fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true, parentCode: '5290' },
+  { code: '5210', name: 'Condo Fees', type: 'expense', description: 'Condo association fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true, parentCode: '5290' },
+  { code: '5220', name: 'Special Assessments', type: 'expense', description: 'HOA special assessments', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true, parentCode: '5290' },
+  { code: '5290', name: 'Association Dues', type: 'expense', subtype: 'header', description: 'Header: rolls up HOA, condo and special assessment dues. Holds no transaction', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: false },
 
   // Financial Expenses (5300-5399)
-  { code: '5300', name: 'Mortgage Interest', type: 'expense', description: 'Mortgage interest expense', scheduleE: 'Line 12', form8825: 'Line 8', taxDeductible: true },
-  { code: '5310', name: 'Other Interest', type: 'expense', description: 'Other loan interest', scheduleE: 'Line 13', form8825: 'Line 8', taxDeductible: true },
+  { code: '5300', name: 'Mortgage Interest', type: 'expense', description: 'Mortgage interest expense', scheduleE: 'Line 12', form8825: 'Line 8', taxDeductible: true, parentCode: '5390' },
+  { code: '5310', name: 'Other Interest', type: 'expense', description: 'Other loan interest', scheduleE: 'Line 13', form8825: 'Line 8', taxDeductible: true, parentCode: '5390' },
+  { code: '5390', name: 'Interest', type: 'expense', subtype: 'header', description: 'Header: rolls up interest onto Form 8825 line 8. No Schedule E line — its children split across lines 12 and 13, and the rollup must not merge them. Holds no transaction', form8825: 'Line 8', taxDeductible: false },
   { code: '5320', name: 'Bank Charges', type: 'expense', description: 'Bank fees, NSF fees, wire fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
   { code: '5330', name: 'Credit Card Fees', type: 'expense', description: 'Merchant processing fees', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
 
   // Depreciation (5400-5499)
-  { code: '5400', name: 'Depreciation - Building', type: 'expense', description: '27.5 year residential depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true },
-  { code: '5410', name: 'Depreciation - Improvements', type: 'expense', description: 'Depreciation on improvements', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true },
-  { code: '5420', name: 'Depreciation - Appliances', type: 'expense', description: '5-7 year depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true },
-  { code: '5430', name: 'Depreciation - Furniture', type: 'expense', description: '5-7 year depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true },
+  { code: '5400', name: 'Depreciation - Building', type: 'expense', description: '27.5 year residential depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true, parentCode: '5490' },
+  { code: '5410', name: 'Depreciation - Improvements', type: 'expense', description: 'Depreciation on improvements', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true, parentCode: '5490' },
+  { code: '5420', name: 'Depreciation - Appliances', type: 'expense', description: '5-7 year depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true, parentCode: '5490' },
+  { code: '5430', name: 'Depreciation - Furniture', type: 'expense', description: '5-7 year depreciation', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: true, parentCode: '5490' },
+  { code: '5490', name: 'Depreciation', type: 'expense', subtype: 'header', description: 'Header: rolls up depreciation, Form 8825 line 14. Holds no transaction', scheduleE: 'Line 18', form8825: 'Line 14', taxDeductible: false },
 
   // Administrative Expenses (6000-6099)
   { code: '6000', name: 'Office Expenses', type: 'expense', description: 'Office supplies, postage', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
@@ -174,11 +217,12 @@ export const REI_CHART_OF_ACCOUNTS: AccountDefinition[] = [
   { code: '6040', name: 'Licenses & Permits', type: 'expense', description: 'Business licenses, rental permits', scheduleE: 'Line 19', form8825: 'Line 17', taxDeductible: true },
 
   // Capital Expenditures (7000-7099) - Not directly expensed, added to asset basis
-  { code: '7000', name: 'Capital Improvements - Building', type: 'expense', subtype: 'capital', description: 'Major improvements (capitalize, depreciate)', taxDeductible: false },
-  { code: '7010', name: 'Capital Improvements - HVAC', type: 'expense', subtype: 'capital', description: 'HVAC replacement (capitalize)', taxDeductible: false },
-  { code: '7020', name: 'Capital Improvements - Roof', type: 'expense', subtype: 'capital', description: 'Roof replacement (capitalize)', taxDeductible: false },
-  { code: '7030', name: 'Capital Improvements - Appliances', type: 'expense', subtype: 'capital', description: 'New appliances (capitalize)', taxDeductible: false },
-  { code: '7040', name: 'Capital Improvements - Other', type: 'expense', subtype: 'capital', description: 'Other capital improvements', taxDeductible: false },
+  { code: '7000', name: 'Capital Improvements - Building', type: 'expense', subtype: 'capital', description: 'Major improvements (capitalize, depreciate)', taxDeductible: false, parentCode: '7090' },
+  { code: '7010', name: 'Capital Improvements - HVAC', type: 'expense', subtype: 'capital', description: 'HVAC replacement (capitalize)', taxDeductible: false, parentCode: '7090' },
+  { code: '7020', name: 'Capital Improvements - Roof', type: 'expense', subtype: 'capital', description: 'Roof replacement (capitalize)', taxDeductible: false, parentCode: '7090' },
+  { code: '7030', name: 'Capital Improvements - Appliances', type: 'expense', subtype: 'capital', description: 'New appliances (capitalize)', taxDeductible: false, parentCode: '7090' },
+  { code: '7040', name: 'Capital Improvements - Other', type: 'expense', subtype: 'capital', description: 'Other capital improvements', taxDeductible: false, parentCode: '7090' },
+  { code: '7090', name: 'Capital Improvements', type: 'expense', subtype: 'header', description: 'Header: rolls up capitalized improvements. Balance-sheet, like its children (§8). Holds no transaction', taxDeductible: false },
 
   // Non-Deductible / Suspense (9000-9999)
   { code: '9040', name: 'Data Quality Hold', type: 'expense', subtype: 'suspense', description: 'Source data is broken (bad payee, epoch date); not a pending human decision', taxDeductible: false },
@@ -298,7 +342,15 @@ export function buildPropertyMap(properties: PropertyMapping[]): Record<string, 
   return map;
 }
 
-// Helper to find COA code from description
+/**
+ * Helper to find COA code from description.
+ *
+ * Every code it can return comes from TURBOTENANT_CATEGORY_MAP, and no entry there is a
+ * header — the doc-parity suite asserts that, so a header cannot be introduced into the
+ * map without CI failing. The guard below is the second line: it throws rather than
+ * quietly demoting to suspense, because a silent demotion would hide the map defect
+ * behind a plausible-looking 9010 and there would be nothing to notice.
+ */
 export function findAccountCode(description: string, category?: string): string {
   const descLower = description.toLowerCase();
   const catLower = (category || '').toLowerCase();
@@ -306,6 +358,7 @@ export function findAccountCode(description: string, category?: string): string 
   // Check category first
   for (const [key, code] of Object.entries(TURBOTENANT_CATEGORY_MAP)) {
     if (catLower === key.toLowerCase()) {
+      assertPostableAccount(code);
       return code;
     }
   }
@@ -313,6 +366,7 @@ export function findAccountCode(description: string, category?: string): string 
   // Check description for keywords
   for (const [key, code] of Object.entries(TURBOTENANT_CATEGORY_MAP)) {
     if (descLower.includes(key.toLowerCase())) {
+      assertPostableAccount(code);
       return code;
     }
   }
@@ -324,6 +378,51 @@ export function findAccountCode(description: string, category?: string): string 
 // Get account definition by code
 export function getAccountByCode(code: string): AccountDefinition | undefined {
   return REI_CHART_OF_ACCOUNTS.find(a => a.code === code);
+}
+
+/**
+ * Is this a header account — a rollup that holds no transaction?
+ *
+ * `getAccountByCode()` answers "does this code exist", which is the check every importer
+ * runs (§1.3, the COA 3200 bug). A header exists, so that check passes for one: this is
+ * the inverse guard, and it is the reason `assertPostableAccount()` below exists rather
+ * than each call site reasoning about subtypes.
+ */
+export function isHeaderAccount(code: string | null | undefined): boolean {
+  if (!code) return false;
+  return (HEADER_CODES as readonly string[]).includes(code);
+}
+
+/** The children of a header, in chart order. Empty for a code that is not a header. */
+export function getChildAccounts(code: string): AccountDefinition[] {
+  return REI_CHART_OF_ACCOUNTS.filter((a) => a.parentCode === code);
+}
+
+/** Thrown when a code that cannot hold a transaction is about to be written to one. */
+export class NonPostableAccountError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = 'NonPostableAccountError';
+  }
+}
+
+/**
+ * Refuse a code no transaction may carry. Every path that assigns a code to a
+ * transaction — ingest, classification, suggestion, bulk accept — runs this.
+ *
+ * Today that means header accounts. An unknown code is deliberately NOT rejected here:
+ * `getAccountByCode()` already owns that check and several callers legitimately pass a
+ * code they have not yet validated. Null passes: a row may carry no code at all.
+ */
+export function assertPostableAccount(code: string | null | undefined): void {
+  if (isHeaderAccount(code)) {
+    const account = getAccountByCode(code as string);
+    throw new NonPostableAccountError(
+      code as string,
+      `${code} ${account ? `(${account.name}) ` : ''}is a header account and holds no ` +
+        'transaction. Post to one of its children instead.',
+    );
+  }
 }
 
 // Validate if expense is deductible
@@ -353,6 +452,8 @@ export function getForm8825Line(code: string): string | undefined {
 export function getAccountTreatment(code: string): AccountTreatment | undefined {
   const account = getAccountByCode(code);
   if (!account) return undefined;
+  // Checked first: a header is a header whatever block its code sits in.
+  if ((HEADER_CODES as readonly string[]).includes(code)) return 'header';
   if ((TRANSFER_CLEARING_CODES as readonly string[]).includes(code)) return 'transfer';
   if ((CONTROL_CODES as readonly string[]).includes(code)) return 'control';
   if ((CAPITAL_IMPROVEMENT_CODES as readonly string[]).includes(code)) return 'balance';

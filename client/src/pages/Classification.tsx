@@ -54,6 +54,10 @@ function auditActionColor(action: string): string {
  *   3. Confidence >= MIN_BULK_CONFIDENCE (0.80 — the AI "success" threshold)
  *   4. Not suggestion code 9010 (Suspense) — the whole point of 9010 is
  *      "needs a human"; bulk-accepting it defeats the purpose
+ *   4b. Not a header account — a rollup holds no transaction. The server rejects
+ *      one with `header_not_postable`, so this is not the enforcement (it is in
+ *      `SystemStorage.classifyTransaction`); it keeps the batch from queueing a
+ *      row that is certain to fail and reporting it as accepted
  *   5. Absolute amount <= MAX_BULK_AMOUNT ($500) — large-dollar transactions
  *      carry more audit exposure and warrant explicit review regardless
  *      of AI confidence
@@ -66,11 +70,16 @@ const MAX_BULK_AMOUNT = 500;
 
 function bulkAcceptCandidates(
   txns: UnclassifiedTransaction[],
-  _coa: ChartOfAccount[],
+  coa: ChartOfAccount[],
 ): UnclassifiedTransaction[] {
+  // Read off the chart the API returned rather than importing the projection: the
+  // authority for what is a header is the row the server holds, and nothing else in
+  // this bundle reaches into database/.
+  const headers = new Set(coa.filter((a) => a.subtype === 'header').map((a) => a.code));
   return txns.filter((tx) => {
     if (!tx.suggestedCoaCode || tx.coaCode) return false;
     if (tx.suggestedCoaCode === '9010') return false;
+    if (headers.has(tx.suggestedCoaCode)) return false;
     const confidence = parseFloat(tx.classificationConfidence ?? '0');
     if (confidence < MIN_BULK_CONFIDENCE) return false;
     if (Math.abs(parseFloat(tx.amount)) > MAX_BULK_AMOUNT) return false;
