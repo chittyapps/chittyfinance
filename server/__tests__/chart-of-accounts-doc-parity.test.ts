@@ -9,6 +9,13 @@ import {
   getForm8825Line,
   getScheduleELine,
 } from '../../database/chart-of-accounts';
+import {
+  chartParityMismatches,
+  headerCounts as parseHeaderCounts,
+  registerRows as parseRegisterRows,
+  sections as parseSections,
+  type RegisterRow,
+} from '../../database/chart-of-accounts-parity';
 
 /**
  * docs/CHART-OF-ACCOUNTS.md is authoritative (see its header). This suite is what
@@ -27,17 +34,7 @@ const DOC = readFileSync(
   'utf8',
 );
 
-/** Document sections, keyed by their `## N.` number. */
-function sections(): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const chunk of DOC.split('\n## ')) {
-    const num = chunk.split('.')[0].trim();
-    if (/^\d+$/.test(num)) out.set(num, chunk);
-  }
-  return out;
-}
-
-const SECTIONS = sections();
+const SECTIONS = parseSections(DOC);
 
 /** IRS form numbers are four digits too; they are never account codes. */
 const IRS_FORM_NUMBERS = new Set(['1040', '1065', '1098', '1099', '4562', '8825']);
@@ -105,57 +102,36 @@ describe('chart of accounts: document and projection agree', () => {
  * name, type and treatment of every account. These rows are what make that true:
  * the register is parsed and each field held against the projection.
  */
-interface RegisterRow {
-  code: string;
-  name: string;
-  type: string;
-  treatment: string;
-  form8825?: string;
-  scheduleE?: string;
-  /** `*` in the register: defined here but not yet seeded to production. */
-  isNew: boolean;
-}
+const registerRows = (): RegisterRow[] => parseRegisterRows(DOC);
 
-const REGISTER = SECTIONS.get('14') ?? '';
+const headerCounts = () => parseHeaderCounts(DOC);
 
-function registerRows(): RegisterRow[] {
-  if (!REGISTER) throw new Error('the document has no §14 register');
-  const rows: RegisterRow[] = [];
-  for (const line of REGISTER.split('\n')) {
-    if (!line.startsWith('| ')) continue;
-    const cells = line.split('|').slice(1, -1).map((c) => c.trim());
-    if (cells.length !== 6 || !/^\d{4}/.test(cells[0])) continue;
-    // A leading code may carry ' *' marking an account not yet seeded.
-    const line8825 = cells[4] === '—' ? undefined : `Line ${cells[4]}`;
-    const lineE = cells[5] === '—' ? undefined : `Line ${cells[5]}`;
-    rows.push({
-      code: cells[0].replace(/\s*\*$/, ''),
-      name: cells[1],
-      type: cells[2],
-      treatment: cells[3],
-      form8825: line8825,
-      scheduleE: lineE,
-      isNew: /\*$/.test(cells[0]),
-    });
-  }
-  return rows;
-}
+/**
+ * The subset of this suite the seed also runs, at apply time, against the working tree
+ * it is launched from. Kept here so a change that breaks it fails in CI too.
+ */
+describe('chartParityMismatches (the check the seed runs before it writes)', () => {
+  it('finds nothing to report against the real document', () => {
+    expect(chartParityMismatches(DOC)).toEqual([]);
+  });
 
-/** The three counts the header states. They must agree with each other and with §14. */
-function headerCounts() {
-  const flat = DOC.replace(/\s+/g, ' ');
-  const registered = flat.match(/the (\d+) accounts registered in §14/);
-  const added = flat.match(/The (\d+) marked NEW/);
-  const live = flat.match(/\((\d+) accounts there/);
-  if (!registered || !added || !live) {
-    throw new Error('the document header no longer states its account counts');
-  }
-  return {
-    registered: Number(registered[1]),
-    added: Number(added[1]),
-    live: Number(live[1]),
-  };
-}
+  it('reports a projection that has drifted from the register', () => {
+    // The §14 register row, not the §4 narrative row that repeats the code.
+    const drifted = DOC.replace(
+      '| 5070 | Repairs | expense |',
+      '| 5070 | Repairs and upkeep | expense |',
+    );
+    expect(drifted).not.toBe(DOC);
+    expect(chartParityMismatches(drifted).join('\n')).toContain('5070 name');
+  });
+
+  it('reports a document that no longer declares itself authoritative', () => {
+    const unsigned = DOC.replace('Status: **authoritative**', 'Status: draft');
+    expect(chartParityMismatches(unsigned)).toContain(
+      'the document no longer declares itself authoritative',
+    );
+  });
+});
 
 describe('the §14 register is normative', () => {
   const rows = registerRows();

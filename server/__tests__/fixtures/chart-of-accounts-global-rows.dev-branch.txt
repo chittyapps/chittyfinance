@@ -1,0 +1,93 @@
+# Recorded snapshot of the 80 global rows (tenant_id IS NULL) of chart_of_accounts on the
+# Neon dev branch: project solitary-rice-14149088, database chittyfinance, branch
+# br-long-voice-aki88uhh. Read-only SELECT, 2026-09-18. Nothing was written there.
+#
+# This is a DEV-BRANCH snapshot. The document records production as holding 80 accounts
+# "verified identical to the pre-change projection on 2026-09-17"; this file does not
+# re-verify that claim and must not be read as a production record.
+#
+# Format, matching the SELECT that produced the digest below:
+#   code|name|type|subtype|description|schedule_e_line|tax_deductible|is_active
+# with `~` for NULL. Sorted lines joined by \n hash to:
+#   md5 = d28cca944484773d9fbc7a8d4805446b   (SELECT count(*), md5(...) run on the branch)
+# The suite recomputes that digest, so a transcription error fails rather than seeds a lie.
+1000|Cash - Operating|asset|cash|Primary operating bank account|~|false|true
+1010|Cash - Security Deposits|asset|cash|Tenant security deposit escrow|~|false|true
+1020|Cash - Reserve Fund|asset|cash|Capital reserves for repairs|~|false|true
+1050|Petty Cash|asset|cash|Petty cash on hand|~|false|true
+1100|Accounts Receivable - Rent|asset|receivable|Outstanding rent due from tenants|~|false|true
+1110|Accounts Receivable - Other|asset|receivable|Other amounts due|~|false|true
+1500|Land|asset|fixed|Land value (not depreciable)|~|false|true
+1510|Buildings|asset|fixed|Building cost basis for depreciation|~|false|true
+1515|Accumulated Depreciation - Buildings|asset|contra|Accumulated depreciation on buildings|~|false|true
+1520|Land Improvements|asset|fixed|Landscaping, parking, fencing|~|false|true
+1525|Accumulated Depreciation - Improvements|asset|contra|Accumulated depreciation on improvements|~|false|true
+1600|Appliances|asset|fixed|Refrigerators, washers, dryers, etc.|~|false|true
+1605|Accumulated Depreciation - Appliances|asset|contra|Accumulated depreciation on appliances|~|false|true
+1610|Furniture & Fixtures|asset|fixed|Furnishings provided to tenants|~|false|true
+1615|Accumulated Depreciation - Furniture|asset|contra|Accumulated depreciation on furniture|~|false|true
+1620|HVAC Equipment|asset|fixed|Heating and cooling systems|~|false|true
+1625|Accumulated Depreciation - HVAC|asset|contra|Accumulated depreciation on HVAC|~|false|true
+2000|Accounts Payable|liability|current|Bills owed to vendors|~|false|true
+2010|Security Deposits Held|liability|current|Tenant security deposits liability|~|false|true
+2020|Prepaid Rent|liability|current|Rent received in advance|~|false|true
+2030|Accrued Expenses|liability|current|Expenses incurred but not yet paid|~|false|true
+2040|Credit Card Payable|liability|current|Credit card balances|~|false|true
+2500|Mortgage Payable - Primary|liability|long-term|Primary mortgage balance|~|false|true
+2510|Mortgage Payable - Secondary|liability|long-term|Second mortgage/HELOC balance|~|false|true
+2520|Notes Payable|liability|long-term|Other loan balances|~|false|true
+2530|Owner Loan Payable|liability|long-term|Loans from owners to entity|~|false|true
+3000|Owner Capital|equity|~|Owner capital contributions|~|false|true
+3010|Owner Draws|equity|~|Owner withdrawals/distributions|~|false|true
+3020|Retained Earnings|equity|~|Accumulated profits/losses|~|false|true
+3030|Current Year Earnings|equity|~|Net income for current year|~|false|true
+4000|Rental Income|income|~|Base rent received|Line 3|false|true
+4010|Late Fees|income|~|Late payment fees collected|Line 3|false|true
+4020|Pet Fees|income|~|Pet rent and deposits (non-refundable)|Line 3|false|true
+4030|Parking Income|income|~|Parking space rental|Line 3|false|true
+4040|Utility Reimbursement|income|~|Tenant utility payments|Line 3|false|true
+4050|Application Fees|income|~|Tenant application fees|Line 3|false|true
+4060|Laundry Income|income|~|Coin laundry revenue|Line 3|false|true
+4100|Interest Income|income|~|Bank interest, security deposit interest|~|false|true
+4110|Forfeited Deposits|income|~|Security deposits retained|~|false|true
+4120|Other Income|income|~|Miscellaneous income|~|false|true
+5000|Advertising|expense|~|Listing fees, marketing|Line 5|true|true
+5010|Auto & Travel|expense|~|Mileage, travel to properties|Line 6|true|true
+5020|Cleaning & Maintenance|expense|~|Routine cleaning, janitorial|Line 14|true|true
+5030|Commissions|expense|~|Leasing commissions paid|Line 7|true|true
+5040|Insurance|expense|~|Property insurance premiums|Line 9|true|true
+5050|Legal & Professional Fees|expense|~|Attorney, CPA, property manager|Line 10|true|true
+5060|Management Fees|expense|~|Property management fees|Line 11|true|true
+5070|Repairs|expense|~|Non-capital repairs and maintenance|Line 14|true|true
+5080|Supplies|expense|~|Office and maintenance supplies|Line 14|true|true
+5090|Property Taxes|expense|~|Real estate taxes|Line 16|true|true
+5100|Utilities - Electric|expense|~|Electricity (landlord paid)|Line 17|true|true
+5110|Utilities - Gas|expense|~|Gas (landlord paid)|Line 17|true|true
+5120|Utilities - Water/Sewer|expense|~|Water and sewer|Line 17|true|true
+5130|Utilities - Trash|expense|~|Garbage collection|Line 17|true|true
+5140|Utilities - Internet/Cable|expense|~|Internet and cable (if provided)|Line 17|true|true
+5200|HOA Dues|expense|~|Homeowner association fees|Line 19|true|true
+5210|Condo Fees|expense|~|Condo association fees|Line 19|true|true
+5220|Special Assessments|expense|~|HOA special assessments|Line 19|true|true
+5300|Mortgage Interest|expense|~|Mortgage interest expense|Line 12|true|true
+5310|Other Interest|expense|~|Other loan interest|Line 13|true|true
+5320|Bank Charges|expense|~|Bank fees, NSF fees, wire fees|Line 19|true|true
+5330|Credit Card Fees|expense|~|Merchant processing fees|Line 19|true|true
+5400|Depreciation - Building|expense|~|27.5 year residential depreciation|Line 18|true|true
+5410|Depreciation - Improvements|expense|~|Depreciation on improvements|Line 18|true|true
+5420|Depreciation - Appliances|expense|~|5-7 year depreciation|Line 18|true|true
+5430|Depreciation - Furniture|expense|~|5-7 year depreciation|Line 18|true|true
+6000|Office Expenses|expense|~|Office supplies, postage|Line 19|true|true
+6010|Software Subscriptions|expense|~|Property management software, accounting|Line 19|true|true
+6020|Phone & Communication|expense|~|Business phone, answering service|Line 19|true|true
+6030|Education & Training|expense|~|Real estate courses, seminars|Line 19|true|true
+6040|Licenses & Permits|expense|~|Business licenses, rental permits|Line 19|true|true
+7000|Capital Improvements - Building|expense|capital|Major improvements (capitalize, depreciate)|~|false|true
+7010|Capital Improvements - HVAC|expense|capital|HVAC replacement (capitalize)|~|false|true
+7020|Capital Improvements - Roof|expense|capital|Roof replacement (capitalize)|~|false|true
+7030|Capital Improvements - Appliances|expense|capital|New appliances (capitalize)|~|false|true
+7040|Capital Improvements - Other|expense|capital|Other capital improvements|~|false|true
+9000|Owner Personal Expense|expense|non-deductible|Personal expenses paid from business (not deductible)|~|false|true
+9010|Suspense / Unclassified|expense|suspense|Transactions pending classification|~|false|true
+9020|Ask My Accountant|expense|suspense|Needs CPA review|~|false|true
+9030|Reconciliation Adjustments|expense|suspense|Auto-balance / reconciling items to investigate|~|false|true

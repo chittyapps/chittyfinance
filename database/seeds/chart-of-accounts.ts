@@ -12,13 +12,46 @@
 //
 // Only global rows are read and written. Tenant-specific overrides of the same code
 // (tenant_id NOT NULL) are never selected, updated or deleted.
+//
+// The seed writes only what the authoritative document defines: code, name, type,
+// subtype, description, schedule_e_line, tax_deductible. It deliberately does NOT write
+// parent_code, metadata, is_active or modified_by on existing rows — see §"What this
+// seed does not write" below.
 
+import { readFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { and, eq, isNull } from 'drizzle-orm';
-import { createDb } from '../../server/db/connection';
+import { createDb, type Database } from '../../server/db/connection';
 import { chartOfAccounts } from '../system.schema';
-import { REI_CHART_OF_ACCOUNTS, TURBOTENANT_CATEGORY_MAP } from '../chart-of-accounts';
+import { REI_CHART_OF_ACCOUNTS } from '../chart-of-accounts';
+import { chartParityMismatches } from '../chart-of-accounts-parity';
+import { postLedgerEntry } from '../../server/lib/ledger-client';
+import { logToChronicle } from '../../server/lib/chittychronicle';
 
-/** The projected shape of one global account, limited to columns the table has. */
+/**
+ * The projected shape of one global account, limited to the columns the authoritative
+ * document defines.
+ *
+ * What this seed does not write, and why:
+ *
+ * - `parent_code`. The document contains no notion of parent, hierarchy or rollup. The
+ *   previous revision derived one arithmetically (floor(code/100)*100), which pointed
+ *   children at sibling POSTING accounts rather than headers — 5055 Litigation at 5000
+ *   Advertising, the 90x0 suspense accounts at 9000 Owner Personal Expense, 2540 Due to
+ *   Affiliate at 2500 Mortgage Payable. A dangling parent is detectable; a valid-but-wrong
+ *   one is indistinguishable from a deliberate choice, and any future rollup would
+ *   silently double-count. If a hierarchy belongs in the chart it belongs in the
+ *   authoritative document, where it can be defined and parity-tested.
+ * - `metadata.keywords`. Derived from TURBOTENANT_CATEGORY_MAP, which every consumer
+ *   already reads directly from the projection. Persisting a second copy buys a drift
+ *   surface and nothing usable today — the same reasoning §13 gives for not persisting
+ *   the Form 8825 line.
+ * - `is_active`. Activation state is an operational decision, not a chart definition.
+ *   Existing rows keep theirs; the plan reports any that are inactive.
+ * - `modified_by` on an existing row. A row last touched by a human L4 auditor keeps
+ *   that attribution; the seed's identity is recorded in the audit trail instead.
+ */
 export interface SeedAccountRow {
   code: string;
   name: string;
@@ -32,18 +65,15 @@ export interface SeedAccountRow {
    */
   scheduleELine: string | null;
   taxDeductible: boolean;
-  parentCode: string | null;
-  metadata: { keywords: string[] };
 }
 
 /**
- * An existing global row, as read back from chart_of_accounts. `metadata` is the whole
- * stored object, not just the keywords: an update must preserve keys this seed does not
- * own (aliases, importer provenance) rather than overwrite them with its own projection.
+ * An existing global row, as read back from chart_of_accounts. `isActive` is read and
+ * reported but never written: see SeedAccountRow.
  */
-export interface ExistingAccountRow extends Omit<SeedAccountRow, 'metadata'> {
+export interface ExistingAccountRow extends SeedAccountRow {
   id: string;
-  metadata: Record<string, unknown> & { keywords?: string[] };
+  isActive: boolean;
 }
 
 export interface SeedPlan {
@@ -54,11 +84,14 @@ export interface SeedPlan {
     id: string;
     row: SeedAccountRow;
     changedFields: string[];
-    /** The row's stored metadata with only `keywords` replaced; other keys survive. */
-    metadata: Record<string, unknown>;
   }>;
   /** Codes present in both and identical on every persisted field. */
   unchanged: string[];
+  /**
+   * Existing global codes whose row is inactive. Reported so a dry run shows activation
+   * state; the seed never changes it, in either direction.
+   */
+  inactive: string[];
   /**
    * Codes held by more than one global row. The composite unique index is
    * (tenant_id, code) and NULL != NULL in Postgres, so global uniqueness is not
@@ -69,40 +102,15 @@ export interface SeedPlan {
   extraneous: string[];
 }
 
-/** Fields compared to decide whether an existing row needs an update. */
-const PERSISTED_FIELDS = [
+/** Fields compared to decide whether an existing row needs an update, and the exact SET list. */
+export const PERSISTED_FIELDS = [
   'name',
   'type',
   'subtype',
   'description',
   'scheduleELine',
   'taxDeductible',
-  'parentCode',
-  'metadata',
 ] as const;
-
-/**
- * Parent code for hierarchical grouping: '5110' -> '5100', '5015' -> '5000'.
- *
- * A code that is itself the head of its hundred-range ('5100', '1900') has no parent
- * in the chart — the naive floor(code/100)*100 yields the code itself, which would
- * write a self-referential parent_code. Only x000 was previously excluded.
- */
-export function deriveParentCode(code: string): string | null {
-  if (!/^\d{4}$/.test(code)) return null;
-  const parentCode = (Math.floor(parseInt(code, 10) / 100) * 100).toString().padStart(4, '0');
-  if (parentCode === code) return null;
-  if (!REI_CHART_OF_ACCOUNTS.some((a) => a.code === parentCode)) return null;
-  return parentCode;
-}
-
-/** Keywords that map to a code in TURBOTENANT_CATEGORY_MAP, sorted for stable comparison. */
-export function getKeywordsForCode(code: string): string[] {
-  return Object.entries(TURBOTENANT_CATEGORY_MAP)
-    .filter(([, c]) => c === code)
-    .map(([keyword]) => keyword)
-    .sort();
-}
 
 /** Project REI_CHART_OF_ACCOUNTS into the rows the table should hold. */
 export function projectSeedRows(): SeedAccountRow[] {
@@ -114,24 +122,11 @@ export function projectSeedRows(): SeedAccountRow[] {
     description: acct.description ?? null,
     scheduleELine: acct.scheduleE ?? null,
     taxDeductible: acct.taxDeductible ?? false,
-    parentCode: deriveParentCode(acct.code),
-    metadata: { keywords: getKeywordsForCode(acct.code) },
   }));
 }
 
-/** Order-insensitive keyword comparison; Object.entries order is not a difference. */
-function sameKeywords(a: string[] | undefined, b: string[] | undefined): boolean {
-  const left = [...(a ?? [])].sort();
-  const right = [...(b ?? [])].sort();
-  return left.length === right.length && left.every((v, i) => v === right[i]);
-}
-
 function changedFields(existing: ExistingAccountRow, desired: SeedAccountRow): string[] {
-  return PERSISTED_FIELDS.filter((field) =>
-    field === 'metadata'
-      ? !sameKeywords(existing.metadata?.keywords, desired.metadata.keywords)
-      : existing[field] !== desired[field],
-  );
+  return PERSISTED_FIELDS.filter((field) => existing[field] !== desired[field]);
 }
 
 /**
@@ -153,6 +148,7 @@ export function computeSeedPlan(
     inserts: [],
     updates: [],
     unchanged: [],
+    inactive: [],
     duplicateCodes: [],
     extraneous: [],
   };
@@ -172,17 +168,13 @@ export function computeSeedPlan(
     if (fields.length === 0) {
       plan.unchanged.push(row.code);
     } else {
-      plan.updates.push({
-        id: matches[0].id,
-        row,
-        changedFields: fields,
-        metadata: { ...matches[0].metadata, keywords: row.metadata.keywords },
-      });
+      plan.updates.push({ id: matches[0].id, row, changedFields: fields });
     }
   }
 
   const desiredCodes = new Set(desired.map((r) => r.code));
   plan.extraneous = [...byCode.keys()].filter((c) => !desiredCodes.has(c)).sort();
+  plan.inactive = existing.filter((r) => !r.isActive).map((r) => r.code).sort();
   plan.duplicateCodes.sort();
 
   return plan;
@@ -199,6 +191,12 @@ export function formatSeedPlan(plan: SeedPlan): string {
   for (const u of plan.updates) {
     lines.push(`  ~ ${u.row.code} ${u.row.name} (${u.changedFields.join(', ')})`);
   }
+  lines.push(
+    plan.inactive.length
+      ? `  = ${plan.inactive.length} existing global row(s) are inactive and stay that way: ` +
+          `${plan.inactive.join(', ')}`
+      : '  = every existing global row is active; the seed never changes is_active',
+  );
   if (plan.duplicateCodes.length) {
     lines.push(
       `  ! ${plan.duplicateCodes.length} code(s) have more than one global row and were ` +
@@ -216,9 +214,69 @@ export function formatSeedPlan(plan: SeedPlan): string {
 
 const MODIFIED_BY = 'seed:chart-of-accounts';
 
+/** One audit record for one written row. */
+export interface SeedAuditEvent {
+  action: 'create' | 'update';
+  accountId: string;
+  code: string;
+  name: string;
+  changedFields?: string[];
+}
+
+/**
+ * The audit sink. Every other COA mutation path (server/routes/classification.ts) emits a
+ * ChittyLedger entry and a ChittyChronicle event per mutated account; this seed is the
+ * largest COA mutation in the chart's history, so it emits the same pair.
+ *
+ * Two differences from the request path, both forced by running as a CLI:
+ *   - awaited rather than fire-and-forget (there is no executionCtx.waitUntil),
+ *   - `actorType: 'system'` rather than the 'user' that logCoaEvent() hardcodes.
+ * classification_audit is not an option: its transaction_id is NOT NULL and FK'd to
+ * transactions, so it cannot hold a chart-definition event.
+ */
+export type SeedAuditSink = (event: SeedAuditEvent) => Promise<void>;
+
+interface AuditEnv {
+  CHITTY_LEDGER_BASE?: string;
+  CHITTY_AUTH_SERVICE_TOKEN?: string;
+  CHITTYCONNECT_API_TOKEN?: string;
+  CHITTY_ENV?: string;
+}
+
+export function createDefaultAuditSink(env: AuditEnv): SeedAuditSink {
+  return async (event) => {
+    await postLedgerEntry(
+      {
+        entityType: 'audit',
+        entityId: event.accountId,
+        action: `coa.${event.action}`,
+        actor: MODIFIED_BY,
+        actorType: 'system',
+        metadata: {
+          tenantId: null,
+          code: event.code,
+          name: event.name,
+          changedFields: event.changedFields,
+          source: 'database/seeds/chart-of-accounts.ts',
+        },
+      },
+      env,
+    );
+    await logToChronicle(env, {
+      eventType: `coa.${event.action}`,
+      entityId: event.accountId,
+      entityType: 'chart_of_accounts',
+      action: event.action,
+      actor: { id: MODIFIED_BY, type: 'system' },
+      after: { code: event.code, changedFields: event.changedFields },
+      metadata: { tenantId: null, global: true },
+    });
+  };
+}
+
 /** Read the global rows (tenant_id IS NULL) of chart_of_accounts. */
-async function readGlobalRows(db: ReturnType<typeof createDb>): Promise<ExistingAccountRow[]> {
-  const rows = await db
+async function readGlobalRows(db: Database): Promise<ExistingAccountRow[]> {
+  return db
     .select({
       id: chartOfAccounts.id,
       code: chartOfAccounts.code,
@@ -228,22 +286,43 @@ async function readGlobalRows(db: ReturnType<typeof createDb>): Promise<Existing
       description: chartOfAccounts.description,
       scheduleELine: chartOfAccounts.scheduleELine,
       taxDeductible: chartOfAccounts.taxDeductible,
-      parentCode: chartOfAccounts.parentCode,
-      metadata: chartOfAccounts.metadata,
+      isActive: chartOfAccounts.isActive,
     })
     .from(chartOfAccounts)
     .where(isNull(chartOfAccounts.tenantId));
+}
 
-  return rows.map((r) => ({
-    ...r,
-    metadata: (r.metadata as Record<string, unknown> | null) ?? {},
-  }));
+/** Path to the authoritative document, relative to this file. */
+function readAuthoritativeDocument(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  return readFileSync(join(here, '..', '..', 'docs', 'CHART-OF-ACCOUNTS.md'), 'utf8');
+}
+
+/**
+ * Refuse to write a projection that no longer matches the authoritative document.
+ * The doc-parity suite runs in CI; this runs in the working tree the apply is launched
+ * from, which is not the same thing.
+ */
+export function assertDocumentParity(doc?: string): void {
+  const mismatches = chartParityMismatches(doc ?? readAuthoritativeDocument());
+  if (mismatches.length) {
+    throw new Error(
+      'Refusing to seed: docs/CHART-OF-ACCOUNTS.md and the projection disagree.\n  ' +
+        mismatches.join('\n  '),
+    );
+  }
 }
 
 export interface SeedOptions {
   /** Write the plan. Without it the seed reports the delta and changes nothing. */
   apply?: boolean;
   databaseUrl?: string;
+  /** Pre-built client, for tests that connect to a disposable branch themselves. */
+  db?: Database;
+  /** Audit sink override. Defaults to ChittyLedger + ChittyChronicle off process.env. */
+  audit?: SeedAuditSink;
+  /** The authoritative document text. Defaults to reading docs/CHART-OF-ACCOUNTS.md. */
+  document?: string;
 }
 
 /**
@@ -251,10 +330,13 @@ export interface SeedOptions {
  * Returns the plan either way so a caller can report it.
  */
 export async function seedChartOfAccounts(options: SeedOptions = {}): Promise<SeedPlan> {
-  const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error('DATABASE_URL is required to seed the chart of accounts');
+  let db = options.db;
+  if (!db) {
+    const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
+    if (!databaseUrl) throw new Error('DATABASE_URL is required to seed the chart of accounts');
+    db = createDb(databaseUrl);
+  }
 
-  const db = createDb(databaseUrl);
   const plan = computeSeedPlan(projectSeedRows(), await readGlobalRows(db));
 
   console.log(options.apply ? 'Applying chart of accounts:' : 'Chart of accounts (dry run):');
@@ -265,34 +347,69 @@ export async function seedChartOfAccounts(options: SeedOptions = {}): Promise<Se
     return plan;
   }
 
+  // Nothing above this line writes. Nothing below it runs on a drifted working tree.
+  assertDocumentParity(options.document);
+
+  const audit = options.audit ?? createDefaultAuditSink(process.env as AuditEnv);
+
   for (const row of plan.inserts) {
-    await db.insert(chartOfAccounts).values({
-      tenantId: null,
-      ...row,
-      isActive: true,
-      modifiedBy: MODIFIED_BY,
-    });
+    // neon-http has no interactive transactions: each insert commits on its own. See the
+    // PR body for the retry hazard this creates and the pre-apply backup it requires.
+    const [inserted] = await db
+      .insert(chartOfAccounts)
+      .values({ tenantId: null, ...row, isActive: true, modifiedBy: MODIFIED_BY })
+      .returning({ id: chartOfAccounts.id });
+    await audit({ action: 'create', accountId: inserted.id, code: row.code, name: row.name });
   }
 
   for (const update of plan.updates) {
-    // Scoped by id AND tenant_id IS NULL: a tenant override can never be reached.
+    // The SET list is exactly PERSISTED_FIELDS plus updated_at. modified_by is NOT set:
+    // a row last changed by a human L4 auditor keeps that attribution. is_active is NOT
+    // set: activation state is not a chart definition.
     await db
       .update(chartOfAccounts)
       .set({
-        ...update.row,
-        metadata: update.metadata,
-        modifiedBy: MODIFIED_BY,
+        name: update.row.name,
+        type: update.row.type,
+        subtype: update.row.subtype,
+        description: update.row.description,
+        scheduleELine: update.row.scheduleELine,
+        taxDeductible: update.row.taxDeductible,
         updatedAt: new Date(),
       })
+      // Scoped by id AND tenant_id IS NULL: a tenant override can never be reached.
       .where(and(eq(chartOfAccounts.id, update.id), isNull(chartOfAccounts.tenantId)));
+    await audit({
+      action: 'update',
+      accountId: update.id,
+      code: update.row.code,
+      name: update.row.name,
+      changedFields: update.changedFields,
+    });
   }
 
   console.log(`  Wrote ${plan.inserts.length} insert(s) and ${plan.updates.length} update(s).`);
   return plan;
 }
 
+/**
+ * True when this module is what node was asked to run. Compares real paths, so a relative
+ * invocation or a symlinked checkout still matches, and fails loudly rather than exiting 0
+ * when argv[1] cannot be resolved at all.
+ */
+export function isMainModule(moduleUrl: string, argv1: string | undefined): boolean {
+  if (!argv1) {
+    throw new Error('Cannot determine the entry script: process.argv[1] is not set');
+  }
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argv1);
+  } catch (err) {
+    throw new Error(`Cannot resolve the entry script "${argv1}": ${(err as Error).message}`);
+  }
+}
+
 // Run directly if executed as a script.
-if (import.meta.url.endsWith(process.argv[1]?.replace(/^file:\/\//, '') || '\0')) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   seedChartOfAccounts({ apply: process.argv.includes('--apply') })
     .then(() => process.exit(0))
     .catch((e) => {
