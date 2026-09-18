@@ -16,7 +16,11 @@
  * numeric text), Account Name, Type, Subtype — every column filled, values drawn from
  * its dropdowns.
  */
-import { REI_CHART_OF_ACCOUNTS, type AccountDefinition } from '../database/chart-of-accounts';
+import {
+  REI_CHART_OF_ACCOUNTS,
+  getAccountByCode,
+  type AccountDefinition,
+} from '../database/chart-of-accounts';
 
 /** Mercury's five types. */
 type MercuryType = 'Assets' | 'Liabilities' | 'Equity' | 'Revenues' | 'Expenses';
@@ -56,6 +60,22 @@ const RETAINED_EARNINGS = new Set(['3020', '3030']);
 const OTHER_EXPENSE = new Set(['7000', '7010', '7020', '7030', '7040', '9000', '9010', '9020', '9030', '9040']);
 
 function mercurySubtype(a: AccountDefinition): string {
+  // A header belongs in whatever section its children do, and our own `subtype` field
+  // says only 'header' for one — 2590 Mortgage Payable would otherwise land in Current
+  // Liabilities beside the non-current mortgages it rolls up, and 7090 in Operating
+  // Expenses beside the capital additions that are Other Expenses. Derived from the
+  // children, and a group that does not agree is a chart defect, not an export one.
+  if (a.subtype === 'header') {
+    const children = REI_CHART_OF_ACCOUNTS.filter((c) => c.parentCode === a.code);
+    if (children.length === 0) throw new Error(`${a.code}: header with no children`);
+    const subtypes = new Set(children.map(mercurySubtype));
+    if (subtypes.size !== 1) {
+      throw new Error(
+        `${a.code}: children disagree on Mercury subtype (${[...subtypes].join(', ')})`,
+      );
+    }
+    return [...subtypes][0];
+  }
   switch (TYPE_MAP[a.type]) {
     case 'Assets':
       // Our clearing accounts are exactly Mercury's "Transfers Between Accounts".
@@ -75,6 +95,35 @@ function mercurySubtype(a: AccountDefinition): string {
   }
 }
 
+/**
+ * The name Mercury should show, which is not always the name the chart holds.
+ *
+ * Mercury reads a colon as its parent/child separator, so `Utilities: Electric` renders
+ * as Electric nested under Utilities. Our chart spells the same relationship with a
+ * hyphen (`Utilities - Electric`) and, for the accounts whose name does not repeat the
+ * group at all (`Late Fees` under 4095 Tenant Fees), does not spell it in the name at
+ * all — the hierarchy lives in `parentCode`, not in the string.
+ *
+ * So: strip a redundant `<parent> - ` prefix where the name carries one, and prepend
+ * `<parent>: ` either way.
+ *
+ *   5100 Utilities - Electric   → Utilities: Electric
+ *   4010 Late Fees              → Tenant Fees: Late Fees
+ *   1050 Petty Cash             → Cash: Petty Cash
+ *
+ * This is display only. The chart's own names do not change — the §14 register is
+ * normative for them and the parity suite holds the projection to it character for
+ * character. Nothing reads these strings back.
+ */
+export function mercuryName(a: AccountDefinition): string {
+  if (!a.parentCode) return a.name;
+  const parent = getAccountByCode(a.parentCode);
+  if (!parent) throw new Error(`${a.code}: parent ${a.parentCode} is not in the chart`);
+  const prefix = `${parent.name} - `;
+  const leaf = a.name.startsWith(prefix) ? a.name.slice(prefix.length) : a.name;
+  return `${parent.name}: ${leaf}`;
+}
+
 function csvCell(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
@@ -88,11 +137,17 @@ export function toMercuryRows() {
     }
     return {
       'GL Code': a.code,
-      // Names are exported verbatim. Mercury reads a colon as a parent/child
-      // separator, so "Utilities - Electric" stays hyphenated: our chart defines no
-      // hierarchy, and inventing one here would imply parent accounts that hold no
-      // code. See docs/CHART-OF-ACCOUNTS.md §8.
-      'Account Name': a.name,
+      // Rewritten to Mercury's `Parent: Child` form where the chart gives the account a
+      // parent. The ten header accounts are exported as ordinary rows carrying their own
+      // GL code and plain name, so each parent Mercury needs is a real account on both
+      // sides rather than a string Mercury invents. See docs/CHART-OF-ACCOUNTS.md §1.7.
+      //
+      // Import assumption worth verifying on the first upload: that Mercury creates the
+      // nesting from the colon and matches the parent to the header row we also supply,
+      // rather than creating a second, code-less parent beside it. It fails loudly at
+      // import if wrong — the header GL code would be orphaned or duplicated — and the
+      // fix is a naming change here, not a chart change.
+      'Account Name': mercuryName(a),
       Type: type,
       Subtype: subtype,
     };
@@ -104,6 +159,11 @@ function main() {
   const codes = new Set(rows.map((r) => r['GL Code']));
   if (codes.size !== rows.length) throw new Error('GL codes must be unique');
   if ([...codes].some((c) => !/^\d+$/.test(c))) throw new Error('GL codes must be numeric');
+  // The `Parent: Child` rewrite can in principle collide — two groups whose leaf names
+  // match after the prefix strip would produce one string for two codes, and Mercury
+  // would have two accounts wearing the same name.
+  const names = new Set(rows.map((r) => r['Account Name']));
+  if (names.size !== rows.length) throw new Error('exported account names must be unique');
 
   const headers = ['GL Code', 'Account Name', 'Type', 'Subtype'] as const;
   const lines = [headers.join(',')];
