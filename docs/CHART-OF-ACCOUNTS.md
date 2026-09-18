@@ -12,8 +12,11 @@ any other artifact disagree, this document wins and the other is the defect.
 - The seed that carries the projection into the `chart_of_accounts` table
   (`database/seeds/chart-of-accounts.ts`) runs, and is a **dry run by default**: it prints
   the insert/update/unchanged delta against the global rows (`tenant_id IS NULL`) and
-  writes nothing without `--apply`. Running it against production is an operator-approved
-  step and has not been done. The table has no Form 8825 column — only `schedule_e_line` —
+  writes nothing without `--apply` (`pnpm db:seed:coa` dry-runs; `pnpm db:seed:coa -- --apply`
+  writes). Running it against production is an operator-approved step and has not been done.
+  Measured against the Neon dev branch on 2026-09-18 it is 15 inserts and 70 updates, of
+  which 6 change a name, description or Schedule E line and 64 only backfill the
+  `parent_code` and keyword `metadata` the seed derives and the existing rows never carried. The table has no Form 8825 column — only `schedule_e_line` —
   so the `form8825` line this document assigns is resolved at read time through
   `getForm8825Line()` rather than persisted. See §13.
 - Importers may only emit codes defined here, validated through `getAccountByCode()`.

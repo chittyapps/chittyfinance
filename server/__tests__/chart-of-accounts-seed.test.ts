@@ -45,7 +45,8 @@ const PROJECTED = projectSeedRows();
 
 /**
  * The persisted-field values these accounts carried before PR #157 changed them,
- * recovered from the projection as it stood at 34bf347^. Production still holds these.
+ * recovered from the projection as it stood at 34bf347^ and confirmed by a read-only
+ * SELECT on the Neon dev branch (project solitary-rice-14149088, br-long-voice-aki88uhh).
  */
 const PRE_157_VALUES: Record<string, Partial<SeedAccountRow>> = {
   '4000': { name: 'Rental Income', description: 'Base rent received' },
@@ -56,11 +57,22 @@ const PRE_157_VALUES: Record<string, Partial<SeedAccountRow>> = {
   '5080': { scheduleELine: 'Line 14' },
 };
 
-/** The 80 global rows production is documented to hold today. */
+/**
+ * The 80 global rows the table holds today.
+ *
+ * Read-only SELECT on the dev branch, 2026-09-18: 80 rows, no duplicate code, and
+ * `parent_code` NULL and `metadata` empty on every one — these rows were never written
+ * by this seed, so its two derived fields have never been populated.
+ */
 function productionRows(): ExistingAccountRow[] {
   const starred = starredCodes();
   return PROJECTED.filter((row) => !starred.has(row.code))
-    .map((row) => ({ ...row, ...(PRE_157_VALUES[row.code] ?? {}) }))
+    .map((row) => ({
+      ...row,
+      ...(PRE_157_VALUES[row.code] ?? {}),
+      parentCode: null,
+      metadata: {},
+    }))
     .map(asExisting);
 }
 
@@ -178,6 +190,24 @@ describe('computeSeedPlan', () => {
     expect(plan.updates).toEqual([]);
   });
 
+  it('keeps metadata keys it does not own when it updates a row', () => {
+    const existing = PROJECTED.map(asExisting).map((row) =>
+      row.code === '4000'
+        ? {
+            ...row,
+            name: 'Rental Income',
+            metadata: { ...row.metadata, aliases: ['base rent'] },
+          }
+        : row,
+    );
+    const plan = computeSeedPlan(PROJECTED, existing);
+    expect(plan.updates).toHaveLength(1);
+    expect(plan.updates[0].metadata.aliases).toEqual(['base rent']);
+    expect(plan.updates[0].metadata.keywords).toEqual(
+      PROJECTED.find((r) => r.code === '4000')?.metadata.keywords,
+    );
+  });
+
   it('reports a code held by more than one global row instead of picking one', () => {
     const existing = PROJECTED.map(asExisting);
     const duplicate = { ...existing[0], id: 'duplicate', name: 'Something else' };
@@ -201,7 +231,7 @@ describe('computeSeedPlan', () => {
   });
 });
 
-describe('the delta this seed would apply to the documented production state', () => {
+describe('the delta this seed would apply to the global chart as it stands', () => {
   const plan = computeSeedPlan(PROJECTED, productionRows());
 
   it('starts from the 80 global accounts the document records', () => {
@@ -214,8 +244,11 @@ describe('the delta this seed would apply to the documented production state', (
     expect(plan.inserts).toHaveLength(15);
   });
 
-  it('updates the 4000 rename and the five other corrections PR #157 made', () => {
-    expect(plan.updates.map((u) => u.row.code).sort()).toEqual([
+  it('changes a name, description or Schedule E line on exactly six accounts', () => {
+    const substantive = plan.updates.filter((u) =>
+      u.changedFields.some((f) => f !== 'parentCode' && f !== 'metadata'),
+    );
+    expect(substantive.map((u) => u.row.code).sort()).toEqual([
       '4000',
       '4110',
       '4120',
@@ -225,8 +258,15 @@ describe('the delta this seed would apply to the documented production state', (
     ]);
   });
 
-  it('leaves the remaining 74 accounts untouched', () => {
-    expect(plan.unchanged).toHaveLength(74);
+  it('backfills the derived fields on the rest rather than changing what they say', () => {
+    // 70 updates in all: the 6 above, and 64 that only write parent_code or the
+    // keyword metadata this seed derives and the existing rows never carried.
+    expect(plan.updates).toHaveLength(70);
+    expect(plan.unchanged).toHaveLength(10);
+    const derivedOnly = plan.updates.filter((u) =>
+      u.changedFields.every((f) => f === 'parentCode' || f === 'metadata'),
+    );
+    expect(derivedOnly).toHaveLength(64);
   });
 
   it('finds no duplicate and no extraneous global code', () => {

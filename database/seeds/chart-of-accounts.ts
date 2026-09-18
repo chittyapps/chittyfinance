@@ -7,8 +7,8 @@
 // Dry run by default — it prints the delta and writes nothing. Writing requires an
 // explicit --apply and is an operator-approved step:
 //
-//   DATABASE_URL=... npx tsx database/seeds/chart-of-accounts.ts            # dry run
-//   DATABASE_URL=... npx tsx database/seeds/chart-of-accounts.ts --apply    # writes
+//   DATABASE_URL=... pnpm db:seed:coa               # dry run
+//   DATABASE_URL=... pnpm db:seed:coa -- --apply    # writes (note the bare --)
 //
 // Only global rows are read and written. Tenant-specific overrides of the same code
 // (tenant_id NOT NULL) are never selected, updated or deleted.
@@ -36,9 +36,14 @@ export interface SeedAccountRow {
   metadata: { keywords: string[] };
 }
 
-/** An existing global row, as read back from chart_of_accounts. */
-export interface ExistingAccountRow extends SeedAccountRow {
+/**
+ * An existing global row, as read back from chart_of_accounts. `metadata` is the whole
+ * stored object, not just the keywords: an update must preserve keys this seed does not
+ * own (aliases, importer provenance) rather than overwrite them with its own projection.
+ */
+export interface ExistingAccountRow extends Omit<SeedAccountRow, 'metadata'> {
   id: string;
+  metadata: Record<string, unknown> & { keywords?: string[] };
 }
 
 export interface SeedPlan {
@@ -49,6 +54,8 @@ export interface SeedPlan {
     id: string;
     row: SeedAccountRow;
     changedFields: string[];
+    /** The row's stored metadata with only `keywords` replaced; other keys survive. */
+    metadata: Record<string, unknown>;
   }>;
   /** Codes present in both and identical on every persisted field. */
   unchanged: string[];
@@ -113,16 +120,16 @@ export function projectSeedRows(): SeedAccountRow[] {
 }
 
 /** Order-insensitive keyword comparison; Object.entries order is not a difference. */
-function sameKeywords(a: SeedAccountRow['metadata'], b: SeedAccountRow['metadata']): boolean {
-  const left = [...(a?.keywords ?? [])].sort();
-  const right = [...(b?.keywords ?? [])].sort();
+function sameKeywords(a: string[] | undefined, b: string[] | undefined): boolean {
+  const left = [...(a ?? [])].sort();
+  const right = [...(b ?? [])].sort();
   return left.length === right.length && left.every((v, i) => v === right[i]);
 }
 
-function changedFields(existing: SeedAccountRow, desired: SeedAccountRow): string[] {
+function changedFields(existing: ExistingAccountRow, desired: SeedAccountRow): string[] {
   return PERSISTED_FIELDS.filter((field) =>
     field === 'metadata'
-      ? !sameKeywords(existing.metadata, desired.metadata)
+      ? !sameKeywords(existing.metadata?.keywords, desired.metadata.keywords)
       : existing[field] !== desired[field],
   );
 }
@@ -162,8 +169,16 @@ export function computeSeedPlan(
       continue;
     }
     const fields = changedFields(matches[0], row);
-    if (fields.length === 0) plan.unchanged.push(row.code);
-    else plan.updates.push({ id: matches[0].id, row, changedFields: fields });
+    if (fields.length === 0) {
+      plan.unchanged.push(row.code);
+    } else {
+      plan.updates.push({
+        id: matches[0].id,
+        row,
+        changedFields: fields,
+        metadata: { ...matches[0].metadata, keywords: row.metadata.keywords },
+      });
+    }
   }
 
   const desiredCodes = new Set(desired.map((r) => r.code));
@@ -221,9 +236,7 @@ async function readGlobalRows(db: ReturnType<typeof createDb>): Promise<Existing
 
   return rows.map((r) => ({
     ...r,
-    metadata: (r.metadata as { keywords?: string[] } | null)?.keywords
-      ? { keywords: (r.metadata as { keywords: string[] }).keywords }
-      : { keywords: [] },
+    metadata: (r.metadata as Record<string, unknown> | null) ?? {},
   }));
 }
 
@@ -265,7 +278,12 @@ export async function seedChartOfAccounts(options: SeedOptions = {}): Promise<Se
     // Scoped by id AND tenant_id IS NULL: a tenant override can never be reached.
     await db
       .update(chartOfAccounts)
-      .set({ ...update.row, modifiedBy: MODIFIED_BY, updatedAt: new Date() })
+      .set({
+        ...update.row,
+        metadata: update.metadata,
+        modifiedBy: MODIFIED_BY,
+        updatedAt: new Date(),
+      })
       .where(and(eq(chartOfAccounts.id, update.id), isNull(chartOfAccounts.tenantId)));
   }
 
