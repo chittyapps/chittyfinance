@@ -16,7 +16,7 @@ import {
   type SeedAuditEvent,
 } from '../../database/seeds/chart-of-accounts';
 import { REI_CHART_OF_ACCOUNTS } from '../../database/chart-of-accounts';
-import { starredCodes } from '../../database/chart-of-accounts-parity';
+import { registerRows, starredCodes } from '../../database/chart-of-accounts-parity';
 import * as schema from '../../database/system.schema';
 
 /**
@@ -83,6 +83,14 @@ function devBranchRows(): ExistingAccountRow[] {
       description: orNull(description),
       scheduleELine: orNull(scheduleELine),
       taxDeductible: taxDeductible === 'true',
+      // The recorded SELECT did not read parent_code — see the fixture's format header —
+      // so the snapshot cannot say what the column held. NULL is what the branch is
+      // expected to hold (nothing has ever written the column: the derived-parent
+      // revision was reverted before any apply, and the 2026-09-18 production apply
+      // recorded in scripts/remediation/ sets no parent_code). It is supplied here rather
+      // than back-filled into the md5-pinned fixture, and the pre-apply dry run is what
+      // confirms it against the live table.
+      parentCode: null,
       isActive: isActive === 'true',
     };
   });
@@ -114,27 +122,46 @@ describe('projectSeedRows', () => {
   });
 
   it('projects only the columns the authoritative document defines', () => {
-    // parent_code and metadata were derived here and written to 77 of 95 rows; the
-    // document defined neither, so both were removed.
-    //
-    // The document now DOES define parent_code (§1.7, §14 Parent column) and the
-    // projection carries it, so the reason this assertion holds has changed: the seed
-    // has simply not been taught to write the column yet, and applying it today inserts
-    // the ten header accounts with every parent_code left NULL. Restoring `parentCode`
-    // to PERSISTED_FIELDS and to projectSeedRows() is the follow-up; when it lands this
-    // assertion is what has to be updated deliberately rather than drifted past.
-    // `metadata` stays out either way — the document still defines nothing for it.
+    // parent_code is in, metadata is out, and the difference is the document. §1.7 and
+    // §14 write the hierarchy down, so parent_code is a defined column like any other.
+    // `metadata` has no definition in the document and stays out.
     expect(Object.keys(PROJECTED[0]).sort()).toEqual([
       'code',
       'description',
       'name',
+      'parentCode',
       'scheduleELine',
       'subtype',
       'taxDeductible',
       'type',
     ]);
-    expect(PERSISTED_FIELDS).not.toContain('parentCode');
+    expect(PERSISTED_FIELDS).toContain('parentCode');
     expect(PERSISTED_FIELDS).not.toContain('metadata');
+  });
+
+  it('carries a real hierarchy, not an empty one', () => {
+    // Non-vacuity: every assertion below about parent_code would pass trivially if the
+    // projection carried none. The count is cross-checked against the document's own
+    // Parent column rather than pinned to a bare number here.
+    const documented = registerRows(DOC).filter((r) => r.parentCode);
+    const projected = PROJECTED.filter((r) => r.parentCode !== null);
+    expect(documented.length).toBe(37);
+    expect(projected).toHaveLength(documented.length);
+    expect(projected.map((r) => r.code).sort()).toEqual(documented.map((r) => r.code).sort());
+    expect(PROJECTED.find((r) => r.code === '4000')?.parentCode).toBe('4090');
+  });
+
+  it('gives every header account a null parent', () => {
+    // One level deep: a header is nobody's child. §1.7.
+    const headerCodes = new Set(
+      registerRows(DOC).filter((r) => r.treatment === 'header').map((r) => r.code),
+    );
+    expect(headerCodes.size).toBe(10);
+    for (const code of headerCodes) {
+      const row = PROJECTED.find((r) => r.code === code);
+      expect(row, `${code} is a header the projection does not hold`).toBeDefined();
+      expect(row?.parentCode, `${code} is a header with a parent`).toBeNull();
+    }
   });
 });
 
@@ -149,6 +176,11 @@ describe('computeSeedPlan', () => {
   it('is idempotent: applying the plan to the table leaves nothing to do', () => {
     const existing = devBranchRows();
     const first = computeSeedPlan(PROJECTED, existing);
+    // The first pass must actually be writing parent_code, or the second pass proves
+    // nothing about it.
+    expect(first.updates.filter((u) => u.changedFields.includes('parentCode'))).toHaveLength(
+      34,
+    );
 
     const applied: ExistingAccountRow[] = [
       ...existing.map((row) => {
@@ -181,6 +213,32 @@ describe('computeSeedPlan', () => {
     expect(plan.updates[0].row.code).toBe('4000');
     expect(plan.updates[0].changedFields).toEqual(['name']);
     expect(plan.updates[0].row.name).toBe('Rental Income - Long-Term');
+  });
+
+  it('treats a row whose parent_code is NULL in the table as an update', () => {
+    // The live-row case this whole change exists for: the projection says 4000 belongs
+    // to header 4090, the table says nothing, so the plan must name parentCode.
+    const existing = PROJECTED.map(asExisting).map((row) =>
+      row.code === '4000' ? { ...row, parentCode: null } : row,
+    );
+    const plan = computeSeedPlan(PROJECTED, existing);
+    expect(plan.updates).toHaveLength(1);
+    expect(plan.updates[0].row.code).toBe('4000');
+    expect(plan.updates[0].changedFields).toEqual(['parentCode']);
+    expect(plan.updates[0].row.parentCode).toBe('4090');
+  });
+
+  it('clears a stray parent the document does not define', () => {
+    // A header with a parent on the live row is wrong in the other direction; the
+    // document is the only source, so the seed writes NULL over it.
+    const existing = PROJECTED.map(asExisting).map((row) =>
+      row.code === '4090' ? { ...row, parentCode: '4000' } : row,
+    );
+    const plan = computeSeedPlan(PROJECTED, existing);
+    expect(plan.updates).toHaveLength(1);
+    expect(plan.updates[0].row.code).toBe('4090');
+    expect(plan.updates[0].changedFields).toEqual(['parentCode']);
+    expect(plan.updates[0].row.parentCode).toBeNull();
   });
 
   it('treats a corrected Schedule E line as an update', () => {
@@ -254,19 +312,30 @@ describe('the delta this seed would apply to the dev branch as it stands', () =>
     expect(plan.inserts).toHaveLength(25);
   });
 
-  it('updates exactly the six accounts #157 changed, and nothing else', () => {
-    // Every update is substantive now. The 64 rows the previous revision would have
-    // rewritten carried no change but the derived parent_code and keyword metadata that
-    // this seed no longer writes.
-    expect(plan.updates.map((u) => u.row.code).sort()).toEqual([
-      '4000',
-      '4110',
-      '4120',
-      '5020',
-      '5030',
-      '5080',
+  it('updates the six accounts #157 changed plus every child missing its parent', () => {
+    // 39 = the six #157 field corrections, plus the 34 children the snapshot already
+    // holds with parent_code NULL, minus 4000 which is in both sets. Written as the
+    // arithmetic so the overlap stays visible.
+    const fieldFixes = ['4000', '4110', '4120', '5020', '5030', '5080'];
+    const parentFixes = plan.updates
+      .filter((u) => u.changedFields.includes('parentCode'))
+      .map((u) => u.row.code);
+    expect(parentFixes).toHaveLength(34);
+    expect(plan.updates).toHaveLength(
+      new Set([...fieldFixes, ...parentFixes]).size,
+    );
+    expect(plan.updates).toHaveLength(39);
+    // Every code #157 changed is still updated, and 4000 carries both reasons.
+    for (const code of fieldFixes) {
+      expect(plan.updates.map((u) => u.row.code)).toContain(code);
+    }
+    expect(plan.updates.find((u) => u.row.code === '4000')?.changedFields.sort()).toEqual([
+      'description',
+      'name',
+      'parentCode',
     ]);
-    expect(plan.unchanged).toHaveLength(74);
+    // 80 existing rows, 39 of them touched.
+    expect(plan.unchanged).toHaveLength(41);
   });
 
   it('finds no duplicate, no extraneous and no inactive global code', () => {
@@ -329,6 +398,7 @@ const COLUMN_TO_FIELD: Record<string, keyof ExistingAccountRow> = {
   description: 'description',
   schedule_e_line: 'scheduleELine',
   tax_deductible: 'taxDeductible',
+  parent_code: 'parentCode',
   is_active: 'isActive',
 };
 
@@ -388,7 +458,7 @@ describe('seedChartOfAccounts: the statements it emits', () => {
     // mutation this asserts against: a tenant override sharing a code must be unreachable.
     const { calls } = await runApply(devBranchRows());
     const updates = UPDATES(calls);
-    expect(updates).toHaveLength(6);
+    expect(updates).toHaveLength(39);
     for (const call of updates) {
       expect(call.sql).toMatch(/"id" = \$\d+ and "chart_of_accounts"\."tenant_id" is null/);
     }
@@ -401,16 +471,19 @@ describe('seedChartOfAccounts: the statements it emits', () => {
     expect(columns).toEqual([
       'description',
       'name',
+      'parent_code',
       'schedule_e_line',
       'subtype',
       'tax_deductible',
       'type',
       'updated_at',
     ]);
+    // parent_code is in the SET list, not just in the plan: a plan that reports the
+    // change while the SQL omits the column would leave every child NULL forever.
+    expect(setClause).toContain('parent_code');
     // The three the review named, each its own mutation:
     expect(setClause).not.toContain('is_active');
     expect(setClause).not.toContain('modified_by');
-    expect(setClause).not.toContain('parent_code');
     expect(setClause).not.toContain('metadata');
   });
 
@@ -474,14 +547,11 @@ describe('seedChartOfAccounts: the audit trail', () => {
     expect(audit).toHaveLength(plan.inserts.length + plan.updates.length);
     expect(audit.filter((e) => e.action === 'create')).toHaveLength(25);
     const updates = audit.filter((e) => e.action === 'update');
-    expect(updates.map((e) => e.code).sort()).toEqual([
-      '4000',
-      '4110',
-      '4120',
-      '5020',
-      '5030',
-      '5080',
-    ]);
+    expect(updates).toHaveLength(39);
+    expect(updates.map((e) => e.code)).toEqual(plan.updates.map((u) => u.row.code));
+    expect(
+      updates.filter((e) => e.changedFields?.includes('parentCode')),
+    ).toHaveLength(34);
     expect(updates.every((e) => (e.changedFields?.length ?? 0) > 0)).toBe(true);
   });
 
