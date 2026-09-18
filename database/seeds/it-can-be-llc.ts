@@ -1,11 +1,14 @@
 // Seed script for IT CAN BE LLC entity structure
 // Run this after initializing the database to create the tenant hierarchy
 
-import { db } from '../../server/db';
+import { createDb } from '../../server/db/connection';
 import * as schema from '../system.schema';
 import { hashPassword } from '../../server/lib/password';
 
-export async function seedItCanBeLLC() {
+export async function seedItCanBeLLC(databaseUrl = process.env.DATABASE_URL) {
+  if (!databaseUrl) throw new Error('DATABASE_URL is required to seed IT CAN BE LLC');
+  const db = createDb(databaseUrl);
+
   console.log('🌱 Seeding IT CAN BE LLC entity structure...');
 
   // Create IT CAN BE LLC (parent holding company)
