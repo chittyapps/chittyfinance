@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   useChartOfAccounts,
   useClassificationStats,
@@ -15,6 +15,7 @@ import {
   type UnclassifiedTransaction,
   type ChartOfAccount,
 } from '@/hooks/use-classification';
+import { classifyPickerGroups } from '@/lib/coa-hierarchy';
 
 type TabMode = 'queue' | 'reconciled';
 
@@ -552,11 +553,25 @@ function TransactionRow({ tx, coaMap, coa, onClassify, onReconcile }: Transactio
             <option value="" disabled>
               Classify as...
             </option>
-            {coa.map((a) => (
-              <option key={a.id} value={a.code}>
-                {a.code} — {a.name}
-              </option>
-            ))}
+            {classifyPickerGroups(coa).map((group) =>
+              group.label === null ? (
+                <Fragment key="ungrouped">
+                  {group.options.map((a) => (
+                    <option key={a.id} value={a.code}>
+                      {a.code} — {a.name}
+                    </option>
+                  ))}
+                </Fragment>
+              ) : (
+                <optgroup key={group.headerCode} label={group.label}>
+                  {group.options.map((a) => (
+                    <option key={a.id} value={a.code}>
+                      {a.code} — {a.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ),
+            )}
           </select>
 
           {authoritative && !tx.reconciled && (
