@@ -2,8 +2,48 @@ import { eq, and, desc, sql, inArray, isNull, asc, is, Column, SQL, exists } fro
 import type { AnyColumn } from 'drizzle-orm';
 import type { Database } from '../db/connection';
 import * as schema from '../db/schema';
+import {
+  TRANSACTION_TYPES,
+  isTransactionType,
+  isTransferType,
+  isTransferClearingCode,
+  TRANSFER_CLEARING_CODES,
+} from '../books/transfers';
 
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * `transactions.type` is a plain `text` column with no CHECK constraint, so the
+ * domain is enforced here on every write rather than by the database. Without
+ * this a typo silently becomes a fourth type and is then invisible to every
+ * report, which sums on exact matches.
+ */
+function assertTransactionType(value: unknown): asserts value is (typeof TRANSACTION_TYPES)[number] {
+  if (!isTransactionType(value)) {
+    throw new StorageValidationError(
+      'invalid_transaction_type',
+      `Invalid transaction type ${JSON.stringify(value)} — expected one of ${TRANSACTION_TYPES.join(', ')}`,
+    );
+  }
+}
+
+/**
+ * Sentinel for caller-supplied input the storage layer rejects. Distinct from
+ * `ClassificationError`, which is about trust-path state rather than a bad
+ * value: this one is reached from any route that writes a transaction, so it is
+ * mapped centrally in `server/middleware/error.ts` and needs no per-route catch.
+ * Without it a raw `Error` falls through to the 500 branch and a malformed
+ * `type` reads as a server fault.
+ */
+export class StorageValidationError extends Error {
+  constructor(
+    public readonly code: 'invalid_transaction_type',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'StorageValidationError';
+  }
+}
 
 /**
  * Sentinel error thrown when a trust-path operation is rejected.
@@ -16,7 +56,8 @@ export class ClassificationError extends Error {
       | 'reconciled_locked'
       | 'not_classified'
       | 'transaction_not_found'
-      | 'conflict',
+      | 'conflict'
+      | 'transfer_not_classifiable',
     message: string,
   ) {
     super(message);
@@ -27,6 +68,31 @@ export class ClassificationError extends Error {
 // ── Trust-path write helpers (pure; unit-tested without a database) ──
 
 export type ClassificationAction = 'suggest' | 're-suggest' | 'classify' | 'reclassify';
+
+/**
+ * Why a `type='transfer'` row may not be classified to `coaCode`, or null when
+ * the write is allowed. Pure, so the rule is testable without a database.
+ *
+ * A transfer row is a leg of a movement between two accounts the group
+ * controls. Classifying it onto an income or expense account does not merely
+ * mislabel one row: `effectiveClearingCode()` then stops matching, the leg drops
+ * out of the clearing check, and a half-recorded movement reports a green "no
+ * transfer clearing activity" pass over an empty set — the exact condition the
+ * check exists to catch (docs/CHART-OF-ACCOUNTS.md §6 step 5).
+ *
+ * There is deliberately NO override flag. A row flagged `transfer` in error is
+ * repaired by changing its TYPE through `updateTransaction`, which keeps the
+ * correction visible as a type change rather than hiding it inside a
+ * classification whose audit row would still read `transfer`.
+ */
+export function rejectTransferClassification(
+  txType: unknown,
+  coaCode: string,
+): string | null {
+  if (!isTransferType(txType)) return null;
+  if (isTransferClearingCode(coaCode)) return null;
+  return `Transaction is type='transfer' — it may only be classified to a transfer clearing account (${TRANSFER_CLEARING_CODES.join(' or ')}), not ${coaCode}. If the row is not a transfer, correct its type first.`;
+}
 
 /** Only L3 (reconcile) and L4 (govern) may modify a reconciled transaction. */
 export function canWriteReconciled(trustLevel: string): boolean {
@@ -172,11 +238,13 @@ export class SystemStorage {
   }
 
   async createTransaction(data: typeof schema.transactions.$inferInsert) {
+    assertTransactionType(data.type);
     const [row] = await this.db.insert(schema.transactions).values(data).returning();
     return row;
   }
 
   async updateTransaction(id: string, tenantId: string, data: Partial<typeof schema.transactions.$inferInsert>) {
+    if (data.type !== undefined) assertTransactionType(data.type);
     const [row] = await this.db
       .update(schema.transactions)
       .set({ ...data, updatedAt: new Date() })
@@ -514,6 +582,8 @@ export class SystemStorage {
     let totalIncome = 0;
     let totalExpenses = 0;
     for (const t of txns) {
+      // Transfers are hops between accounts the group controls — never NOI.
+      if (isTransferType(t.type)) continue;
       const amt = parseFloat(t.amount);
       if (t.type === 'income') totalIncome += amt;
       else if (t.type === 'expense') totalExpenses += Math.abs(amt);
@@ -583,6 +653,8 @@ export class SystemStorage {
     let totalExpenses = 0;
 
     for (const t of txns) {
+      // Transfers never appear on a P&L (docs/CHART-OF-ACCOUNTS.md §5).
+      if (isTransferType(t.type)) continue;
       const amt = parseFloat(t.amount);
       const category = t.category || 'uncategorized';
       if (t.type === 'income') {
@@ -1117,6 +1189,11 @@ export class SystemStorage {
     const tx = await this.getTransaction(txId, tenantId);
     if (!tx) return undefined;
 
+    const transferRejection = rejectTransferClassification(tx.type, coaCode);
+    if (transferRejection) {
+      throw new ClassificationError('transfer_not_classifiable', transferRejection);
+    }
+
     const t = schema.transactions;
     const isSuggestion = Boolean(opts.isSuggestion);
     const previousCoaCode = tx.coaCode ?? null;
@@ -1247,7 +1324,18 @@ export class SystemStorage {
     return this.db
       .select()
       .from(schema.transactions)
-      .where(and(eq(schema.transactions.tenantId, tenantId), isNull(schema.transactions.coaCode)))
+      .where(and(
+        eq(schema.transactions.tenantId, tenantId),
+        isNull(schema.transactions.coaCode),
+        // Transfers are NOT classification work. Ingest is L1 — it writes
+        // `suggested_coa_code = 1900/1910` and leaves `coa_code` NULL — so a
+        // transfer leg otherwise looks unclassified, and a batch-suggest or
+        // ai-suggest run would overwrite its clearing code with an
+        // income/expense guess. The row would keep type='transfer' (so reports
+        // still exclude it) but the clearing check would stop finding the leg
+        // and report "no transfer activity" instead of flagging the imbalance.
+        sql`${schema.transactions.type} <> 'transfer'`,
+      ))
       .orderBy(desc(schema.transactions.date))
       .limit(limit);
   }

@@ -4,6 +4,11 @@ import type { HonoEnv } from '../env';
 import { createDb } from '../db/connection';
 import { SystemStorage } from '../storage/system';
 import { findAccountCode } from '../../database/chart-of-accounts';
+import {
+  classifyMercuryInternalTransfer,
+  isMercuryInternalTransfer,
+  type TransactionType,
+} from './transfers';
 import { validateRow } from '../lib/chittyschema';
 import { ledgerLog } from '../lib/ledger-client';
 import { checkLegalPersonBinding, type LegalPersonBindingFlag } from '../lib/legal-person-binding';
@@ -81,6 +86,13 @@ const normalizedTransactionSchema = z.object({
   category: z.string().optional().nullable(),
   postedAt: z.string(),
   payee: z.string().optional().nullable(),
+  // Transfer detection. ChittyConnect does not forward these today, so both are
+  // optional and the path behaves exactly as before when they are absent. When
+  // ChittyConnect starts forwarding Mercury's `kind`, internal transfers are
+  // detected here too without a second change.
+  kind: z.string().optional().nullable(),
+  counterpartyNickname: z.string().optional().nullable(),
+  bankDescription: z.string().optional().nullable(),
 });
 
 const normalizedEnvelopeSchema = z.object({
@@ -261,7 +273,18 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const amount = typeof patch.amount === 'number' ? patch.amount : null;
   const description = (patch.bankDescription as string) ?? (patch.counterpartyName as string) ?? '';
   const counterpartyName = (patch.counterpartyName as string) ?? null;
-  const postedAt = (patch.postedAt as string) ?? (event.occurredAt as string) ?? null;
+  // `event.occurredAt` is a property of the EVENT, not of the movement. The two
+  // legs of one transfer arrive as two separate events with two different
+  // `occurredAt` values, so deriving a group key from it would give the legs
+  // different groups — and the `getTransactionByExternalId` dedupe above makes
+  // that permanent, since neither row is ever revisited. A leg with no real
+  // `postedAt` is still a transfer: it is booked to clearing with no group and
+  // surfaces as an ungrouped leg, which is a visible queue item rather than a
+  // silently mispaired one.
+  const postedAt = (patch.postedAt as string) ?? null;
+  // The row still needs a date to be stored; `occurredAt` is an acceptable
+  // fallback for THAT, and only that.
+  const rowDate = postedAt ?? (event.occurredAt as string) ?? null;
   const mercuryAccountId = (patch.accountId as string) ?? null;
 
   // For updates without amount (e.g. status change), just ack
@@ -271,10 +294,49 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
 
   const externalId = `mercury:${event.resourceId}`;
 
+  // Transfer detection runs BEFORE keyword classification: Mercury flags both
+  // legs of an internal movement with kind='internalTransfer', and such a row
+  // must never be offered an income or expense code however its bank
+  // description reads (docs/CHART-OF-ACCOUNTS.md §5).
+  const mercuryKind = typeof patch.kind === 'string' ? patch.kind : null;
+  const counterpartyNickname =
+    typeof patch.counterpartyNickname === 'string' ? patch.counterpartyNickname : null;
+  const bankDescription = typeof patch.bankDescription === 'string' ? patch.bankDescription : null;
+
+  // The counterparty account is given as a nickname string, not an id we can
+  // resolve to a tenant, so 1910 is not yet reachable from this path — see the
+  // follow-up note in the PR. `selectTransferClearingCode` returns 1900 when the
+  // counterparty tenant is unknown, which is the documented default.
+  // The bank's `kind` decides the TYPE; only the grouping key depends on
+  // postedAt. A known internal transfer with no postedAt is still a transfer —
+  // falling back to income/expense there would reintroduce exactly this bug. It
+  // is booked to 1900 with no transfer_group, and surfaces in the clearing
+  // check's `ungroupedRows` as a leg that cannot be paired.
+  const transferClassification =
+    mercuryKind && isMercuryInternalTransfer(mercuryKind)
+      ? classifyMercuryInternalTransfer({
+          tenantId,
+          amount,
+          postedAt,
+          kind: mercuryKind,
+          bankDescription,
+          counterpartyNickname,
+          counterpartyTenantId: null,
+        })
+      : null;
+
   // Auto-classify
-  const suggestedCoaCode = findAccountCode(description);
+  const transactionType: TransactionType = transferClassification
+    ? 'transfer'
+    : amount >= 0
+      ? 'income'
+      : 'expense';
+  const suggestedCoaCode = transferClassification
+    ? transferClassification.suggestedCoaCode
+    : findAccountCode(description);
   const isSuspense = suggestedCoaCode === '9010';
-  const classificationConfidence = isSuspense ? '0.100' : '0.700';
+  // A Mercury-flagged internal transfer is a fact from the bank, not a guess.
+  const classificationConfidence = transferClassification ? '0.950' : isSuspense ? '0.100' : '0.700';
 
   const db = createDb(c.env.DATABASE_URL);
   const storage = new SystemStorage(db);
@@ -335,9 +397,9 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     tenantId,
     accountId,
     amount: String(amount),
-    type: amount >= 0 ? 'income' : 'expense',
+    type: transactionType,
     description,
-    date: postedAt ?? new Date().toISOString(),
+    date: rowDate ?? new Date().toISOString(),
     externalId,
   });
 
@@ -349,10 +411,10 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     tenantId,
     accountId,
     amount: String(amount),
-    type: amount >= 0 ? 'income' : 'expense',
+    type: transactionType,
     category: null,
     description,
-    date: postedAt ? new Date(postedAt) : new Date(),
+    date: rowDate ? new Date(rowDate) : new Date(),
     payee: counterpartyName,
     externalId,
     suggestedCoaCode,
@@ -363,6 +425,9 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
       mercuryAccountId,
       eventId: event.id,
       operationType: event.operationType,
+      // Both legs of one movement carry the same transfer_group, so the pair can
+      // be matched later even though their Mercury ids differ.
+      ...(transferClassification?.metadata ?? {}),
     },
   });
 
@@ -373,8 +438,10 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
       tenantId,
       accountId,
       transactionId: created.id,
+      transactionType,
       suggestedCoaCode,
       confidence: classificationConfidence,
+      transferGroup: transferClassification?.transferGroup ?? null,
       schemaAdvisory: schemaResult.advisory,
       schemaValid: schemaResult.ok,
       reconciliationFlag: bindingFlag,
@@ -384,8 +451,10 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   return c.json({
     received: true,
     transactionId: created.id,
+    type: transactionType,
     suggestedCoaCode,
     classificationConfidence,
+    transferGroup: transferClassification?.transferGroup ?? null,
     schemaAdvisory: schemaResult.advisory,
     reconciliationFlags: bindingFlag ? [bindingFlag] : [],
   }, 201);
@@ -428,16 +497,37 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     return c.json({ received: true }, 202);
   }
 
-  const suggestedCoaCode = findAccountCode(tx.description, tx.category ?? undefined);
+  // Same rule as the native path: Mercury's own `kind` decides, and an internal
+  // movement is never offered an income or expense code.
+  const transferClassification = isMercuryInternalTransfer(tx.kind)
+    ? classifyMercuryInternalTransfer({
+        tenantId: tx.tenantId,
+        amount: tx.amount,
+        postedAt: tx.postedAt,
+        kind: tx.kind as string,
+        bankDescription: tx.bankDescription ?? null,
+        counterpartyNickname: tx.counterpartyNickname ?? null,
+        counterpartyTenantId: null,
+      })
+    : null;
+
+  const transactionType: TransactionType = transferClassification
+    ? 'transfer'
+    : tx.amount >= 0
+      ? 'income'
+      : 'expense';
+  const suggestedCoaCode = transferClassification
+    ? transferClassification.suggestedCoaCode
+    : findAccountCode(tx.description, tx.category ?? undefined);
   const isSuspense = suggestedCoaCode === '9010';
-  const classificationConfidence = isSuspense ? '0.100' : '0.700';
+  const classificationConfidence = transferClassification ? '0.950' : isSuspense ? '0.100' : '0.700';
   const externalId = `mercury:${tx.mercuryTransactionId}`;
 
   const schemaResult = await validateRow(c.env, 'FinancialTransactionsInsertSchema', {
     tenantId: tx.tenantId,
     accountId: tx.accountId,
     amount: String(tx.amount),
-    type: tx.amount >= 0 ? 'income' : 'expense',
+    type: transactionType,
     description: tx.description,
     date: tx.postedAt,
     externalId,
@@ -472,7 +562,7 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     tenantId: tx.tenantId,
     accountId: tx.accountId,
     amount: String(tx.amount),
-    type: tx.amount >= 0 ? 'income' : 'expense',
+    type: transactionType,
     category: tx.category ?? null,
     description: tx.description,
     date: new Date(tx.postedAt),
@@ -480,7 +570,12 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     externalId,
     suggestedCoaCode,
     classificationConfidence,
-    metadata: { source: 'mercury_webhook', mercuryTransactionId: tx.mercuryTransactionId, eventId },
+    metadata: {
+      source: 'mercury_webhook',
+      mercuryTransactionId: tx.mercuryTransactionId,
+      eventId,
+      ...(transferClassification?.metadata ?? {}),
+    },
   });
 
   ledgerLog(c, {
@@ -536,6 +631,13 @@ webhookRoutes.post('/api/webhooks/wave', async (c) => {
   const tx = envelope.data.data?.transaction;
   if (!tx) return c.json({ received: true }, 202);
 
+  // KNOWN GAP (tracked on #158): the Wave path has no transfer detection. Wave's
+  // webhook payload carries no equivalent of Mercury's `kind`, so an internal
+  // movement between two Wave-visible accounts still books as income or expense
+  // here. This is the same defect the Mercury paths just fixed, on a source that
+  // does not yet expose the fact needed to fix it. Detecting it from description
+  // text would be a guess, and a wrong guess writes `type='transfer'` onto real
+  // revenue — so the gap is recorded rather than papered over.
   const suggestedCoaCode = findAccountCode(tx.description, tx.category ?? undefined);
   const isSuspense = suggestedCoaCode === '9010';
   const classificationConfidence = isSuspense ? '0.100' : '0.700';

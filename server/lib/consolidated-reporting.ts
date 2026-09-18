@@ -1,4 +1,10 @@
 import { isProfitAndLossAccount } from '../../database/chart-of-accounts';
+import {
+  checkTransferClearingBalance,
+  isTransferType,
+  type ClearingBalanceResult,
+  type ClearingLegRow,
+} from '../books/transfers';
 
 type NumberLike = string | number | null | undefined;
 
@@ -73,6 +79,8 @@ export interface ReportQuality {
   unassignedStateTransactions: number;
   futureDatedTransactions: number;
   internalIntercompanyEliminated: number;
+  /** type='transfer' rows kept out of every income/expense total. */
+  transfersExcluded: number;
 }
 
 export interface PreflightCheck {
@@ -177,6 +185,16 @@ export function buildConsolidatedReport(params: {
   accounts: ReportingAccountRow[];
   options: ConsolidatedReportOptions;
   internalIntercompanyEliminated: number;
+  /**
+   * Rows for the clearing check, scoped to the tenant set and period but NOT to
+   * the view (docs/CHART-OF-ACCOUNTS.md §6: "per tenant and period"). The report
+   * body runs on `transactions`, which the caller has already narrowed by state
+   * filter and intercompany elimination — and either of those can drop one leg
+   * of a pair while keeping the other, manufacturing a false "missing leg".
+   * Defaults to `transactions` so a caller with no separate unfiltered set
+   * behaves exactly as before.
+   */
+  clearingTransactions?: ReportingTransactionRow[];
 }) {
   const quality: ReportQuality = {
     totalTransactions: 0,
@@ -186,6 +204,7 @@ export function buildConsolidatedReport(params: {
     unassignedStateTransactions: 0,
     futureDatedTransactions: 0,
     internalIntercompanyEliminated: params.internalIntercompanyEliminated,
+    transfersExcluded: 0,
   };
 
   const entityMap = new Map<string, any>();
@@ -198,8 +217,30 @@ export function buildConsolidatedReport(params: {
 
   const now = Date.now();
 
+  // Transfer legs are summarized for the clearing check, then dropped before
+  // any total is computed. The gate is `type = 'transfer'`, never the COA code:
+  // gating on the code alone would also drop every 9010 suspense row out of
+  // historical reports without anything having been reclassified.
+  const clearing = checkTransferClearingBalance(
+    (params.clearingTransactions ?? params.transactions).map((tx) => ({
+      id: tx.id,
+      type: tx.type,
+      amount: tx.amount,
+      coaCode: tx.coaCode ?? null,
+      suggestedCoaCode: tx.suggestedCoaCode ?? null,
+      date: tx.date,
+      description: tx.description,
+      metadata: tx.metadata,
+    })),
+  );
+
   for (const tx of params.transactions) {
     quality.totalTransactions += 1;
+
+    if (isTransferType(tx.type)) {
+      quality.transfersExcluded += 1;
+      continue;
+    }
 
     const txDate = parseDate(tx.date);
     if (!txDate || txDate.getTime() > now) quality.futureDatedTransactions += 1;
@@ -454,6 +495,7 @@ export function buildConsolidatedReport(params: {
     byEntity,
     byState,
     quality,
+    transferClearing: clearing,
   };
 }
 
@@ -505,6 +547,34 @@ export function buildPreflightChecks(
     threshold: '<= 10%',
   });
 
+  // Clearing accounts must net to zero per period. A non-zero balance means a
+  // missing leg — which is the point of a clearing account rather than dropping
+  // the rows (docs/CHART-OF-ACCOUNTS.md §6, step 5).
+  const clearing: ClearingBalanceResult = report.transferClearing;
+  // `legCount === 0` is only an honest pass when there are genuinely no transfer
+  // rows in scope. A transfer reclassified off 1900 leaves `legCount` at zero
+  // while a real half-recorded movement sits in the data, so the emptiness of
+  // the leg set is never itself the pass condition — `clearingBroken` decides,
+  // and a miscoded transfer row makes it broken.
+  const clearingBroken =
+    clearing.unmatchedGroups.length > 0 ||
+    clearing.ungroupedRows.length > 0 ||
+    clearing.miscodedRows.length > 0 ||
+    clearing.net !== 0;
+  checks.push({
+    id: 'transfer-clearing-balance',
+    status: clearingBroken ? 'fail' : 'pass',
+    message: clearingBroken
+      ? `Transfer clearing does not reconcile (net ${clearing.net}); ${clearing.unmatchedGroups.length} unmatched group(s), ${clearing.ungroupedRows.length} ungrouped leg(s), ${clearing.miscodedRows.length} transfer row(s) not on a clearing account. A missing or reclassified leg means the movement was only half-recorded.`
+      : clearing.legCount === 0
+        ? 'No transfer clearing activity (1900/1910) in this period.'
+        : `Transfer clearing nets to zero across ${clearing.groupCount} movement(s).`,
+    metric: clearingBroken
+      ? clearing.unmatchedRows.length + clearing.ungroupedRows.length + clearing.miscodedRows.length
+      : 0,
+    threshold: '0 unmatched legs',
+  });
+
   checks.push({
     id: 'intercompany-elimination',
     status: quality.internalIntercompanyEliminated > 0 ? 'pass' : 'warn',
@@ -534,6 +604,10 @@ export function buildRemediationPrompts(checks: PreflightCheck[]) {
 
     if (check.id === 'future-dated-transactions') {
       prompts.push('Review and correct future-dated transactions before generating tax filing schedules.');
+    }
+
+    if (check.id === 'transfer-clearing-balance') {
+      prompts.push('Transfer clearing (1900/1910) does not reconcile — locate the missing leg for each unmatched transfer_group, and return any transfer row that was reclassified onto an income or expense account to 1900/1910, before filing.');
     }
     if (check.id === 'state-attribution') {
       prompts.push('Assign state codes to UNASSIGNED transactions using property/state metadata before state tax allocation.');

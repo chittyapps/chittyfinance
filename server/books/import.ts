@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { ledgerLog } from '../lib/ledger-client';
 import { findAccountCode, getAccountByCode } from '../../database/chart-of-accounts';
+import { classifyMercuryInternalTransfer, isMercuryInternalTransfer } from './transfers';
 
 export const importRoutes = new Hono<HonoEnv>();
 
@@ -1904,6 +1905,14 @@ importRoutes.post('/api/import/mercury-csv', async (c) => {
   const iNote = colIdx('Note');
   const iTimestamp = colIdx('Timestamp');
   const iCategory = colIdx('Mercury Category');
+  // Transfer detection. Mercury's CSV export carries NO `Kind` column today, so
+  // `colIdx` returns -1 and this branch is unreachable against a current export
+  // — it exists so that a future export (or a hand-assembled CSV) carrying the
+  // column is handled correctly rather than booked as income or expense.
+  // Internal transfers are NOT inferred from description text; only Mercury's
+  // own `Kind` is trusted.
+  const iKind = colIdx('Kind');
+  const iCounterpartyNickname = colIdx('Counterparty Nickname');
 
   if (iDate < 0 || iDesc < 0 || iAmount < 0) {
     return c.json({ error: 'Missing required columns: Date, Description, Amount' }, 400);
@@ -1983,6 +1992,10 @@ importRoutes.post('/api/import/mercury-csv', async (c) => {
     const glCode = iGlCode >= 0 ? row[iGlCode]?.trim() || '' : '';
     const note = iNote >= 0 ? row[iNote]?.trim() || '' : '';
     const mercuryCategory = iCategory >= 0 ? row[iCategory]?.trim() || '' : '';
+    const mercuryKind = iKind >= 0 ? row[iKind]?.trim() || '' : '';
+    const counterpartyNickname =
+      iCounterpartyNickname >= 0 ? row[iCounterpartyNickname]?.trim() || '' : '';
+    const timestamp = iTimestamp >= 0 ? row[iTimestamp]?.trim() || '' : '';
 
     if (!dateStr || !description || !amountStr) { skipped++; continue; }
     if (status === 'Failed' || status === 'Cancelled') { skipped++; continue; }
@@ -2014,23 +2027,51 @@ importRoutes.post('/api/import/mercury-csv', async (c) => {
       const dup = await storage.getTransactionByExternalId(externalId, tenantId);
       if (dup) { skipped++; continue; }
 
+      // Internal transfers are decided first: a movement between two accounts
+      // the group controls is never an income or expense row, and a supplied GL
+      // code does not override the bank's own `internalTransfer` fact
+      // (docs/CHART-OF-ACCOUNTS.md §5).
+      const transferClassification = isMercuryInternalTransfer(mercuryKind)
+        ? classifyMercuryInternalTransfer({
+            tenantId,
+            amount,
+            // ONLY the Timestamp column may seed the group key. The Date column
+            // is day-granular, and the key is (|amount|, postedAt): several
+            // same-amount movements on one day would collapse into a single
+            // group, where two legs of two DIFFERENT broken pairs cancel to a
+            // false "balanced". Without a timestamp the leg is booked to
+            // clearing with no group and surfaces as an ungrouped leg — visible
+            // work, not a silent wrong pairing.
+            postedAt: timestamp || null,
+            kind: mercuryKind,
+            bankDescription: bankDesc || null,
+            counterpartyNickname: counterpartyNickname || null,
+            counterpartyTenantId: null,
+          })
+        : null;
+
       // Classify: prefer GL code from Mercury, else keyword match
       let suggestedCoaCode = '9010';
       let confidence = '0.100';
-      if (glCode) {
-        const codeMatch = glCode.match(/^\d{4}/);
-        if (codeMatch) { suggestedCoaCode = codeMatch[0]; confidence = '0.850'; }
-      }
-      if (suggestedCoaCode === '9010') {
-        suggestedCoaCode = findAccountCode(bankDesc || description, mercuryCategory || undefined);
-        confidence = suggestedCoaCode === '9010' ? '0.100' : '0.700';
+      if (transferClassification) {
+        suggestedCoaCode = transferClassification.suggestedCoaCode;
+        confidence = '0.950';
+      } else {
+        if (glCode) {
+          const codeMatch = glCode.match(/^\d{4}/);
+          if (codeMatch) { suggestedCoaCode = codeMatch[0]; confidence = '0.850'; }
+        }
+        if (suggestedCoaCode === '9010') {
+          suggestedCoaCode = findAccountCode(bankDesc || description, mercuryCategory || undefined);
+          confidence = suggestedCoaCode === '9010' ? '0.100' : '0.700';
+        }
       }
 
       await storage.createTransaction({
         tenantId,
         accountId,
         amount: String(amount),
-        type: amount >= 0 ? 'income' : 'expense',
+        type: transferClassification ? 'transfer' : amount >= 0 ? 'income' : 'expense',
         category: mercuryCategory || null,
         description: bankDesc || description,
         date,
@@ -2038,7 +2079,12 @@ importRoutes.post('/api/import/mercury-csv', async (c) => {
         externalId,
         suggestedCoaCode,
         classificationConfidence: confidence,
-        metadata: { source: 'mercury_csv', note: note || undefined, glCode: glCode || undefined },
+        metadata: {
+          source: 'mercury_csv',
+          note: note || undefined,
+          glCode: glCode || undefined,
+          ...(transferClassification?.metadata ?? {}),
+        },
       });
       imported++;
     } catch (e: any) {

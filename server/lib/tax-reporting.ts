@@ -13,6 +13,7 @@ import {
   isProfitAndLossAccount,
   type AccountDefinition,
 } from '../../database/chart-of-accounts';
+import { isTransferType } from '../books/transfers';
 import type { ReportingTransactionRow } from './consolidated-reporting';
 
 // ── IRS Schedule E line labels ──
@@ -332,6 +333,13 @@ export function buildScheduleEReport(params: {
   const partnershipTypes = new Set(['holding', 'series', 'management']);
 
   for (const tx of transactions) {
+    // A hop between two accounts the group controls maps to no Schedule E or
+    // Form 8825 line. Booking it to one overstates both the top line and the
+    // expense lines (docs/CHART-OF-ACCOUNTS.md §5). The `income ? Line 3 :
+    // lineNumber` ternary below would otherwise file every transfer as an
+    // expense line.
+    if (isTransferType(tx.type)) continue;
+
     const rawAmount = amount(tx.amount);
     const absAmount = Math.abs(rawAmount);
     const { coaCode } = resolveScheduleELine(tx.category, tx.description, tx.coaCode);
@@ -758,7 +766,10 @@ export function buildForm1065Report(params: {
   const reports: Form1065Report[] = [];
 
   for (const entity of partnershipEntities) {
-    const entityTxs = transactions.filter((tx) => tx.tenantId === entity.id);
+    // Transfers carry no Form 1065 income or deduction.
+    const entityTxs = transactions.filter(
+      (tx) => tx.tenantId === entity.id && !isTransferType(tx.type),
+    );
     if (entityTxs.length === 0) continue;
 
     const incomeMap = new Map<string, { amount: number; coaCode: string }>();
