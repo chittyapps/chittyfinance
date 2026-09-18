@@ -95,6 +95,26 @@ describe('(b) leg identity follows the TYPE, not the account code', () => {
     expect(result.legCount).toBe(2);
   });
 
+  it('miscoded rows alone make the period unbalanced, even beside an intact pair', () => {
+    // The case where `miscodedRows` is the ONLY signal: one movement is intact
+    // (so net is zero, no unmatched group, nothing ungrouped) while a second
+    // movement has BOTH legs reclassified off clearing. Everything the older
+    // result fields look at is clean; only `miscodedRows` knows.
+    const result = checkTransferClearingBalance([
+      leg({ id: 'ok-out', amount: '-500.00', metadata: { transfer_group: 'xfer_ok' } }),
+      leg({ id: 'ok-in', amount: '500.00', metadata: { transfer_group: 'xfer_ok' } }),
+      leg({ id: 'bad-out', amount: '-900.00', coaCode: '5010', metadata: { transfer_group: 'xfer_bad' } }),
+      leg({ id: 'bad-in', amount: '900.00', coaCode: '4000', metadata: { transfer_group: 'xfer_bad' } }),
+    ]);
+
+    expect(result.net).toBe(0);
+    expect(result.unmatchedGroups).toHaveLength(0);
+    expect(result.ungroupedRows).toHaveLength(0);
+    expect(result.miscodedRows.map((r) => r.id)).toEqual(['bad-out', 'bad-in']);
+    // `balanced` must consult miscodedRows, not just the arithmetic.
+    expect(result.balanced).toBe(false);
+  });
+
   it('1920 rail holding is neither a leg nor a fault (§6 excludes it by name)', () => {
     const result = checkTransferClearingBalance([
       leg({ id: 'r', amount: '500.00', suggestedCoaCode: '1920', metadata: {} }),
