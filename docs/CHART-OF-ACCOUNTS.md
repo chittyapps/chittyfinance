@@ -22,8 +22,10 @@ any other artifact disagree, this document wins and the other is the defect.
 - The seed does **not yet write `parent_code`**, so applying it would create the ten
   header rows without attaching any child to them. The column exists on
   `chart_of_accounts` and is NULL on every row; the hierarchy §14 now defines is what was
-  missing when `parentCode` was removed from the seed's `PERSISTED_FIELDS`. Restoring it —
-  and the 37 `parent_code` updates that follow — is a separate change. See §13.
+  missing when `parentCode` was removed from the seed's `PERSISTED_FIELDS`. Restoring it
+  is a separate change, and it is 34 `parent_code` updates on live rows, not 37: three of
+  the 37 children (4005, 4008, 1130) are themselves marked `*`, so they arrive by insert
+  carrying their parent rather than by update. See §13.
 - Importers may only emit codes defined here, validated through `getAccountByCode()`.
 - Change this document first, then the projection, then the database. Never the reverse.
 
