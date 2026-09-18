@@ -6,6 +6,8 @@ import {
   TRANSACTION_TYPES,
   isTransactionType,
   isTransferType,
+  isTransferClearingCode,
+  TRANSFER_CLEARING_CODES,
 } from '../books/transfers';
 
 const MS_PER_DAY = 86_400_000;
@@ -18,9 +20,28 @@ const MS_PER_DAY = 86_400_000;
  */
 function assertTransactionType(value: unknown): asserts value is (typeof TRANSACTION_TYPES)[number] {
   if (!isTransactionType(value)) {
-    throw new Error(
+    throw new StorageValidationError(
+      'invalid_transaction_type',
       `Invalid transaction type ${JSON.stringify(value)} — expected one of ${TRANSACTION_TYPES.join(', ')}`,
     );
+  }
+}
+
+/**
+ * Sentinel for caller-supplied input the storage layer rejects. Distinct from
+ * `ClassificationError`, which is about trust-path state rather than a bad
+ * value: this one is reached from any route that writes a transaction, so it is
+ * mapped centrally in `server/middleware/error.ts` and needs no per-route catch.
+ * Without it a raw `Error` falls through to the 500 branch and a malformed
+ * `type` reads as a server fault.
+ */
+export class StorageValidationError extends Error {
+  constructor(
+    public readonly code: 'invalid_transaction_type',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'StorageValidationError';
   }
 }
 
@@ -35,7 +56,8 @@ export class ClassificationError extends Error {
       | 'reconciled_locked'
       | 'not_classified'
       | 'transaction_not_found'
-      | 'conflict',
+      | 'conflict'
+      | 'transfer_not_classifiable',
     message: string,
   ) {
     super(message);
@@ -46,6 +68,31 @@ export class ClassificationError extends Error {
 // ── Trust-path write helpers (pure; unit-tested without a database) ──
 
 export type ClassificationAction = 'suggest' | 're-suggest' | 'classify' | 'reclassify';
+
+/**
+ * Why a `type='transfer'` row may not be classified to `coaCode`, or null when
+ * the write is allowed. Pure, so the rule is testable without a database.
+ *
+ * A transfer row is a leg of a movement between two accounts the group
+ * controls. Classifying it onto an income or expense account does not merely
+ * mislabel one row: `effectiveClearingCode()` then stops matching, the leg drops
+ * out of the clearing check, and a half-recorded movement reports a green "no
+ * transfer clearing activity" pass over an empty set — the exact condition the
+ * check exists to catch (docs/CHART-OF-ACCOUNTS.md §6 step 5).
+ *
+ * There is deliberately NO override flag. A row flagged `transfer` in error is
+ * repaired by changing its TYPE through `updateTransaction`, which keeps the
+ * correction visible as a type change rather than hiding it inside a
+ * classification whose audit row would still read `transfer`.
+ */
+export function rejectTransferClassification(
+  txType: unknown,
+  coaCode: string,
+): string | null {
+  if (!isTransferType(txType)) return null;
+  if (isTransferClearingCode(coaCode)) return null;
+  return `Transaction is type='transfer' — it may only be classified to a transfer clearing account (${TRANSFER_CLEARING_CODES.join(' or ')}), not ${coaCode}. If the row is not a transfer, correct its type first.`;
+}
 
 /** Only L3 (reconcile) and L4 (govern) may modify a reconciled transaction. */
 export function canWriteReconciled(trustLevel: string): boolean {
@@ -1141,6 +1188,11 @@ export class SystemStorage {
   ) {
     const tx = await this.getTransaction(txId, tenantId);
     if (!tx) return undefined;
+
+    const transferRejection = rejectTransferClassification(tx.type, coaCode);
+    if (transferRejection) {
+      throw new ClassificationError('transfer_not_classifiable', transferRejection);
+    }
 
     const t = schema.transactions;
     const isSuggestion = Boolean(opts.isSuggestion);

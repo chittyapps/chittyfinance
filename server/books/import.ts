@@ -1905,10 +1905,12 @@ importRoutes.post('/api/import/mercury-csv', async (c) => {
   const iNote = colIdx('Note');
   const iTimestamp = colIdx('Timestamp');
   const iCategory = colIdx('Mercury Category');
-  // Transfer detection. Mercury's CSV export does not always carry these
-  // columns — when they are absent, `colIdx` returns -1 and this path behaves
-  // exactly as before. Internal transfers are NOT inferred from description
-  // text; only Mercury's own `Kind` is trusted.
+  // Transfer detection. Mercury's CSV export carries NO `Kind` column today, so
+  // `colIdx` returns -1 and this branch is unreachable against a current export
+  // — it exists so that a future export (or a hand-assembled CSV) carrying the
+  // column is handled correctly rather than booked as income or expense.
+  // Internal transfers are NOT inferred from description text; only Mercury's
+  // own `Kind` is trusted.
   const iKind = colIdx('Kind');
   const iCounterpartyNickname = colIdx('Counterparty Nickname');
 
@@ -2033,9 +2035,14 @@ importRoutes.post('/api/import/mercury-csv', async (c) => {
         ? classifyMercuryInternalTransfer({
             tenantId,
             amount,
-            // The Timestamp column carries sub-second precision; the Date column
-            // does not. Both legs share it, so it is the better grouping key.
-            postedAt: timestamp || date.toISOString(),
+            // ONLY the Timestamp column may seed the group key. The Date column
+            // is day-granular, and the key is (|amount|, postedAt): several
+            // same-amount movements on one day would collapse into a single
+            // group, where two legs of two DIFFERENT broken pairs cancel to a
+            // false "balanced". Without a timestamp the leg is booked to
+            // clearing with no group and surfaces as an ungrouped leg — visible
+            // work, not a silent wrong pairing.
+            postedAt: timestamp || null,
             kind: mercuryKind,
             bankDescription: bankDesc || null,
             counterpartyNickname: counterpartyNickname || null,

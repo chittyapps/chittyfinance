@@ -273,7 +273,18 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const amount = typeof patch.amount === 'number' ? patch.amount : null;
   const description = (patch.bankDescription as string) ?? (patch.counterpartyName as string) ?? '';
   const counterpartyName = (patch.counterpartyName as string) ?? null;
-  const postedAt = (patch.postedAt as string) ?? (event.occurredAt as string) ?? null;
+  // `event.occurredAt` is a property of the EVENT, not of the movement. The two
+  // legs of one transfer arrive as two separate events with two different
+  // `occurredAt` values, so deriving a group key from it would give the legs
+  // different groups — and the `getTransactionByExternalId` dedupe above makes
+  // that permanent, since neither row is ever revisited. A leg with no real
+  // `postedAt` is still a transfer: it is booked to clearing with no group and
+  // surfaces as an ungrouped leg, which is a visible queue item rather than a
+  // silently mispaired one.
+  const postedAt = (patch.postedAt as string) ?? null;
+  // The row still needs a date to be stored; `occurredAt` is an acceptable
+  // fallback for THAT, and only that.
+  const rowDate = postedAt ?? (event.occurredAt as string) ?? null;
   const mercuryAccountId = (patch.accountId as string) ?? null;
 
   // For updates without amount (e.g. status change), just ack
@@ -388,7 +399,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     amount: String(amount),
     type: transactionType,
     description,
-    date: postedAt ?? new Date().toISOString(),
+    date: rowDate ?? new Date().toISOString(),
     externalId,
   });
 
@@ -403,7 +414,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     type: transactionType,
     category: null,
     description,
-    date: postedAt ? new Date(postedAt) : new Date(),
+    date: rowDate ? new Date(rowDate) : new Date(),
     payee: counterpartyName,
     externalId,
     suggestedCoaCode,
@@ -620,6 +631,13 @@ webhookRoutes.post('/api/webhooks/wave', async (c) => {
   const tx = envelope.data.data?.transaction;
   if (!tx) return c.json({ received: true }, 202);
 
+  // KNOWN GAP (tracked on #158): the Wave path has no transfer detection. Wave's
+  // webhook payload carries no equivalent of Mercury's `kind`, so an internal
+  // movement between two Wave-visible accounts still books as income or expense
+  // here. This is the same defect the Mercury paths just fixed, on a source that
+  // does not yet expose the fact needed to fix it. Detecting it from description
+  // text would be a guess, and a wrong guess writes `type='transfer'` onto real
+  // revenue — so the gap is recorded rather than papered over.
   const suggestedCoaCode = findAccountCode(tx.description, tx.category ?? undefined);
   const isSuspense = suggestedCoaCode === '9010';
   const classificationConfidence = isSuspense ? '0.100' : '0.700';

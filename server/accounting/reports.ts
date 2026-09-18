@@ -143,6 +143,13 @@ async function buildReportForRequest(
     params.entityTypes,
   ) as ReportingTransactionRow[];
 
+  // The clearing check is scoped per tenant and period (docs/CHART-OF-ACCOUNTS.md
+  // §6), NOT per view. Captured before the state filter and the intercompany
+  // elimination below, either of which can drop one leg of a pair while keeping
+  // the other — an IL-only report drops the pooled-account leg and keeps the
+  // property-side leg, which would read as a missing leg that does not exist.
+  const clearingScopeTransactions = transactions;
+
   if (params.stateFilter.length > 0) {
     const allowedStates = new Set(params.stateFilter.map((value) => value.trim().toUpperCase()));
     transactions = transactions.filter((tx) => allowedStates.has(detectTransactionState(tx)));
@@ -181,6 +188,7 @@ async function buildReportForRequest(
     accounts,
     options,
     internalIntercompanyEliminated: eliminatedIntercompanyCount,
+    clearingTransactions: clearingScopeTransactions,
   });
 
   const preflight = buildPreflightChecks(report, params.strictReadiness);

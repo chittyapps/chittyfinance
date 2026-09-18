@@ -28,6 +28,12 @@ export function isTransferType(value: unknown): boolean {
 export const TRANSFER_CLEARING_INTRA_ENTITY = '1900';
 export const TRANSFER_CLEARING_INTERCOMPANY = '1910';
 
+/** Payment Rail Holding — a transfer code, but deliberately outside the
+ *  net-to-zero assertion (docs/CHART-OF-ACCOUNTS.md §6, "Why 1920 is excluded").
+ *  Nothing on the ingest path writes it today; it is recognised here so that if
+ *  a row ever carries it, it is not mistaken for a miscoded leg. */
+export const RAIL_HOLDING_CODE = '1920';
+
 /**
  * The two codes the net-to-zero assertion runs over — and deliberately NOT the
  * same list as `TRANSFER_CLEARING_CODES` in `database/chart-of-accounts.ts`,
@@ -184,6 +190,23 @@ export function classifyMercuryInternalTransfer(params: {
     transferGroup,
     metadata: {
       ...(transferGroup ? { transfer_group: transferGroup } : {}),
+      // The exact inputs the group id was hashed from. `transactions.date` is a
+      // ms-truncated timestamp and the raw string is not otherwise kept, so
+      // without these an unmatched group cannot be recomputed, audited or
+      // repaired from stored data — the hash is one-way. Recorded verbatim, in
+      // the same normalization `transferGroupKey` applies.
+      ...(transferGroup
+        ? {
+            transfer_group_inputs: {
+              amount_magnitude: Math.abs(params.amount).toFixed(2),
+              posted_at: (params.postedAt as string).trim(),
+              key: transferGroupKey({
+                amount: params.amount,
+                postedAt: params.postedAt as string,
+              }),
+            },
+          }
+        : {}),
       transfer_direction: params.amount >= 0 ? 'in' : 'out',
       mercury_kind: params.kind,
       bank_description: params.bankDescription ?? null,
@@ -228,6 +251,26 @@ export interface ClearingBalanceResult {
   /** Clearing-coded transfer rows carrying no `metadata.transfer_group`;
    *  they cannot be paired at all. */
   ungroupedRows: ClearingLegRow[];
+  /**
+   * Every `type='transfer'` row in scope, whatever account it currently sits on.
+   * `legCount` counts only those on 1900/1910, so `transferRowCount > 0` with
+   * `legCount === 0` is a real finding ("transfers exist but none is on a
+   * clearing account") and not an empty period.
+   */
+  transferRowCount: number;
+  /**
+   * `type='transfer'` rows whose effective code is neither a clearing code
+   * (1900/1910) nor the rail-holding account (1920, excluded from the assertion
+   * by §6 on purpose).
+   *
+   * A transfer that has been reclassified onto an income or expense account is
+   * still a leg of a real movement — it must not silently leave the check. These
+   * rows are deliberately kept OUT of `net` and out of the group buckets, so the
+   * movement they belonged to also surfaces as an unmatched group with a missing
+   * leg. Two independent signals, and `unmatchedRows` then names the surviving
+   * sibling so the pair can be found.
+   */
+  miscodedRows: ClearingLegRow[];
 }
 
 function toNumber(value: string | number): number {
@@ -270,9 +313,27 @@ function round2(value: number): number {
 export function checkTransferClearingBalance(
   rows: Array<ClearingLegRow & { type?: string }>,
 ): ClearingBalanceResult {
-  const legs = rows.filter(
-    (row) => isTransferType(row.type) && isTransferClearingCode(effectiveClearingCode(row)),
-  );
+  // Leg identity is the row's TYPE, not its account code. A `type='transfer'`
+  // row that has been reclassified onto 5010 is still a leg of a real movement;
+  // filtering on the code alone would drop it and leave the surviving sibling
+  // looking like an empty, balanced period.
+  const transferRows = rows.filter((row) => isTransferType(row.type));
+
+  const legs: ClearingLegRow[] = [];
+  const miscodedRows: ClearingLegRow[] = [];
+  for (const row of transferRows) {
+    const code = effectiveClearingCode(row);
+    if (isTransferClearingCode(code)) {
+      legs.push(row);
+    } else if (code === RAIL_HOLDING_CODE) {
+      // 1920 carries a movement whose far side is still unknown, so it has no
+      // sibling to net against. §6 keeps it outside the assertion by name —
+      // present, but neither a leg nor a fault.
+      continue;
+    } else {
+      miscodedRows.push(row);
+    }
+  }
 
   const groups = new Map<string, { net: number; rows: ClearingLegRow[] }>();
   const ungroupedRows: ClearingLegRow[] = [];
@@ -319,9 +380,12 @@ export function checkTransferClearingBalance(
       legs.length > 0 &&
       roundedNet === 0 &&
       unmatchedGroups.length === 0 &&
-      ungroupedRows.length === 0,
+      ungroupedRows.length === 0 &&
+      miscodedRows.length === 0,
     unmatchedGroups,
     unmatchedRows,
     ungroupedRows,
+    transferRowCount: transferRows.length,
+    miscodedRows,
   };
 }

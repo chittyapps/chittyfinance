@@ -91,12 +91,16 @@ describe('report gates — transfer type AND non-P&L account, simultaneously', (
   });
 
   it('buildForm1065Report applies both to the partnership return', () => {
-    // A second partnership whose only activity is a transfer. The TYPE gate filters
-    // its rows out, leaving the entity with nothing to report, so it gets no 1065 at
-    // all. Without that gate the entity survives the `entityTxs.length === 0` skip
-    // and emits an empty, zeroed return for a partnership that had no reportable
-    // activity. (The gate is also what keeps a transfer off the income/deduction
-    // maps, though the `income`/`expense` branch below happens to drop it too.)
+    // NOTE on what this actually proves. At Form 1065 the TYPE gate has exactly ONE
+    // observable consequence, and it is the `entityId` assertion below — not the
+    // amounts. A transfer matches neither the `income` nor the `expense` branch of
+    // the accumulation loop, so removing `!isTransferType` leaves ordinaryIncome,
+    // netIncome and incomeByCategory unchanged. What it does change is the
+    // `entityTxs.length === 0` skip: a partnership whose only activity is a
+    // transfer survives it and emits an empty, zeroed 1065 for an entity that had
+    // no reportable activity. That is a real defect — a return filed for a
+    // partnership that owes none — but it is the only mutation this site detects,
+    // and the amount assertions below are carried by the ACCOUNT gate alone.
     const transferOnlyEntity = {
       ...baseTx, id: 'g4', tenantId: 'e-2', amount: '2500.00', type: 'transfer', coaCode: '1900',
     } as any;
@@ -112,6 +116,7 @@ describe('report gates — transfer type AND non-P&L account, simultaneously', (
       ] as any,
     });
 
+    // The sole TYPE-gate mutation detector at this site.
     expect(reports.map((r) => r.entityId)).toEqual(['e-1']);
 
     const [report] = reports;

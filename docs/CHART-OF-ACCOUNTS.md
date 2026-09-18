@@ -335,7 +335,11 @@ deposit across accounts.
 **Identifying a transfer.** `kind === "internalTransfer"` is definitive. Both legs carry
 identical `postedAt` to the microsecond and opposite `amount`, and each names the other
 account in `counterpartyNickname` — which is populated *only* for internal movements.
-The two legs have different ids, so pair on (amount, postedAt, counterparty), not id.
+The two legs have different ids, so pair on (`|amount|`, `postedAt`), not id. The
+counterparty nickname is recorded in metadata but is deliberately **not** part of the
+key: leg A sees its own account and the *nickname* of the far side, leg B sees the
+mirror, so no pair built from them agrees across the two legs. §6 is authoritative for
+the key; this line states the same rule.
 External activity uses `debitCardTransaction`, `outgoingPayment` or `other`, carries a
 real vendor `counterpartyName`, and never sets `counterpartyNickname`.
 
