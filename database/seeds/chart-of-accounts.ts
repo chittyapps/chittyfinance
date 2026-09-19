@@ -418,12 +418,22 @@ export async function seedChartOfAccounts(options: SeedOptions = {}): Promise<Se
 /**
  * True when this module is what node was asked to run. Compares real paths, so a relative
  * invocation or a symlinked checkout still matches, and fails loudly rather than exiting 0
- * when argv[1] cannot be resolved at all.
+ * when argv[1] is present but cannot be resolved.
+ *
+ * The two unset/unresolvable cases are NOT the same thing, and the distinction is why the
+ * throw below survives:
+ *
+ *   - A falsy `argv1` means the host has no entry script at all. That is a legitimate
+ *     state — a Cloudflare Worker, or any `import` of this module — and the honest answer
+ *     is "no, this module is not the entry point": return false. It used to throw, which
+ *     made merely IMPORTING this module fatal inside the Worker, since the call below runs
+ *     at module scope.
+ *   - A non-empty `argv1` that does not resolve means a real Node CLI invocation pointed
+ *     at a path that is not there. That is a bug in the invocation, and answering "false"
+ *     would silently exit 0 having seeded nothing. Still throws.
  */
 export function isMainModule(moduleUrl: string, argv1: string | undefined): boolean {
-  if (!argv1) {
-    throw new Error('Cannot determine the entry script: process.argv[1] is not set');
-  }
+  if (!argv1) return false;
   try {
     return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argv1);
   } catch (err) {
@@ -431,8 +441,10 @@ export function isMainModule(moduleUrl: string, argv1: string | undefined): bool
   }
 }
 
-// Run directly if executed as a script.
-if (isMainModule(import.meta.url, process.argv[1])) {
+// Run directly if executed as a script. `process.argv` is not guaranteed to be an array
+// off-Node (workerd's `process` shim), so this reads through optional chaining rather
+// than indexing it.
+if (isMainModule(import.meta.url, process.argv?.[1])) {
   seedChartOfAccounts({ apply: process.argv.includes('--apply') })
     .then(() => process.exit(0))
     .catch((e) => {
