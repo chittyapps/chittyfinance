@@ -21,8 +21,16 @@
  * DOCUMENT PARITY IN A WORKER
  *
  * assertDocumentParity() defaults to readFileSync(docs/CHART-OF-ACCOUNTS.md), which has
- * no meaning in a Worker. The document is imported as text instead — bundled by the
- * `Text` rule in deploy/system-wrangler.jsonc — and passed in explicitly.
+ * no meaning in a Worker. The document is bundled as text by the `Text` rule in the
+ * wrangler configs and imported by server/worker.ts — the one module that is Worker-only
+ * by definition — then handed down through createApp(). It is deliberately NOT imported
+ * here: server/app.ts is also loaded by `tsx server/dev.ts` and by the esbuild step in
+ * `npm run build`, neither of which has a `.md` loader, so a static import in this file
+ * breaks local dev and the Node build while leaving the test suite green.
+ *
+ * With no bundled document (Node, or a Worker built without the rule) the seed falls
+ * back to reading the file. In a Worker that read throws — inside assertDocumentParity,
+ * which runs before the first write. Fail-closed, not a silently unchecked apply.
  *
  * That is a real semantic shift, and it is a strengthening: parity is now checked
  * against the document THE DEPLOYED BUNDLE CARRIES, not against whatever happens to be
@@ -41,9 +49,6 @@ import {
   createDefaultAuditSink,
   type SeedPlan,
 } from '../../database/seeds/chart-of-accounts';
-import CHART_OF_ACCOUNTS_DOC from '../../docs/CHART-OF-ACCOUNTS.md';
-
-export const adminSeedRoutes = new Hono<HonoEnv>();
 
 /**
  * The apply gate.
@@ -93,49 +98,62 @@ function summarize(plan: SeedPlan) {
  * NOT by tenantMiddleware — the seed writes global rows (tenant_id IS NULL) and has no
  * tenant to present to a fail-closed tenant check.
  */
-adminSeedRoutes.post('/api/admin/seed/chart-of-accounts', async (c) => {
-  // Read the raw body rather than trusting content-length: an empty body means a dry
-  // run, and anything non-empty must parse as JSON or be refused. A malformed body is
-  // never quietly downgraded to a dry run — the caller might have meant to write.
-  const raw = (await c.req.text()).trim();
-  let body: unknown = {};
-  if (raw !== '') {
-    try {
-      body = JSON.parse(raw);
-    } catch {
-      return c.json({ error: 'invalid_json', message: 'Body must be JSON or empty' }, 400);
+export function createAdminSeedRoutes(chartDocument?: string) {
+  const adminSeedRoutes = new Hono<HonoEnv>();
+
+  adminSeedRoutes.post('/api/admin/seed/chart-of-accounts', async (c) => {
+    // Read the raw body rather than trusting content-length: an empty body means a dry
+    // run, and anything non-empty must parse as JSON or be refused. A malformed body is
+    // never quietly downgraded to a dry run — the caller might have meant to write.
+    const raw = (await c.req.text()).trim();
+    let body: unknown = {};
+    if (raw !== '') {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return c.json({ error: 'invalid_json', message: 'Body must be JSON or empty' }, 400);
+      }
     }
-  }
 
-  const parsed = seedRequestSchema.safeParse(body ?? {});
-  if (!parsed.success) {
-    return c.json(
-      {
-        error: 'invalid_request',
-        message: 'Body accepts only {"apply": true}. Any other value is refused rather than treated as a dry run.',
-        issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    const parsed = seedRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          message: 'Body accepts only {"apply": true}. Any other value is refused rather than treated as a dry run.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        },
+        400,
+      );
+    }
+
+    const apply = parsed.data.apply === true;
+
+    const plan = await seedChartOfAccounts({
+      db: c.get('db'),
+      apply,
+      // The bundled document when the Worker entry supplied one. `undefined` leaves the
+      // seed on its filesystem default, which is correct under Node and throws — before
+      // any write — in a Worker built without the Text rule.
+      document: chartDocument,
+      // Explicit env. The default is `process.env as AuditEnv`, which under nodejs_compat
+      // is not the Worker's bindings — the ledger/chronicle calls would go out unauthenticated.
+      audit: createDefaultAuditSink(c.env),
+    });
+
+    return c.json({
+      mode: apply ? 'applied' : 'dry-run',
+      document: {
+        path: 'docs/CHART-OF-ACCOUNTS.md',
+        source: chartDocument ? 'bundle' : 'filesystem',
+        // Only the bundled document can be named here. Under the filesystem fallback the
+        // seed reads it internally and this route never holds the bytes.
+        sha256: chartDocument ? await sha256Hex(chartDocument) : null,
       },
-      400,
-    );
-  }
-
-  const apply = parsed.data.apply === true;
-  const documentSha256 = await sha256Hex(CHART_OF_ACCOUNTS_DOC);
-
-  const plan = await seedChartOfAccounts({
-    db: c.get('db'),
-    apply,
-    // Bundled document, never the filesystem.
-    document: CHART_OF_ACCOUNTS_DOC,
-    // Explicit env. The default is `process.env as AuditEnv`, which under nodejs_compat
-    // is not the Worker's bindings — the ledger/chronicle calls would go out unauthenticated.
-    audit: createDefaultAuditSink(c.env),
+      summary: summarize(plan),
+      plan,
+    });
   });
 
-  return c.json({
-    mode: apply ? 'applied' : 'dry-run',
-    document: { path: 'docs/CHART-OF-ACCOUNTS.md', source: 'bundle', sha256: documentSha256 },
-    summary: summarize(plan),
-    plan,
-  });
-});
+  return adminSeedRoutes;
+}

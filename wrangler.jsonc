@@ -47,6 +47,15 @@
     "CHITTYCONNECT_API_BASE": "https://connect.chitty.cc"
   },
 
+  // Bundle Markdown as text so the Worker carries docs/CHART-OF-ACCOUNTS.md — the
+  // authoritative chart document — inside the bundle. server/worker.ts imports it and
+  // hands it to the admin seed route, which gates every write on it. Without this rule
+  // the bundle fails to build ("No loader is configured for '.md' files"), loudly.
+  // Kept in step with deploy/system-wrangler.jsonc, which carries the same rule.
+  "rules": [
+    { "type": "Text", "globs": ["**/*.md"] }
+  ],
+
   "observability": { "enabled": false },
 
   "build": {

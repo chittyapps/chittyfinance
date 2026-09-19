@@ -39,7 +39,7 @@ import { chittyIdAuthRoutes } from './routes/chittyid-auth';
 import { allocationRoutes } from './accounting/allocations';
 import { classificationRoutes } from './routes/classification';
 import { emailRoutes } from './routes/email';
-import { adminSeedRoutes } from './routes/admin-seed';
+import { createAdminSeedRoutes } from './routes/admin-seed';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -50,6 +50,14 @@ import { SystemStorage } from './storage/system';
  */
 export interface AppDeps {
   createDb?: typeof createDb;
+  /**
+   * docs/CHART-OF-ACCOUNTS.md as text, supplied by the Worker entry (server/worker.ts),
+   * which imports it through wrangler's `Text` rule. It is injected rather than imported
+   * here because this module is also loaded by `tsx server/dev.ts` and by the esbuild
+   * step of `npm run build`, neither of which has a `.md` loader. Absent under Node, and
+   * the seed then falls back to reading the file off disk as it always has.
+   */
+  chartDocument?: string;
 }
 
 export function createApp(deps: AppDeps = {}) {
@@ -165,7 +173,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/', workflowRoutes);
   app.route('/', leaseRoutes);
   app.route('/', mcpRoutes);
-  app.route('/', adminSeedRoutes);
+  app.route('/', createAdminSeedRoutes(deps.chartDocument));
 
   // ── Fallback: try static assets, then 404 ──
   app.all('*', async (c) => {

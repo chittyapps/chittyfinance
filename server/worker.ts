@@ -2,8 +2,13 @@ import { createApp } from './app';
 import type { Env } from './env';
 import { processLeaseExpirations } from './lib/lease-expiration';
 import { sendHeartbeat, registerWithDiscovery } from './lib/discovery-client';
+// Bundled as text by the `Text` rule in wrangler.jsonc / deploy/system-wrangler.jsonc.
+// This import lives here, in the Worker-only entry, and nowhere deeper: server/app.ts is
+// also loaded by `tsx server/dev.ts` and by the esbuild step of `npm run build`, neither
+// of which can load a `.md`. The admin seed route receives it through createApp().
+import CHART_OF_ACCOUNTS_DOC from '../docs/CHART-OF-ACCOUNTS.md';
 
-const app = createApp();
+const app = createApp({ chartDocument: CHART_OF_ACCOUNTS_DOC });
 
 export default {
   fetch: app.fetch,

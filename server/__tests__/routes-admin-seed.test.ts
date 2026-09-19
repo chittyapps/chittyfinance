@@ -1,8 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { drizzle } from 'drizzle-orm/neon-http';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createApp } from '../app';
 import { seedRequestSchema } from '../routes/admin-seed';
 import * as schema from '../db/schema';
+
+/**
+ * The authoritative document, read here and injected the way server/worker.ts injects
+ * the bundled copy. Read, not fixtured: the route must be exercised against the real
+ * document, and this is the same file the Text rule bundles.
+ */
+const CHART_DOC = readFileSync(
+  join(__dirname, '..', '..', 'docs', 'CHART-OF-ACCOUNTS.md'),
+  'utf8',
+);
 
 /**
  * The admin seed route.
@@ -58,14 +70,20 @@ function recordingDeps() {
   };
   return {
     calls,
-    deps: { createDb: () => drizzle(client as never, { schema }) as never },
+    deps: {
+      createDb: () => drizzle(client as never, { schema }) as never,
+      chartDocument: CHART_DOC,
+    },
   };
 }
 
 const env = {
   CHITTY_AUTH_SERVICE_TOKEN: SERVICE_TOKEN,
   DATABASE_URL: 'postgresql://recorded:recorded@localhost/recorded',
-  CHITTY_LEDGER_BASE: 'https://ledger.chitty.cc',
+  // Non-routable on purpose. Nothing in these tests should reach the audit sink; if a
+  // regression ever makes one apply for real, it fails fast here instead of posting to
+  // production ChittyLedger.
+  CHITTY_LEDGER_BASE: 'http://127.0.0.1:9',
   MODE: 'system',
   NODE_ENV: 'test',
   APP_VERSION: '2.0.0',
@@ -194,6 +212,16 @@ describe('POST /api/admin/seed/chart-of-accounts — the apply gate', () => {
     expect(body.summary.statements).toBe(
       body.plan.inserts.length + body.plan.updates.length,
     );
+  });
+
+  it('reports the filesystem fallback honestly when no document is bundled', async () => {
+    // A Worker built without the Text rule lands here. The dry run still answers; an
+    // apply would reach readFileSync inside assertDocumentParity and throw before the
+    // first write. What must never happen is a response claiming 'bundle'.
+    const { deps } = recordingDeps();
+    const res = await createApp({ createDb: deps.createDb }).request(PATH, post(), env);
+    const body = (await res.json()) as any;
+    expect(body.document).toMatchObject({ source: 'filesystem', sha256: null });
   });
 
   it('names the bundled document, by sha256, that gated the run', async () => {
