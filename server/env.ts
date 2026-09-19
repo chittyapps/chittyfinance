@@ -53,11 +53,19 @@ export interface Env {
 }
 
 import type { SystemStorage } from './storage/system';
+import type { Database } from './db/connection';
 
 export interface Variables {
   tenantId: string;
   userId: string;
   storage: SystemStorage;
+  /**
+   * The same drizzle handle SystemStorage was built on. Routes go through storage
+   * (see CLAUDE.md "All DB access through server/storage/system.ts"); this exists for
+   * the one caller that takes a `Database` rather than a storage method — the
+   * chart-of-accounts seed, whose SeedOptions accepts `db`.
+   */
+  db: Database;
 }
 
 export type HonoEnv = {

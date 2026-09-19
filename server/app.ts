@@ -4,7 +4,7 @@ import { logger } from 'hono/logger';
 import type { HonoEnv } from './env';
 import type { MiddlewareHandler } from 'hono';
 import { errorHandler } from './middleware/error';
-import { hybridAuth } from './middleware/auth';
+import { hybridAuth, serviceAuth } from './middleware/auth';
 import { sessionRoutes } from './routes/session';
 import { callerContext } from './middleware/caller';
 import { tenantMiddleware } from './middleware/tenant';
@@ -39,21 +39,42 @@ import { chittyIdAuthRoutes } from './routes/chittyid-auth';
 import { allocationRoutes } from './accounting/allocations';
 import { classificationRoutes } from './routes/classification';
 import { emailRoutes } from './routes/email';
+import { createAdminSeedRoutes } from './routes/admin-seed';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
-// Shared middleware: create DB + storage and attach to context
-const storageMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
-  const db = createDb(c.env.DATABASE_URL);
-  c.set('storage', new SystemStorage(db));
-  await next();
-};
+/**
+ * Injectable dependencies. The only member today is the drizzle factory, so a test can
+ * exercise a route over a recording client without a connection string. Production
+ * passes nothing and gets the real `createDb`.
+ */
+export interface AppDeps {
+  createDb?: typeof createDb;
+  /**
+   * docs/CHART-OF-ACCOUNTS.md as text, supplied by the Worker entry (server/worker.ts),
+   * which imports it through wrangler's `Text` rule. It is injected rather than imported
+   * here because this module is also loaded by `tsx server/dev.ts` and by the esbuild
+   * step of `npm run build`, neither of which has a `.md` loader. Absent under Node, and
+   * the seed then falls back to reading the file off disk as it always has.
+   */
+  chartDocument?: string;
+}
 
-// storageMiddleware runs first so hybridAuth can resolve JWT → chittyId → userId
-const authAndContext: MiddlewareHandler<HonoEnv>[] = [storageMiddleware, hybridAuth, callerContext];
-const protectedRoute: MiddlewareHandler<HonoEnv>[] = [...authAndContext, tenantMiddleware];
+export function createApp(deps: AppDeps = {}) {
+  const makeDb = deps.createDb ?? createDb;
 
-export function createApp() {
+  // Shared middleware: create DB + storage and attach to context
+  const storageMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
+    const db = makeDb(c.env.DATABASE_URL);
+    c.set('db', db);
+    c.set('storage', new SystemStorage(db));
+    await next();
+  };
+
+  // storageMiddleware runs first so hybridAuth can resolve JWT → chittyId → userId
+  const authAndContext: MiddlewareHandler<HonoEnv>[] = [storageMiddleware, hybridAuth, callerContext];
+  const protectedRoute: MiddlewareHandler<HonoEnv>[] = [...authAndContext, tenantMiddleware];
+
   const app = new Hono<HonoEnv>();
 
   // Global error handler
@@ -105,6 +126,20 @@ export function createApp() {
   ];
   app.use('/api/tenants', ...authAndContext);
   app.use('/api/tenants/*', ...authAndContext);
+
+  // ── Admin routes (auth + service token, deliberately NO tenant) ──
+  //
+  // The chart-of-accounts seed writes global rows (tenant_id IS NULL) and has no tenant
+  // context to offer. tenantMiddleware is fail-closed since #144 and would reject the
+  // request for a missing X-Tenant-ID, so /api/admin is absent from protectedPrefixes
+  // above — deliberately, not by oversight.
+  //
+  // serviceAuth precedes hybridAuth so a browser session is refused before any DB work:
+  // hybridAuth accepts a session cookie, serviceAuth accepts only the service bearer.
+  // callerContext still applies, so the caller must ALSO name an existing user via
+  // X-Chitty-User-Id. Service token alone does not reach this route.
+  app.use('/api/admin', storageMiddleware, serviceAuth, hybridAuth, callerContext);
+  app.use('/api/admin/*', storageMiddleware, serviceAuth, hybridAuth, callerContext);
   for (const prefix of protectedPrefixes) {
     app.use(prefix, ...protectedRoute);
     app.use(`${prefix}/*`, ...protectedRoute);
@@ -138,6 +173,7 @@ export function createApp() {
   app.route('/', workflowRoutes);
   app.route('/', leaseRoutes);
   app.route('/', mcpRoutes);
+  app.route('/', createAdminSeedRoutes(deps.chartDocument));
 
   // ── Fallback: try static assets, then 404 ──
   app.all('*', async (c) => {

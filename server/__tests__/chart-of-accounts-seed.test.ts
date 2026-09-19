@@ -369,8 +369,18 @@ describe('isMainModule', () => {
     expect(isMainModule(url, join(__dirname, '..', '..', 'package.json'))).toBe(false);
   });
 
-  it('fails loudly rather than exiting 0 when the entry script is unknown', () => {
-    expect(() => isMainModule(import.meta.url, undefined)).toThrow(/process.argv\[1\]/);
+  it('answers false, not fatally, when there is no entry script at all', () => {
+    // The Worker case. `process.argv[1]` is unset, which means "this host has no entry
+    // script" — a legitimate state, and the honest answer is "no". This used to throw,
+    // which made importing the module fatal inside the Worker because the call sits at
+    // module scope.
+    expect(isMainModule(import.meta.url, undefined)).toBe(false);
+    expect(isMainModule(import.meta.url, '')).toBe(false);
+  });
+
+  it('still fails loudly when a named entry script cannot be resolved', () => {
+    // A non-empty argv[1] that does not exist is a broken CLI invocation, not a Worker.
+    // Returning false there would exit 0 having seeded nothing.
     expect(() => isMainModule(import.meta.url, '/nonexistent/entry.ts')).toThrow(
       /Cannot resolve the entry script/,
     );

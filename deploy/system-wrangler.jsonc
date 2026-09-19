@@ -45,6 +45,17 @@
     "CHITTYCONNECT_API_BASE": "https://connect.chitty.cc"
   },
 
+  // Bundle Markdown as text so the Worker carries docs/CHART-OF-ACCOUNTS.md — the
+  // authoritative chart document — inside the bundle. The chart-of-accounts seed gates
+  // every write on assertDocumentParity(); under Node that reads the file off disk,
+  // which does not exist in a Worker. With this rule the document is a module the
+  // bundle holds, so parity is checked against the DEPLOYED document rather than the
+  // one sitting in whatever working tree launched the apply. `rules` is inherited by
+  // env blocks (bindings are not), so this single declaration covers dev/staging/prod.
+  "rules": [
+    { "type": "Text", "globs": ["**/*.md"] }
+  ],
+
   "observability": { "enabled": true },
 
   "tail_consumers": [
