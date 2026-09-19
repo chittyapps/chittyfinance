@@ -28,9 +28,14 @@
  * `npm run build`, neither of which has a `.md` loader, so a static import in this file
  * breaks local dev and the Node build while leaving the test suite green.
  *
- * With no bundled document (Node, or a Worker built without the rule) the seed falls
- * back to reading the file. In a Worker that read throws — inside assertDocumentParity,
- * which runs before the first write. Fail-closed, not a silently unchecked apply.
+ * With no bundled document the seed falls back to reading the file, and the response
+ * says `source: 'filesystem'`. In practice that is the Node dev-server path only: a
+ * Worker built WITHOUT the Text rule does not reach a request at all, because
+ * server/worker.ts imports the document statically and the bundle fails to build
+ * ("No loader is configured for '.md' files"). The fallback is defense for a state the
+ * build already refuses, not a mode a deployed Worker can be in — and it is still
+ * fail-closed if one ever were, since the read throws inside assertDocumentParity,
+ * which runs before the first write.
  *
  * That is a real semantic shift, and it is a strengthening: parity is now checked
  * against the document THE DEPLOYED BUNDLE CARRIES, not against whatever happens to be
