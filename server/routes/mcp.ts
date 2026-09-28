@@ -97,7 +97,7 @@ const TOOLS = [
 
 // ── Resource Handlers ──
 
-async function readResource(uri: string, storage: any, tenantId: string): Promise<{ contents: any[] }> {
+async function readResource(uri: string, storage: any, tenantId: string, userId: string): Promise<{ contents: any[] }> {
   switch (uri) {
     case 'finance://portfolio/summary': {
       const properties = await storage.getProperties(tenantId);
@@ -154,18 +154,19 @@ async function readResource(uri: string, storage: any, tenantId: string): Promis
     }
 
     case 'finance://tenants': {
-      const tenants = await storage.getTenants();
+      const memberships = await storage.getUserTenants(userId);
       return {
         contents: [{
           uri,
           mimeType: 'application/json',
-          text: JSON.stringify(tenants.map((t: any) => ({
-            id: t.id,
-            name: t.name,
-            slug: t.slug,
-            type: t.type,
-            parentId: t.parentId,
-            isActive: t.isActive,
+          text: JSON.stringify(memberships.map((membership: any) => ({
+            id: membership.tenant.id,
+            name: membership.tenant.name,
+            slug: membership.tenant.slug,
+            type: membership.tenant.type,
+            parentId: membership.tenant.parentId,
+            isActive: membership.tenant.isActive,
+            role: membership.role,
           }))),
         }],
       };
@@ -243,6 +244,7 @@ async function callTool(
 mcpRoutes.post('/mcp', async (c) => {
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
+  const userId = c.get('userId');
 
   let body: JsonRpcRequest;
   try {
@@ -270,7 +272,7 @@ mcpRoutes.post('/mcp', async (c) => {
       case 'resources/read': {
         const uri = body.params?.uri;
         if (!uri) return c.json(rpcError(body.id, -32602, 'Missing uri param'), 400);
-        const result = await readResource(uri, storage, tenantId);
+        const result = await readResource(uri, storage, tenantId, userId);
         return c.json(rpcOk(body.id, result));
       }
 

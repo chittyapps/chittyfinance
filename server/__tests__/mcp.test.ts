@@ -21,8 +21,15 @@ function createMockStorage() {
       { id: 'p2', name: 'Apt Arlene', address: '4343 N Clarendon', city: 'Chicago', state: 'IL', propertyType: 'condo', currentValue: '250000', isActive: true },
     ]),
     getPropertyFinancials: vi.fn().mockResolvedValue({ noi: 15000, totalUnits: 1, occupiedUnits: 1 }),
+    getUserTenants: vi.fn().mockResolvedValue([
+      {
+        tenant: { id: 't1', name: 'IT CAN BE LLC', slug: 'icb', type: 'holding', parentId: null, isActive: true },
+        role: 'owner',
+      },
+    ]),
     getTenants: vi.fn().mockResolvedValue([
       { id: 't1', name: 'IT CAN BE LLC', slug: 'icb', type: 'holding', parentId: null, isActive: true },
+      { id: 't2', name: 'UNAUTHORIZED LLC', slug: 'unauthorized', type: 'holding', parentId: null, isActive: true },
     ]),
     getProperty: vi.fn().mockResolvedValue({
       id: 'p1', name: 'City Studio', address: '550 W Surf', propertyType: 'condo', currentValue: '350000',
@@ -38,6 +45,7 @@ function buildApp() {
   app.use('*', async (c, next) => {
     c.set('storage', storage as any);
     c.set('tenantId', 'test-tenant');
+    c.set('userId', 'test-user');
     await next();
   });
 
@@ -139,7 +147,10 @@ describe('MCP endpoint', () => {
     const body = await res.json() as any;
     const data = JSON.parse(body.result.contents[0].text);
     expect(data).toHaveLength(1);
-    expect(data[0].name).toBe('IT CAN BE LLC');
+    expect(data[0]).toMatchObject({ name: 'IT CAN BE LLC', role: 'owner' });
+    expect(data.find((tenant: any) => tenant.id === 't2')).toBeUndefined();
+    expect(storage.getUserTenants).toHaveBeenCalledWith('test-user');
+    expect(storage.getTenants).not.toHaveBeenCalled();
   });
 
   it('returns error for unknown resource', async () => {
