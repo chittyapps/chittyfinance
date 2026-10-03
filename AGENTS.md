@@ -38,14 +38,14 @@ Companion to [CHITTY.md](CHITTY.md), [CHARTER.md](CHARTER.md), [SECURITY.md](SEC
 
 ## MCP Capabilities Exposed by ChittyFinance
 
-Mounted under `/api/mcp/*`. Resources include:
+Mounted at `/mcp`. Resources include:
 - Financial summaries (tenant-scoped)
 - Transaction queries
 - Property financials (NOI, cap rate, occupancy)
 - Allocation rule preview
 - Schedule E line summary
 
-Authentication: Bearer service token. See [SECURITY.md](SECURITY.md).
+Authentication: verified ChittyAuth bearer JWT for end-user/agent callers; legacy internal service-token callers remain supported with explicit `X-Chitty-User-Id`. Tenant authorization still comes from `tenant_users`. See [SECURITY.md](SECURITY.md).
 
 > ⚠️ **Phase 2 remaining**: ChittyConnect MCP integration not yet wired. Internal MCP routes work today; cross-service MCP discovery via ChittyConnect is pending.
 
@@ -94,7 +94,7 @@ When working in this repo, prefer these subagents (see user's `~/.claude/agents/
 
 1. Read [CHARTER.md](CHARTER.md) — understand scope boundaries (what ChittyFinance IS / IS NOT responsible for)
 2. Read upstream service's `CHARTER.md` and `CHITTY.md` — never guess the contract
-3. Auth via service token (`Authorization: Bearer ...`) — credentials retrieved at runtime via Cloudflare Secrets, never hardcoded
+3. Prefer a ChittyAuth bearer JWT when the integration acts on behalf of a user/agent. Use the service token only for true service-to-service calls; never treat a platform/workspace role as ChittyFinance authority.
 4. If the agent will write to financial state, document its trust level (L0–L4) and audit trail before merging
 5. Update this file and CHARTER.md Dependencies table
 
