@@ -83,7 +83,7 @@ Note: `server/db.ts` no longer exists, and the Hono app does **not** switch on `
 - **CF Workers Builds** (issue #111) is permanently red — auto-merge ignores it; real CI elsewhere.
 - **Port 5000/5001** hardcoded.
 - **DoorLoop is removed** (PR #78). Don't reintroduce.
-- **The Commands block above is partly stale.** `npm run deploy`, `db:push:system`, `db:push:standalone`, `db:seed`, `dev:system`, `build:system`, `mode:detect` are documented here but are **not in `package.json`** (which has `dev`, `build`, `start`, `check`, `db:push`, `db:seed:coa`, `test*`). Check `package.json` before relying on a script name from this file.
+- **The Commands block above is partly stale.** Five of its eight entries — `dev:system`, `deploy`, `db:push:system`, `db:push:standalone`, `db:seed` — are **not in `package.json`**, which defines only `dev`, `build`, `start`, `check`, `db:push`, `db:seed:coa`, `test`, `test:ui`, `test:run`. The Schema Changes step `npm run db:push:{mode}` is stale for the same reason. Check `package.json` before relying on a script name from this file.
 
 ## Books method lives in ChittyMarket
 
