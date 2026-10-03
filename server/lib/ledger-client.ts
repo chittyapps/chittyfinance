@@ -1,3 +1,5 @@
+import type { FinanceExecutionContext } from '../middleware/execution-context';
+
 /**
  * ChittyLedger client for immutable audit trail entries.
  * 100% Cloudflare Workers compatible — no Node.js APIs, no process.env.
@@ -110,8 +112,19 @@ export async function logToLedger(entry: LedgerEntry, env: LedgerEnv): Promise<v
  * Safe wrapper: calls executionCtx.waitUntil() in CF Workers,
  * no-ops gracefully in test environments where executionCtx throws.
  */
-export function ledgerLog(c: { executionCtx: { waitUntil(p: Promise<unknown>): void } }, entry: LedgerEntry, env: LedgerEnv): void {
-  const promise = logToLedger(entry, env);
+export function ledgerLog(
+  c: {
+    executionCtx: { waitUntil(p: Promise<unknown>): void };
+    get?: (name: 'executionContext') => FinanceExecutionContext | undefined;
+  },
+  entry: LedgerEntry,
+  env: LedgerEnv,
+): void {
+  const execution = typeof c.get === 'function' ? c.get('executionContext') : undefined;
+  const enrichedEntry = execution
+    ? { ...entry, metadata: { ...(entry.metadata ?? {}), execution } }
+    : entry;
+  const promise = logToLedger(enrichedEntry, env);
   try {
     c.executionCtx.waitUntil(promise);
   } catch {

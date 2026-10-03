@@ -54,11 +54,13 @@ export interface Env {
 
 import type { SystemStorage } from './storage/system';
 import type { Database } from './db/connection';
+import type { FinanceExecutionContext } from './middleware/execution-context';
 
 export interface Variables {
   tenantId: string;
   userId: string;
   authMethod: 'service' | 'chittyauth' | 'session';
+  executionContext: FinanceExecutionContext;
   storage: SystemStorage;
   /**
    * The same drizzle handle SystemStorage was built on. Routes go through storage

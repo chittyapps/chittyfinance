@@ -45,7 +45,7 @@ Mounted at `/mcp`. Resources include:
 - Allocation rule preview
 - Schedule E line summary
 
-Authentication: verified ChittyAuth bearer JWT for end-user/agent callers; legacy internal service-token callers remain supported with explicit `X-Chitty-User-Id`. Tenant authorization still comes from `tenant_users`. See [SECURITY.md](SECURITY.md).
+Authentication: verified ChittyAuth bearer JWT for end-user/agent callers; legacy internal service-token callers remain supported with explicit `X-Chitty-User-Id`. Tenant authorization still comes from `tenant_users`. After authorization, every protected request receives a channel-neutral execution context carrying actor, tenant scope, capability/intent, source provenance, and trace metadata. Source metadata never grants financial authority. See [SECURITY.md](SECURITY.md).
 
 > ⚠️ **Phase 2 remaining**: ChittyConnect MCP integration not yet wired. Internal MCP routes work today; cross-service MCP discovery via ChittyConnect is pending.
 
@@ -82,6 +82,10 @@ When working in this repo, prefer these subagents (see user's `~/.claude/agents/
 - Reconciled-row mutations — concurrency-locked at the SQL layer
 - COA modifications (L4) — only `tenant_users.role` ∈ {owner, admin}
 - Webhook signature verification — never bypassed for any agent caller
+
+### Channel-Neutral Execution Context
+
+Protected requests are normalized after authentication + tenant membership checks. The runtime context is request-scoped only (no new database/schema) and contains the verified actor, authorized tenant scope, inferred or route-specific capability/intent, source provenance, and trace metadata. `X-Source-Service` plus W3C `traceparent`/`baggage` carry portable provenance for ChatGPT, Claude, ChittyClaw/OpenClaw, and other adapters. Platform workspace/channel metadata and inferred intent are audit context only and MUST NOT affect `tenant_users` authorization or mutation authority.
 
 **ChittyFinance does delegate these to external agents:**
 - Identity (ChittyID via OAuth 2.0 PKCE)

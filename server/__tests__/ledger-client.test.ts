@@ -2,7 +2,7 @@
  * Ledger client tests — mocked fetch, no real network calls
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { postLedgerEntry, resolveLedgerBase, logToLedger } from '../lib/ledger-client';
+import { postLedgerEntry, resolveLedgerBase, logToLedger, ledgerLog } from '../lib/ledger-client';
 
 const MOCK_RESPONSE = { id: 'uuid-1', sequenceNumber: '42', hash: 'abc123def456' };
 
@@ -105,6 +105,40 @@ describe('ledger-client', () => {
         { entityType: 'audit', action: 'test' },
         { CHITTY_LEDGER_BASE: 'https://ledger.chitty.cc' },
       )).resolves.toBeUndefined();
+    });
+  });
+
+  describe('ledgerLog', () => {
+    it('attaches execution provenance while preserving existing metadata', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(MOCK_RESPONSE), { status: 200 }));
+
+      let pending: Promise<unknown> | undefined;
+      const execution = {
+        actor: { userId: 'user-1', authMethod: 'chittyauth' as const },
+        source: { service: 'chittyclaw', claimed: true, channel: 'slack' },
+        scope: { tenantId: 'tenant-1' },
+        capability: 'finance.allocations.execute',
+        intent: 'execute' as const,
+        trace: { requestId: 'req-1' },
+      };
+
+      ledgerLog({
+        executionCtx: { waitUntil: (promise) => { pending = promise; } },
+        get: () => execution,
+      }, {
+        entityType: 'audit',
+        action: 'allocation.executed',
+        metadata: { period: '2026-09' },
+      }, {
+        CHITTY_LEDGER_BASE: 'https://ledger.chitty.cc',
+        CHITTY_AUTH_SERVICE_TOKEN: 'tok-123',
+      });
+
+      await pending;
+
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.metadata.period).toBe('2026-09');
+      expect(body.metadata.execution).toEqual(execution);
     });
   });
 });

@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { setExecutionOperation, type ExecutionIntent } from '../middleware/execution-context';
 
 export const mcpRoutes = new Hono<HonoEnv>();
 
@@ -48,6 +49,12 @@ const CAPABILITIES = {
   tools: {},
 };
 
+const RESOURCE_CAPABILITIES: Record<string, string> = {
+  'finance://portfolio/summary': 'finance.mcp.resources.read:portfolio-summary',
+  'finance://properties': 'finance.mcp.resources.read:properties',
+  'finance://tenants': 'finance.mcp.resources.read:tenants',
+};
+
 const RESOURCES = [
   {
     uri: 'finance://portfolio/summary',
@@ -69,10 +76,18 @@ const RESOURCES = [
   },
 ];
 
-const TOOLS = [
+interface McpToolDefinition {
+  name: string;
+  description: string;
+  intent: ExecutionIntent;
+  inputSchema: Record<string, any>;
+}
+
+const TOOL_DEFINITIONS: McpToolDefinition[] = [
   {
     name: 'get-property-advice',
     description: 'Get AI-powered financial advice for a specific property.',
+    intent: 'suggest',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -85,6 +100,7 @@ const TOOLS = [
   {
     name: 'refresh-valuation',
     description: 'Refresh property valuation estimates from external providers (Zillow, Redfin, HouseCanary, ATTOM, County).',
+    intent: 'execute',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -94,6 +110,8 @@ const TOOLS = [
     },
   },
 ];
+
+const TOOLS = TOOL_DEFINITIONS.map(({ intent: _intent, ...tool }) => tool);
 
 // ── Resource Handlers ──
 
@@ -263,6 +281,7 @@ mcpRoutes.post('/mcp', async (c) => {
   try {
     switch (body.method) {
       case 'initialize':
+        setExecutionOperation(c, 'finance.mcp.initialize', 'read');
         return c.json(rpcOk(body.id, {
           protocolVersion: '2024-11-05',
           serverInfo: SERVER_INFO,
@@ -270,22 +289,31 @@ mcpRoutes.post('/mcp', async (c) => {
         }));
 
       case 'resources/list':
+        setExecutionOperation(c, 'finance.mcp.resources.list', 'read');
         return c.json(rpcOk(body.id, { resources: RESOURCES }));
 
       case 'resources/read': {
         const uri = body.params?.uri;
         if (!uri) return c.json(rpcError(body.id, -32602, 'Missing uri param'), 400);
+        setExecutionOperation(c, RESOURCE_CAPABILITIES[uri] ?? 'finance.mcp.resources.read:unknown', 'read');
         const result = await readResource(uri, storage, tenantId, userId);
         return c.json(rpcOk(body.id, result));
       }
 
       case 'tools/list':
+        setExecutionOperation(c, 'finance.mcp.tools.list', 'read');
         return c.json(rpcOk(body.id, { tools: TOOLS }));
 
       case 'tools/call': {
         const toolName = body.params?.name;
         const toolArgs = body.params?.arguments || {};
         if (!toolName) return c.json(rpcError(body.id, -32602, 'Missing tool name'), 400);
+        const toolDefinition = TOOL_DEFINITIONS.find((tool) => tool.name === toolName);
+        setExecutionOperation(
+          c,
+          toolDefinition ? `finance.mcp.tool:${toolName}` : 'finance.mcp.tools.call',
+          toolDefinition?.intent ?? 'execute',
+        );
         const result = await callTool(toolName, toolArgs, storage, tenantId, c.env);
         return c.json(rpcOk(body.id, result));
       }

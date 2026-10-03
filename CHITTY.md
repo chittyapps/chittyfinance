@@ -20,7 +20,7 @@ Full-stack financial management platform providing intelligent tracking, AI-powe
 
 ## Architecture
 
-Dual-mode: Hono on Cloudflare Workers (production) with Neon PostgreSQL multi-tenant, or Hono via `@hono/node-server` with SQLite (local dev). React frontend with Vite.
+Dual-mode: Hono on Cloudflare Workers (production) with Neon PostgreSQL multi-tenant, or Hono via `@hono/node-server` with SQLite (local dev). React frontend with Vite. Protected requests are normalized into a request-scoped execution context after identity and tenant authorization so ChatGPT, Claude, ChittyClaw/OpenClaw, and web clients can share the same financial capability surface without sharing platform-specific authority logic.
 
 ### Stack
 - **Runtime**: Cloudflare Workers + Hono (production) / Hono node-server (dev) / Express (legacy `dev:legacy` fallback)
