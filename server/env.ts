@@ -58,6 +58,7 @@ import type { Database } from './db/connection';
 export interface Variables {
   tenantId: string;
   userId: string;
+  authMethod: 'service' | 'chittyauth' | 'session';
   storage: SystemStorage;
   /**
    * The same drizzle handle SystemStorage was built on. Routes go through storage
