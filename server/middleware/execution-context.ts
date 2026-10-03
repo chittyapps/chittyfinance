@@ -10,7 +10,7 @@ export interface FinanceExecutionContext {
   };
   source: {
     service: string;
-    claimed: true;
+    claimed: boolean;
     channel?: string;
     workspace?: string;
     session?: string;
@@ -79,15 +79,20 @@ function normalizePath(pathname: string): string {
     .replace(/\/\d+(?=\/|$)/g, '/:id');
 }
 
-function hasPathSegment(pathname: string, segment: string): boolean {
-  return pathname.split('/').filter(Boolean).includes(segment);
+function terminalPathSegment(pathname: string): string | undefined {
+  return pathname.split('/').filter(Boolean).at(-1);
 }
 
 export function inferExecutionIntent(method: string, pathname: string): ExecutionIntent {
   const upper = method.toUpperCase();
   if (upper === 'GET' || upper === 'HEAD' || upper === 'OPTIONS') return 'read';
-  if (hasPathSegment(pathname, 'preview')) return 'preview';
-  if (hasPathSegment(pathname, 'suggest') || hasPathSegment(pathname, 'advice')) return 'suggest';
+
+  const terminal = terminalPathSegment(pathname);
+  if (terminal === 'preview') return 'preview';
+  if (terminal === 'suggest' || terminal === 'advice') return 'suggest';
+
+  // Fail safe: mutating HTTP methods are execute unless the route explicitly
+  // terminates in a known non-authoritative operation label.
   return 'execute';
 }
 
@@ -103,10 +108,9 @@ function defaultCapability(method: string, pathname: string): string {
  */
 export const executionContextMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
   const baggage = parseBaggage(c.req.header('baggage'));
-  const sourceService =
-    sanitizeValue(c.req.header('x-source-service')) ??
-    baggage.get('chitty.source') ??
-    'finance.chitty.cc';
+  const headerSource = sanitizeValue(c.req.header('x-source-service'));
+  const baggageSource = baggage.get('chitty.source');
+  const sourceService = headerSource ?? baggageSource ?? 'finance.chitty.cc';
   const pathname = c.req.path;
   const traceparent = sanitizeTraceparent(c.req.header('traceparent'));
 
@@ -117,7 +121,7 @@ export const executionContextMiddleware: MiddlewareHandler<HonoEnv> = async (c, 
     },
     source: {
       service: sourceService,
-      claimed: true,
+      claimed: Boolean(headerSource ?? baggageSource),
       channel: baggage.get('chitty.channel') || undefined,
       workspace: baggage.get('chitty.workspace') || undefined,
       session: baggage.get('chitty.session') || undefined,
@@ -128,7 +132,7 @@ export const executionContextMiddleware: MiddlewareHandler<HonoEnv> = async (c, 
     capability: defaultCapability(c.req.method, pathname),
     intent: inferExecutionIntent(c.req.method, pathname),
     trace: {
-      requestId: crypto.randomUUID(),
+      requestId: traceparent?.split('-')[1] ?? crypto.randomUUID(),
       traceparent,
     },
   };
@@ -143,6 +147,8 @@ export function setExecutionOperation(
   intent: ExecutionIntent,
 ): FinanceExecutionContext {
   const current = c.get('executionContext');
+  if (!current) throw new Error('execution_context_unavailable');
+
   const updated = { ...current, capability: sanitizeValue(capability) ?? 'finance.unknown', intent };
   c.set('executionContext', updated);
   return updated;
