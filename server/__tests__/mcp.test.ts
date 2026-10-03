@@ -21,8 +21,11 @@ function createMockStorage() {
       { id: 'p2', name: 'Apt Arlene', address: '4343 N Clarendon', city: 'Chicago', state: 'IL', propertyType: 'condo', currentValue: '250000', isActive: true },
     ]),
     getPropertyFinancials: vi.fn().mockResolvedValue({ noi: 15000, totalUnits: 1, occupiedUnits: 1 }),
-    getTenants: vi.fn().mockResolvedValue([
-      { id: 't1', name: 'IT CAN BE LLC', slug: 'icb', type: 'holding', parentId: null, isActive: true },
+    getUserTenants: vi.fn().mockResolvedValue([
+      {
+        role: 'owner',
+        tenant: { id: 't1', name: 'IT CAN BE LLC', slug: 'icb', type: 'holding', parentId: null, isActive: true },
+      },
     ]),
     getProperty: vi.fn().mockResolvedValue({
       id: 'p1', name: 'City Studio', address: '550 W Surf', propertyType: 'condo', currentValue: '350000',
@@ -34,10 +37,11 @@ function buildApp() {
   const app = new Hono<HonoEnv>();
   const storage = createMockStorage();
 
-  // Inject mock storage + tenantId into context
+  // Inject mock storage + authorized caller scope into context
   app.use('*', async (c, next) => {
     c.set('storage', storage as any);
     c.set('tenantId', 'test-tenant');
+    c.set('userId', 'user-1');
     await next();
   });
 
@@ -140,6 +144,22 @@ describe('MCP endpoint', () => {
     const data = JSON.parse(body.result.contents[0].text);
     expect(data).toHaveLength(1);
     expect(data[0].name).toBe('IT CAN BE LLC');
+    expect(data[0].role).toBe('owner');
+    expect(storage.getUserTenants).toHaveBeenCalledWith('user-1');
+  });
+
+  it('does not expose tenants outside the caller memberships', async () => {
+    storage.getUserTenants.mockResolvedValueOnce([
+      {
+        role: 'viewer',
+        tenant: { id: 't2', name: 'ARIBIA LLC', slug: 'aribia', type: 'operating', parentId: 't1', isActive: true },
+      },
+    ]);
+    const res = await rpc(app, 'resources/read', { uri: 'finance://tenants' });
+    const body = await res.json() as any;
+    const data = JSON.parse(body.result.contents[0].text);
+    expect(data.map((tenant: any) => tenant.id)).toEqual(['t2']);
+    expect(data.find((tenant: any) => tenant.id === 't1')).toBeUndefined();
   });
 
   it('returns error for unknown resource', async () => {

@@ -22,58 +22,75 @@ export const serviceAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
     return c.json({ error: 'unauthorized' }, 401);
   }
 
+  c.set('authMethod', 'service');
   await next();
 };
 
+async function resolveChittyAuthBearer(c: Parameters<MiddlewareHandler<HonoEnv>>[0], token: string) {
+  const claims = await verifyChittyAuthJWT(token, c.env);
+  if (!claims) return null;
+
+  const storage = c.get('storage');
+  const user = await storage.getUserByChittyId(claims.sub);
+  if (!user) return null;
+
+  c.set('userId', user.id);
+  c.set('authMethod', 'chittyauth');
+  return user;
+}
+
 /**
- * Hybrid auth: accepts either a service Bearer token OR a browser session cookie.
- * - Path 1: Bearer token → service-to-service (userId from X-Chitty-User-Id header)
- * - Path 2a: JWT cookie (jwt: prefix) → verify via ChittyAuth JWKS, resolve chittyId → userId
- * - Path 2b: KV cookie (plain hex) → legacy KV session lookup
+ * Hybrid auth:
+ * - Path 1a: service Bearer token → service-to-service compatibility
+ * - Path 1b: ChittyAuth Bearer JWT → cryptographically bound end-user/agent caller
+ * - Path 2a: ChittyAuth JWT cookie → browser session
+ * - Path 2b: KV cookie → legacy browser session
+ *
+ * Cross-channel agent clients should use Path 1b so the actor comes from the
+ * signed ChittyAuth `sub` claim rather than a caller-supplied user header.
  */
 export const hybridAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
   const auth = c.req.header('authorization') ?? '';
   const bearerToken = auth.startsWith('Bearer ') ? auth.slice(7) : '';
 
-  // Path 1: Service token auth (constant-time comparison)
   if (bearerToken) {
     const expected = c.env.CHITTY_AUTH_SERVICE_TOKEN;
-    if (!expected || !(await tokenEqual(bearerToken, expected))) {
+
+    // Preserve the existing internal service-token lane.
+    if (expected && await tokenEqual(bearerToken, expected)) {
+      c.set('authMethod', 'service');
+      await next();
+      return;
+    }
+
+    // Otherwise treat the bearer as a ChittyAuth JWT. This binds the actor to
+    // a verified `sub` claim and removes the need for X-Chitty-User-Id.
+    const user = await resolveChittyAuthBearer(c, bearerToken);
+    if (!user) {
       return c.json({ error: 'unauthorized' }, 401);
     }
+
     await next();
     return;
   }
 
-  // Path 2: Session cookie auth
   const cookieValue = getCookie(c, SESSION_COOKIE_NAME);
   if (!cookieValue) {
     return c.json({ error: 'not_authenticated', message: 'Bearer token or session cookie required' }, 401);
   }
 
-  // Path 2a: JWT session (ChittyAuth-issued token)
   if (isJwtSession(cookieValue)) {
     const token = extractJwtFromCookie(cookieValue);
-    const claims = await verifyChittyAuthJWT(token, c.env);
-    if (!claims) {
+    const user = await resolveChittyAuthBearer(c, token);
+    if (!user) {
       deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
       return c.json({ error: 'session_expired' }, 401);
     }
 
-    // Resolve ChittyID → local user
-    const storage = c.get('storage');
-    const user = await storage.getUserByChittyId(claims.sub);
-    if (!user) {
-      deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
-      return c.json({ error: 'user_not_found', message: 'No local account linked to this ChittyID' }, 401);
-    }
-
-    c.set('userId', user.id);
     await next();
     return;
   }
 
-  // Path 2b: KV session (legacy or password-login)
   const kv = c.env.FINANCE_KV;
   const raw = await kv.get(`session:${cookieValue}`);
   if (!raw) {
@@ -89,5 +106,6 @@ export const hybridAuth: MiddlewareHandler<HonoEnv> = async (c, next) => {
   }
 
   c.set('userId', sessionData.userId);
+  c.set('authMethod', 'session');
   await next();
 };
