@@ -85,7 +85,7 @@ When working in this repo, prefer these subagents (see user's `~/.claude/agents/
 
 ### Channel-Neutral Execution Context
 
-Protected requests are normalized after authentication + tenant membership checks. The runtime context is request-scoped only (no new database/schema) and contains the verified actor, authorized tenant scope, inferred or route-specific capability/intent, source provenance, and trace metadata. `X-Source-Service` plus W3C `traceparent`/`baggage` carry portable provenance for ChatGPT, Claude, ChittyClaw/OpenClaw, and other adapters. Platform workspace/channel metadata is audit context only and MUST NOT affect `tenant_users` authorization.
+Protected requests are normalized after authentication + tenant membership checks. The runtime context is request-scoped only (no new database/schema) and contains the verified actor, authorized tenant scope, inferred or route-specific capability/intent, source provenance, and trace metadata. `X-Source-Service` plus W3C `traceparent`/`baggage` carry portable provenance for ChatGPT, Claude, ChittyClaw/OpenClaw, and other adapters. Platform workspace/channel metadata and inferred intent are audit context only and MUST NOT affect `tenant_users` authorization or mutation authority.
 
 **ChittyFinance does delegate these to external agents:**
 - Identity (ChittyID via OAuth 2.0 PKCE)
