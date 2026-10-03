@@ -219,14 +219,14 @@ describe('MCP endpoint', () => {
     expect(body.result.content[0].text).toContain('not found');
   });
 
-  it('returns error for unknown tool', async () => {
+  it('rejects unknown tool before execution', async () => {
     const res = await rpc(app, 'tools/call', {
       name: 'nonexistent-tool',
       arguments: {},
     });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
     const body = await res.json() as any;
-    expect(body.error.code).toBe(-32000);
+    expect(body.error.code).toBe(-32602);
   });
 
   it('returns error for missing tool name', async () => {
