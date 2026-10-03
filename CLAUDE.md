@@ -83,6 +83,13 @@ Note: `server/db.ts` no longer exists, and the Hono app does **not** switch on `
 - **CF Workers Builds** (issue #111) is permanently red — auto-merge ignores it; real CI elsewhere.
 - **Port 5000/5001** hardcoded.
 - **DoorLoop is removed** (PR #78). Don't reintroduce.
+- **The Commands block above is partly stale.** Five of its eight entries — `dev:system`, `deploy`, `db:push:system`, `db:push:standalone`, `db:seed` — are **not in `package.json`**, which defines only `dev`, `build`, `start`, `check`, `db:push`, `db:seed:coa`, `test`, `test:ui`, `test:run`. The Schema Changes step `npm run db:push:{mode}` is stale for the same reason. Check `package.json` before relying on a script name from this file.
+
+## Books method lives in ChittyMarket
+
+How books work is *conducted* — chart-of-accounts derivation, classification, reconciliation, and production financial writes — is governed by `finance-operating-defaults` in the `chittyos-finance` ChittyMarket plugin, not by anything in this repo. Load it before a chart change, a classification change, or any write to the books datastore. It carries the rules that the four production rows with the wrong `tax_deductible` were written in the absence of. It hands off to `legal-operating-defaults` the moment a figure is filed or asserted in a matter.
+
+Four repo-local commands (`check-system`, `db-reset`, `quick-deploy`, `fix-deploy`) were retired in favour of it: each called npm scripts that do not exist, and `db-reset`/`quick-deploy` additionally encoded the unguarded `db:push` + seed path that the constitution forbids. The four TurboTenant/tenant commands stay here — they carry entity facts and are not portable.
 
 ## Required Env (system mode)
 
