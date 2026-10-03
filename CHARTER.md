@@ -111,6 +111,11 @@ IT CAN BE LLC (holding)
 | `/api/session` | GET/POST/DELETE | Session cookie management |
 | `/api/auth/chittyid/{authorize,callback}` | GET | ChittyID OAuth 2.0 PKCE |
 
+### MCP
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/mcp` | POST | JSON-RPC MCP resources/tools; caller identity via ChittyAuth bearer JWT or legacy service-token compatibility lane; tenant authorization remains membership-scoped |
+
 ### Financial Data
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
