@@ -36,12 +36,15 @@ We follow coordinated disclosure and will credit reporters unless anonymity is p
 
 - **Browser clients**: KV-backed session cookies (`cf_session`, 7-day TTL)
 - **Service-to-service**: Bearer token (`CHITTY_AUTH_SERVICE_TOKEN`)
+- **Remote MCP / agent callers**: ChittyAuth-issued ES256 bearer JWT, verified via JWKS; `sub` resolves to the local ChittyFinance user before tenant authorization
 - **Password hashing**: SHA-256 via Web Crypto API
 - **ChittyID SSO**: OAuth 2.0 PKCE (primary auth path)
 
 ### Data Isolation
 
 - Multi-tenant PostgreSQL (Neon) with tenant-scoped queries
+- All protected routes verify caller membership before accepting `X-Tenant-ID`
+- MCP `finance://tenants` enumerates only the authenticated caller's memberships
 - All storage methods enforce `tenantId` filtering
 - Inter-tenant data access prevented at the storage abstraction layer
 
@@ -106,7 +109,7 @@ Reconciled transactions are immutable. All classification changes logged to `cla
 
 | Service | Auth Method | Direction |
 |---------|------------|-----------|
-| ChittyAuth | Bearer service token | Inbound (token validation) |
+| ChittyAuth | ES256 JWT/JWKS verification + service-token compatibility | Inbound (caller identity/token validation) |
 | ChittyID | OAuth 2.0 PKCE | Outbound (SSO) |
 | ChittyConnect | Service token | Outbound (Mercury proxy) |
 | ChittyDiscovery | Service token | Outbound (self-register + heartbeat) |
