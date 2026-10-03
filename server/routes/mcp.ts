@@ -49,6 +49,12 @@ const CAPABILITIES = {
   tools: {},
 };
 
+const RESOURCE_CAPABILITIES: Record<string, string> = {
+  'finance://portfolio/summary': 'finance.mcp.resources.read:portfolio-summary',
+  'finance://properties': 'finance.mcp.resources.read:properties',
+  'finance://tenants': 'finance.mcp.resources.read:tenants',
+};
+
 const RESOURCES = [
   {
     uri: 'finance://portfolio/summary',
@@ -289,7 +295,7 @@ mcpRoutes.post('/mcp', async (c) => {
       case 'resources/read': {
         const uri = body.params?.uri;
         if (!uri) return c.json(rpcError(body.id, -32602, 'Missing uri param'), 400);
-        setExecutionOperation(c, `finance.mcp.resources.read:${uri}`, 'read');
+        setExecutionOperation(c, RESOURCE_CAPABILITIES[uri] ?? 'finance.mcp.resources.read:unknown', 'read');
         const result = await readResource(uri, storage, tenantId, userId);
         return c.json(rpcOk(body.id, result));
       }
@@ -303,8 +309,11 @@ mcpRoutes.post('/mcp', async (c) => {
         const toolArgs = body.params?.arguments || {};
         if (!toolName) return c.json(rpcError(body.id, -32602, 'Missing tool name'), 400);
         const toolDefinition = TOOL_DEFINITIONS.find((tool) => tool.name === toolName);
-        if (!toolDefinition) return c.json(rpcError(body.id, -32602, `Unknown tool: ${toolName}`), 400);
-        setExecutionOperation(c, `finance.mcp.tool:${toolName}`, toolDefinition.intent);
+        setExecutionOperation(
+          c,
+          toolDefinition ? `finance.mcp.tool:${toolName}` : 'finance.mcp.tools.call',
+          toolDefinition?.intent ?? 'execute',
+        );
         const result = await callTool(toolName, toolArgs, storage, tenantId, c.env);
         return c.json(rpcOk(body.id, result));
       }
