@@ -8,6 +8,7 @@ import { hybridAuth, serviceAuth } from './middleware/auth';
 import { sessionRoutes } from './routes/session';
 import { callerContext } from './middleware/caller';
 import { tenantMiddleware } from './middleware/tenant';
+import { executionContextMiddleware } from './middleware/execution-context';
 import { healthRoutes } from './routes/health';
 import { docRoutes } from './routes/docs';
 import { accountRoutes } from './accounting/accounts';
@@ -73,7 +74,7 @@ export function createApp(deps: AppDeps = {}) {
 
   // storageMiddleware runs first so hybridAuth can resolve JWT → chittyId → userId
   const authAndContext: MiddlewareHandler<HonoEnv>[] = [storageMiddleware, hybridAuth, callerContext];
-  const protectedRoute: MiddlewareHandler<HonoEnv>[] = [...authAndContext, tenantMiddleware];
+  const protectedRoute: MiddlewareHandler<HonoEnv>[] = [...authAndContext, tenantMiddleware, executionContextMiddleware];
 
   const app = new Hono<HonoEnv>();
 
@@ -84,7 +85,7 @@ export function createApp(deps: AppDeps = {}) {
   app.use('*', cors({
     origin: ['https://app.command.chitty.cc', 'https://command.chitty.cc', 'https://finance.chitty.cc', 'http://localhost:5000', 'http://localhost:3000'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Source-Service', 'X-Account-ID', 'Stripe-Signature'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Source-Service', 'X-Account-ID', 'Stripe-Signature', 'traceparent', 'baggage'],
     credentials: true,
   }));
 
