@@ -47,6 +47,7 @@ We follow coordinated disclosure and will credit reporters unless anonymity is p
 - MCP `finance://tenants` enumerates only the authenticated caller's memberships
 - All storage methods enforce `tenantId` filtering
 - Inter-tenant data access prevented at the storage abstraction layer
+- Channel/workspace/session provenance is resolved only after actor + tenant authorization and cannot select or elevate tenant access
 
 ### Secret Management
 
@@ -55,6 +56,13 @@ We follow coordinated disclosure and will credit reporters unless anonymity is p
 - 1Password is retired and non-functional — do not reintroduce it
 - No secrets in code, KV, or R2
 - Pre-commit hooks scan for credential patterns
+
+### Cross-Channel Provenance
+
+- Existing `X-Source-Service` identifies the calling ChittyOS/platform adapter for audit purposes
+- W3C `traceparent` carries distributed trace linkage; W3C `baggage` may carry `chitty.source`, `chitty.channel`, `chitty.workspace`, and `chitty.session`
+- Provenance fields are untrusted authorization inputs: they are never used to derive `userId`, tenant membership, or financial role
+- ChittyLedger audit writes inherit the request execution context automatically
 
 ### OAuth & Webhook Security
 
