@@ -2,18 +2,20 @@ import type { MiddlewareHandler } from 'hono';
 import type { HonoEnv } from '../env';
 
 export const callerContext: MiddlewareHandler<HonoEnv> = async (c, next) => {
-  // Session auth sets userId via c.set(); service callers pass it as a header
-  const userId =
-    c.get('userId') ??
-    c.req.header('x-chitty-user-id') ??
-    c.req.header('x-user-id') ??
-    c.req.query('userId') ??
-    '';
+  // ChittyAuth/session auth binds userId before this middleware. Only the
+  // legacy service-token lane may name a caller explicitly.
+  const boundUserId = c.get('userId');
+  const serviceUserId = c.get('authMethod') === 'service'
+    ? c.req.header('x-chitty-user-id')
+    : undefined;
+  const userId = boundUserId ?? serviceUserId ?? '';
 
   if (!userId) {
     return c.json({
       error: 'missing_user_id',
-      message: 'X-Chitty-User-Id header or userId query param required',
+      message: c.get('authMethod') === 'service'
+        ? 'X-Chitty-User-Id header required for service-token callers'
+        : 'Authenticated caller identity could not be resolved',
     }, 400);
   }
 
