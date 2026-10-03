@@ -59,9 +59,9 @@ We follow coordinated disclosure and will credit reporters unless anonymity is p
 
 ### Cross-Channel Provenance
 
-- Existing `X-Source-Service` identifies the calling ChittyOS/platform adapter for audit purposes
+- Existing `X-Source-Service` is recorded as a caller-claimed adapter identity for audit correlation; it is not an attestation
 - W3C `traceparent` carries distributed trace linkage; W3C `baggage` may carry `chitty.source`, `chitty.channel`, `chitty.workspace`, and `chitty.session`
-- Provenance fields are untrusted authorization inputs: they are never used to derive `userId`, tenant membership, or financial role
+- Provenance fields and inferred `intent` are non-authoritative audit context: they are never used to derive `userId`, tenant membership, financial role, or write permission
 - ChittyLedger audit writes inherit the request execution context automatically
 
 ### OAuth & Webhook Security
