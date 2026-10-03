@@ -42,6 +42,7 @@ ChittyFinance is a **full-stack financial management platform** for the ChittyOS
 - Forensic accounting (Benford's Law, duplicate detection, flow of funds, damages calculation)
 - GitHub integration for project cost attribution
 - Tenant-scoped financial data isolation
+- Channel-neutral request execution context for ChatGPT, Claude, ChittyClaw/OpenClaw, and other adapters (actor + authorized scope + capability/intent + provenance + trace; request-scoped only)
 - Inbound email handling at `finance@chitty.cc` (Cloudflare Email Service)
 
 ### IS NOT Responsible For
@@ -114,7 +115,7 @@ IT CAN BE LLC (holding)
 ### MCP
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/mcp` | POST | JSON-RPC MCP resources/tools; caller identity via ChittyAuth bearer JWT or legacy service-token compatibility lane; tenant authorization remains membership-scoped |
+| `/mcp` | POST | JSON-RPC MCP resources/tools; caller identity via ChittyAuth bearer JWT or legacy service-token compatibility lane; tenant authorization remains membership-scoped; MCP methods label canonical capability + read/suggest/execute intent |
 
 ### Financial Data
 | Endpoint | Method | Purpose |
