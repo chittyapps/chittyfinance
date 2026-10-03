@@ -36,17 +36,28 @@ function createMockStorage() {
 function buildApp() {
   const app = new Hono<HonoEnv>();
   const storage = createMockStorage();
+  let observedExecution: any;
 
   // Inject mock storage + authorized caller scope into context
   app.use('*', async (c, next) => {
     c.set('storage', storage as any);
     c.set('tenantId', 'test-tenant');
     c.set('userId', 'user-1');
+    c.set('authMethod', 'chittyauth');
+    c.set('executionContext', {
+      actor: { userId: 'user-1', authMethod: 'chittyauth' },
+      source: { service: 'test', claimed: false },
+      scope: { tenantId: 'test-tenant' },
+      capability: 'finance.http.post:/mcp',
+      intent: 'execute',
+      trace: { requestId: 'test-request' },
+    });
     await next();
+    observedExecution = c.get('executionContext');
   });
 
   app.route('/', mcpRoutes);
-  return { app, storage };
+  return { app, storage, getExecution: () => observedExecution };
 }
 
 function rpc(app: Hono<HonoEnv>, method: string, params?: Record<string, any>, id: number | string = 1) {
@@ -60,9 +71,10 @@ function rpc(app: Hono<HonoEnv>, method: string, params?: Record<string, any>, i
 describe('MCP endpoint', () => {
   let app: Hono<HonoEnv>;
   let storage: ReturnType<typeof createMockStorage>;
+  let getExecution: () => any;
 
   beforeEach(() => {
-    ({ app, storage } = buildApp());
+    ({ app, storage, getExecution } = buildApp());
   });
 
   // ── Protocol ──
@@ -76,6 +88,8 @@ describe('MCP endpoint', () => {
     expect(body.result.serverInfo.name).toBe('chittyfinance');
     expect(body.result.capabilities.resources).toBeDefined();
     expect(body.result.capabilities.tools).toBeDefined();
+    expect(getExecution().capability).toBe('finance.mcp.initialize');
+    expect(getExecution().intent).toBe('read');
   });
 
   it('rejects bad JSON', async () => {
@@ -128,6 +142,8 @@ describe('MCP endpoint', () => {
     expect(data.totalProperties).toBe(2);
     expect(data.totalValue).toBe(600000);
     expect(data.totalNOI).toBe(30000); // 15000 * 2
+    expect(getExecution().capability).toBe('finance.mcp.resources.read:portfolio-summary');
+    expect(getExecution().intent).toBe('read');
   });
 
   it('reads finance://properties', async () => {
@@ -197,6 +213,8 @@ describe('MCP endpoint', () => {
     expect(body.result.content).toHaveLength(1);
     expect(body.result.content[0].text).toContain('City Studio');
     expect(body.result.content[0].text).toContain('Rule-based advice');
+    expect(getExecution().capability).toBe('finance.mcp.tool:get-property-advice');
+    expect(getExecution().intent).toBe('suggest');
   });
 
   it('calls refresh-valuation', async () => {
@@ -207,6 +225,8 @@ describe('MCP endpoint', () => {
     const body = await res.json() as any;
     expect(body.result.content[0].text).toContain('Valuation refresh queued');
     expect(body.result.content[0].text).toContain('City Studio');
+    expect(getExecution().capability).toBe('finance.mcp.tool:refresh-valuation');
+    expect(getExecution().intent).toBe('execute');
   });
 
   it('returns not-found for missing property in tool call', async () => {
@@ -219,14 +239,16 @@ describe('MCP endpoint', () => {
     expect(body.result.content[0].text).toContain('not found');
   });
 
-  it('rejects unknown tool before execution', async () => {
+  it('preserves the existing unknown-tool error path', async () => {
     const res = await rpc(app, 'tools/call', {
       name: 'nonexistent-tool',
       arguments: {},
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(500);
     const body = await res.json() as any;
-    expect(body.error.code).toBe(-32602);
+    expect(body.error.code).toBe(-32000);
+    expect(getExecution().capability).toBe('finance.mcp.tools.call');
+    expect(getExecution().intent).toBe('execute');
   });
 
   it('returns error for missing tool name', async () => {
