@@ -35,14 +35,15 @@ describe('execution context', () => {
     expect(inferExecutionIntent('POST', '/api/allocations/preview')).toBe('preview');
     expect(inferExecutionIntent('POST', '/api/classification/suggest')).toBe('suggest');
     expect(inferExecutionIntent('POST', '/api/allocations/execute')).toBe('execute');
+    expect(inferExecutionIntent('POST', '/api/x/preview-and-commit')).toBe('execute');
   });
 
-  it('captures channel-neutral provenance from existing source header and W3C baggage', async () => {
+  it('captures sanitized channel-neutral provenance from source header and W3C baggage', async () => {
     const app = buildApp();
     const res = await app.request('/api/test', {
       headers: {
         'X-Source-Service': 'chittyclaw',
-        baggage: 'chitty.channel=slack,chitty.workspace=workspace-1,chitty.session=session-1',
+        baggage: 'chitty.channel=slack;prop=1,chitty.workspace=workspace-1,chitty.session=session-1',
         traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
       },
     });
@@ -51,6 +52,7 @@ describe('execution context', () => {
     expect(body.actor).toEqual({ userId: 'user-1', authMethod: 'chittyauth' });
     expect(body.source).toEqual({
       service: 'chittyclaw',
+      claimed: true,
       channel: 'slack',
       workspace: 'workspace-1',
       session: 'session-1',
@@ -59,6 +61,32 @@ describe('execution context', () => {
     expect(body.intent).toBe('read');
     expect(body.trace.traceparent).toContain('4bf92f3577b34da6a3ce929d0e0e4736');
     expect(body.trace.requestId).toBeTruthy();
+  });
+
+  it('drops malformed or oversized provenance values', async () => {
+    const app = buildApp();
+    const res = await app.request('/api/test', {
+      headers: {
+        'X-Source-Service': 'x'.repeat(129),
+        baggage: 'chitty.channel=' + 'y'.repeat(9000),
+        traceparent: 'not-a-traceparent',
+      },
+    });
+    const body = await res.json() as any;
+
+    expect(body.source.service).toBe('finance.chitty.cc');
+    expect(body.source.channel).toBeUndefined();
+    expect(body.trace.traceparent).toBeUndefined();
+  });
+
+  it('uses chitty.source baggage only as a claimed provenance fallback', async () => {
+    const app = buildApp();
+    const body = await (await app.request('/api/test', {
+      headers: { baggage: 'chitty.source=claude' },
+    })).json() as any;
+
+    expect(body.source.service).toBe('claude');
+    expect(body.source.claimed).toBe(true);
   });
 
   it('does not derive financial scope from source metadata', async () => {
