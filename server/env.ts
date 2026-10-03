@@ -13,6 +13,23 @@ export interface Env {
   OAUTH_STATE_SECRET?: string;
   GITHUB_TOKEN?: string;
   MERCURY_WEBHOOK_SECRET?: string;
+  /**
+   * Mercury API tokens, one per entity, bound from the ACCOUNT-LEVEL Cloudflare
+   * Secrets Store (store e914522471964c3c8cf1e601770edcc3) as `secrets_store_secrets`
+   * in deploy/system-wrangler.jsonc. Binding name == secret name, matching
+   * CHITTYOS/chittysecrets/wrangler.json. Optional because a Worker deployed before
+   * the bindings land will not have them — the keepalive probe reports that as
+   * `binding_missing` (indeterminate) rather than as a dead token.
+   *
+   * `.get()` the value at the call site and never log, return or persist it.
+   */
+  MERCURY_TOKEN_ARIBIA_LLC?: SecretsStoreSecret;
+  MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO?: SecretsStoreSecret;
+  MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE?: SecretsStoreSecret;
+  MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS?: SecretsStoreSecret;
+  MERCURY_TOKEN_IT_CAN_BE_LLC?: SecretsStoreSecret;
+  MERCURY_TOKEN_CHITTY_SERVICES?: SecretsStoreSecret;
+  MERCURY_TOKEN_JEAN_ARLENE_VENTURING?: SecretsStoreSecret;
   CHITTYAGENT_API_BASE?: string;
   CHITTYAGENT_API_TOKEN?: string;
   CHITTY_LEDGER_BASE?: string;
