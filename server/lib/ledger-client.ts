@@ -110,8 +110,19 @@ export async function logToLedger(entry: LedgerEntry, env: LedgerEnv): Promise<v
  * Safe wrapper: calls executionCtx.waitUntil() in CF Workers,
  * no-ops gracefully in test environments where executionCtx throws.
  */
-export function ledgerLog(c: { executionCtx: { waitUntil(p: Promise<unknown>): void } }, entry: LedgerEntry, env: LedgerEnv): void {
-  const promise = logToLedger(entry, env);
+export function ledgerLog(
+  c: {
+    executionCtx: { waitUntil(p: Promise<unknown>): void };
+    get?: (name: 'executionContext') => any;
+  },
+  entry: LedgerEntry,
+  env: LedgerEnv,
+): void {
+  const execution = typeof c.get === 'function' ? c.get('executionContext') : undefined;
+  const enrichedEntry = execution
+    ? { ...entry, metadata: { ...(entry.metadata ?? {}), execution } }
+    : entry;
+  const promise = logToLedger(enrichedEntry, env);
   try {
     c.executionCtx.waitUntil(promise);
   } catch {
