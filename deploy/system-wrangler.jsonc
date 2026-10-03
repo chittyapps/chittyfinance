@@ -38,6 +38,22 @@
     { "name": "EMAIL", "allowed_sender_addresses": ["finance@chitty.cc", "noreply@chitty.cc"] }
   ],
 
+  // Mercury API tokens — one per entity — from the ACCOUNT-LEVEL Cloudflare Secrets
+  // Store. Same store and same binding names as CHITTYOS/chittysecrets/wrangler.json;
+  // because the store is account-level, chittyfinance binds them directly and does not
+  // need the ChittySecrets broker in the path. Consumed by the daily keepalive probe in
+  // server/lib/mercury-token-keepalive.ts — Mercury deletes a token after 45 days with
+  // no API call. Bindings do NOT inherit into env blocks, so each env repeats them.
+  "secrets_store_secrets": [
+    { "binding": "MERCURY_TOKEN_ARIBIA_LLC", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC" },
+    { "binding": "MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO" },
+    { "binding": "MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE" },
+    { "binding": "MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS" },
+    { "binding": "MERCURY_TOKEN_IT_CAN_BE_LLC", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_IT_CAN_BE_LLC" },
+    { "binding": "MERCURY_TOKEN_CHITTY_SERVICES", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_CHITTY_SERVICES" },
+    { "binding": "MERCURY_TOKEN_JEAN_ARLENE_VENTURING", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_JEAN_ARLENE_VENTURING" }
+  ],
+
   "vars": {
     "MODE": "system",
     "NODE_ENV": "production",
@@ -112,6 +128,16 @@
       "send_email": [
         { "name": "EMAIL" }
       ],
+      "secrets_store_secrets": [
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC" },
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO" },
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE" },
+        { "binding": "MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS" },
+        { "binding": "MERCURY_TOKEN_IT_CAN_BE_LLC", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_IT_CAN_BE_LLC" },
+        { "binding": "MERCURY_TOKEN_CHITTY_SERVICES", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_CHITTY_SERVICES" },
+        { "binding": "MERCURY_TOKEN_JEAN_ARLENE_VENTURING", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_JEAN_ARLENE_VENTURING" }
+      ],
+
       "vars": {
         "MODE": "system",
         "NODE_ENV": "development",
@@ -137,6 +163,16 @@
     "staging": {
       "name": "chittyfinance-staging",
       "workers_dev": true,
+      "secrets_store_secrets": [
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC" },
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO" },
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE" },
+        { "binding": "MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS" },
+        { "binding": "MERCURY_TOKEN_IT_CAN_BE_LLC", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_IT_CAN_BE_LLC" },
+        { "binding": "MERCURY_TOKEN_CHITTY_SERVICES", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_CHITTY_SERVICES" },
+        { "binding": "MERCURY_TOKEN_JEAN_ARLENE_VENTURING", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_JEAN_ARLENE_VENTURING" }
+      ],
+
       "vars": {
         "MODE": "system",
         "NODE_ENV": "staging",
@@ -168,6 +204,16 @@
       "send_email": [
         { "name": "EMAIL", "allowed_sender_addresses": ["finance@chitty.cc", "noreply@chitty.cc"] }
       ],
+      "secrets_store_secrets": [
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC" },
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC_CITY_STUDIO" },
+        { "binding": "MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_ARIBIA_LLC_APT_ARLENE" },
+        { "binding": "MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_CHICAGO_FURNISHED_CONDOS" },
+        { "binding": "MERCURY_TOKEN_IT_CAN_BE_LLC", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_IT_CAN_BE_LLC" },
+        { "binding": "MERCURY_TOKEN_CHITTY_SERVICES", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_CHITTY_SERVICES" },
+        { "binding": "MERCURY_TOKEN_JEAN_ARLENE_VENTURING", "store_id": "e914522471964c3c8cf1e601770edcc3", "secret_name": "MERCURY_TOKEN_JEAN_ARLENE_VENTURING" }
+      ],
+
       "vars": {
         "MODE": "system",
         "NODE_ENV": "production",

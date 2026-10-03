@@ -40,6 +40,7 @@ import { allocationRoutes } from './accounting/allocations';
 import { classificationRoutes } from './routes/classification';
 import { emailRoutes } from './routes/email';
 import { createAdminSeedRoutes } from './routes/admin-seed';
+import { mercuryTokenRoutes } from './routes/mercury-tokens';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -140,6 +141,17 @@ export function createApp(deps: AppDeps = {}) {
   // X-Chitty-User-Id. Service token alone does not reach this route.
   app.use('/api/admin', storageMiddleware, serviceAuth, hybridAuth, callerContext);
   app.use('/api/admin/*', storageMiddleware, serviceAuth, hybridAuth, callerContext);
+
+  // ── Mercury token keepalive / liveness (auth + service token, NO tenant, NO storage) ──
+  //
+  // The seven Mercury tokens are account-level Secrets Store bindings with no tenant
+  // scope, so tenantMiddleware (fail-closed since #144) would reject every call for a
+  // missing X-Tenant-ID, and the route touches no DB so storageMiddleware is not needed.
+  //
+  // serviceAuth rather than nothing: the /api/v1/* neighbours are all public, but an
+  // open endpoint enumerating which banking tokens are alive is an information leak.
+  app.use('/api/v1/mercury-tokens', serviceAuth);
+  app.use('/api/v1/mercury-tokens/*', serviceAuth);
   for (const prefix of protectedPrefixes) {
     app.use(prefix, ...protectedRoute);
     app.use(`${prefix}/*`, ...protectedRoute);
@@ -174,6 +186,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/', leaseRoutes);
   app.route('/', mcpRoutes);
   app.route('/', createAdminSeedRoutes(deps.chartDocument));
+  app.route('/', mercuryTokenRoutes);
 
   // ── Fallback: try static assets, then 404 ──
   app.all('*', async (c) => {
