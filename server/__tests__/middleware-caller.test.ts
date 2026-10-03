@@ -19,6 +19,7 @@ describe('callerContext middleware', () => {
 
     app.use('/api/*', async (c, next) => {
       c.set('storage', storage as any);
+      c.set('authMethod', 'service');
       await next();
     });
     app.use('/api/*', callerContext);
@@ -27,7 +28,7 @@ describe('callerContext middleware', () => {
     return { app, getUser };
   }
 
-  it('returns 400 when no caller header or query param is provided', async () => {
+  it('returns 400 when no caller header is provided', async () => {
     const { app } = buildApp();
     const res = await app.request('/api/test', {}, env);
 
@@ -37,7 +38,7 @@ describe('callerContext middleware', () => {
     });
   });
 
-  it('returns 404 when the caller is not found', async () => {
+  it('returns 404 when the service caller is not found', async () => {
     const getUser = vi.fn().mockResolvedValue(undefined);
     const { app } = buildApp(getUser);
     const res = await app.request('/api/test', {
@@ -48,14 +49,16 @@ describe('callerContext middleware', () => {
     expect(getUser).toHaveBeenCalledWith('user-404');
   });
 
-  it('loads the caller from the fallback x-user-id header', async () => {
+  it('rejects the generic x-user-id impersonation header', async () => {
     const { app, getUser } = buildApp(vi.fn().mockResolvedValue({ id: 'user-123' }));
     const res = await app.request('/api/test', {
       headers: { 'X-User-Id': 'user-123' },
     }, env);
 
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ userId: 'user-123' });
-    expect(getUser).toHaveBeenCalledWith('user-123');
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'missing_user_id',
+    });
+    expect(getUser).not.toHaveBeenCalled();
   });
 });
