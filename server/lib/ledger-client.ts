@@ -1,3 +1,5 @@
+import type { FinanceExecutionContext } from '../middleware/execution-context';
+
 /**
  * ChittyLedger client for immutable audit trail entries.
  * 100% Cloudflare Workers compatible — no Node.js APIs, no process.env.
@@ -113,7 +115,7 @@ export async function logToLedger(entry: LedgerEntry, env: LedgerEnv): Promise<v
 export function ledgerLog(
   c: {
     executionCtx: { waitUntil(p: Promise<unknown>): void };
-    get?: (name: 'executionContext') => any;
+    get?: (name: 'executionContext') => FinanceExecutionContext | undefined;
   },
   entry: LedgerEntry,
   env: LedgerEnv,
