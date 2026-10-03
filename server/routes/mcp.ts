@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { setExecutionOperation } from '../middleware/execution-context';
 
 export const mcpRoutes = new Hono<HonoEnv>();
 
@@ -263,6 +264,7 @@ mcpRoutes.post('/mcp', async (c) => {
   try {
     switch (body.method) {
       case 'initialize':
+        setExecutionOperation(c, 'finance.mcp.initialize', 'read');
         return c.json(rpcOk(body.id, {
           protocolVersion: '2024-11-05',
           serverInfo: SERVER_INFO,
@@ -270,22 +272,27 @@ mcpRoutes.post('/mcp', async (c) => {
         }));
 
       case 'resources/list':
+        setExecutionOperation(c, 'finance.mcp.resources.list', 'read');
         return c.json(rpcOk(body.id, { resources: RESOURCES }));
 
       case 'resources/read': {
         const uri = body.params?.uri;
         if (!uri) return c.json(rpcError(body.id, -32602, 'Missing uri param'), 400);
+        setExecutionOperation(c, `finance.mcp.resources.read:${uri}`, 'read');
         const result = await readResource(uri, storage, tenantId, userId);
         return c.json(rpcOk(body.id, result));
       }
 
       case 'tools/list':
+        setExecutionOperation(c, 'finance.mcp.tools.list', 'read');
         return c.json(rpcOk(body.id, { tools: TOOLS }));
 
       case 'tools/call': {
         const toolName = body.params?.name;
         const toolArgs = body.params?.arguments || {};
         if (!toolName) return c.json(rpcError(body.id, -32602, 'Missing tool name'), 400);
+        const intent = toolName === 'get-property-advice' ? 'suggest' : 'execute';
+        setExecutionOperation(c, `finance.mcp.tool:${toolName}`, intent);
         const result = await callTool(toolName, toolArgs, storage, tenantId, c.env);
         return c.json(rpcOk(body.id, result));
       }
