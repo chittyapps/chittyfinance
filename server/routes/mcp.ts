@@ -16,7 +16,7 @@
 
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
-import { setExecutionOperation } from '../middleware/execution-context';
+import { setExecutionOperation, type ExecutionIntent } from '../middleware/execution-context';
 
 export const mcpRoutes = new Hono<HonoEnv>();
 
@@ -70,10 +70,18 @@ const RESOURCES = [
   },
 ];
 
-const TOOLS = [
+interface McpToolDefinition {
+  name: string;
+  description: string;
+  intent: ExecutionIntent;
+  inputSchema: Record<string, any>;
+}
+
+const TOOL_DEFINITIONS: McpToolDefinition[] = [
   {
     name: 'get-property-advice',
     description: 'Get AI-powered financial advice for a specific property.',
+    intent: 'suggest',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -86,6 +94,7 @@ const TOOLS = [
   {
     name: 'refresh-valuation',
     description: 'Refresh property valuation estimates from external providers (Zillow, Redfin, HouseCanary, ATTOM, County).',
+    intent: 'execute',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -95,6 +104,8 @@ const TOOLS = [
     },
   },
 ];
+
+const TOOLS = TOOL_DEFINITIONS.map(({ intent: _intent, ...tool }) => tool);
 
 // ── Resource Handlers ──
 
@@ -291,8 +302,9 @@ mcpRoutes.post('/mcp', async (c) => {
         const toolName = body.params?.name;
         const toolArgs = body.params?.arguments || {};
         if (!toolName) return c.json(rpcError(body.id, -32602, 'Missing tool name'), 400);
-        const intent = toolName === 'get-property-advice' ? 'suggest' : 'execute';
-        setExecutionOperation(c, `finance.mcp.tool:${toolName}`, intent);
+        const toolDefinition = TOOL_DEFINITIONS.find((tool) => tool.name === toolName);
+        if (!toolDefinition) return c.json(rpcError(body.id, -32602, `Unknown tool: ${toolName}`), 400);
+        setExecutionOperation(c, `finance.mcp.tool:${toolName}`, toolDefinition.intent);
         const result = await callTool(toolName, toolArgs, storage, tenantId, c.env);
         return c.json(rpcOk(body.id, result));
       }
