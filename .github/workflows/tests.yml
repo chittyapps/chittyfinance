@@ -33,6 +33,12 @@ jobs:
       - name: Typecheck
         run: pnpm run check
 
+      # Exercise the exact source-side custom build command used by Wrangler.
+      # The wrapper emits the resolved artifact path and fails if index.html is
+      # missing or empty, so Workers Builds cannot silently diverge from CI.
+      - name: Build Worker assets
+        run: node scripts/build-worker-assets.mjs
+
       - name: Test
         shell: bash
         run: |
