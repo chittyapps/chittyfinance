@@ -259,7 +259,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const event = parsed.data;
 
   // KV idempotency — 7-day dedup window
-  const dedupKey = `webhook:mercury:${event.id}`;
+  const dedupKey = `webhook:mercury:${tenantId}:${event.id}`;
   const existing = await kv.get(dedupKey);
   if (existing) {
     return c.json({ received: true, duplicate: true }, 200);
