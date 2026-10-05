@@ -19,7 +19,7 @@ console.log(`[worker-assets] vite=${viteExecutable}`);
 
 const build = spawnSync(
   viteExecutable,
-  ['build', '--outDir', 'dist/public'],
+  ['build'],
   {
     cwd: repoRoot,
     stdio: 'inherit',
