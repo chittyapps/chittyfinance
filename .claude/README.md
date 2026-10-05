@@ -23,41 +23,6 @@ This project uses **token-efficient, action-first communication**:
 
 ## Custom Commands
 
-### `/fix-deploy`
-Identifies and fixes all deployment blockers in priority order.
-
-**Usage:**
-```
-/fix-deploy
-```
-
-**Output:**
-```
-✓ Fixed server/routes.ts:7 - duplicate import
-✓ Fixed scripts/detect-mode.js - ESM conversion
-✓ Updated storage.ts - system schema
-✓ Type check passed
-Deployment ready: 5/5 checks passed
-```
-
-### `/check-system`
-Validates system mode readiness for production deployment.
-
-**Usage:**
-```
-/check-system
-```
-
-**Output:**
-```
-| Check          | Status |
-|----------------|--------|
-| Database       | ✓      |
-| ChittyConnect  | ✓      |
-| API Health     | ✓      |
-| Type Check     | ✓      |
-```
-
 ### `/tenant-switch`
 Switches tenant context for multi-tenant testing.
 
@@ -72,37 +37,6 @@ Tenant: ARIBIA LLC - CITY STUDIO
 Type: property
 Accounts: 2
 Balance: $47,832.15
-```
-
-### `/db-reset`
-Resets database and reseeds IT CAN BE LLC structure.
-
-**Usage:**
-```
-/db-reset
-```
-
-**Output:**
-```
-✓ Dropped tables
-✓ Created schema
-✓ Seeded entities
-Tenants: 7 | Users: 2 | Properties: 2
-```
-
-### `/quick-deploy`
-Executes full deployment workflow (build + deploy + verify).
-
-**Usage:**
-```
-/quick-deploy
-```
-
-**Output:**
-```
-Build: ✓ [3.2s]
-Deploy: ✓ [https://finance.chitty.cc]
-Health: ✓ [200]
 ```
 
 ## Workflow Optimizations
@@ -165,18 +99,12 @@ Done
 Quick validation before deploy:
 
 ```bash
-# 1. Type check
 npm run check
-
-# 2. Mode detection
-npm run mode:detect
-
-# 3. Build
-MODE=system npm run build:system
-
-# 4. Deploy (if checks pass)
-npm run deploy:production
+npm run test:run
+npm run build
 ```
+
+There is no repo npm script for production deployment. Use the canonical deployment path for the target environment rather than reconstructing retired `mode:detect`, `build:system`, or `deploy:production` aliases.
 
 ## ChittyOS Integration
 
