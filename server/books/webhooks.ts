@@ -11,35 +11,8 @@ import {
 } from './transfers';
 import { validateRow } from '../lib/chittyschema';
 import { ledgerLog } from '../lib/ledger-client';
-import { checkLegalPersonBinding, type LegalPersonBindingFlag } from '../lib/legal-person-binding';
 
 export const webhookRoutes = new Hono<HonoEnv>();
-
-const MERCURY_TERMINAL_NON_POSTING_STATUSES = new Set([
-  'failed',
-  'cancelled',
-  'canceled',
-  'rejected',
-  'returned',
-  'reversed',
-  'blocked',
-  'voided',
-]);
-
-const MERCURY_POSTING_STATUSES = new Set([
-  'posted',
-  'sent',
-  'settled',
-  'completed',
-]);
-
-function mercuryLedgerDisposition(patch: Record<string, unknown>): 'post' | 'ignore' | 'neutralize' {
-  const status = typeof patch.status === 'string' ? patch.status.trim().toLowerCase() : '';
-  if (MERCURY_TERMINAL_NON_POSTING_STATUSES.has(status)) return 'neutralize';
-  if (typeof patch.postedAt === 'string' && patch.postedAt.length > 0) return 'post';
-  if (MERCURY_POSTING_STATUSES.has(status)) return 'post';
-  return 'ignore';
-}
 
 // ── Mercury native webhook types ──
 
@@ -249,19 +222,19 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   // Verify Mercury-Signature HMAC.
   // Each Mercury webhook registration returns a unique secret, so we store
   // per-tenant secrets in KV at `webhook:mercury:secret:<tenantId>`.
-  // Falls back to MERCURY_WEBHOOK_SECRET env var (shared/legacy).
-  // Skips verification entirely if no secret found (allows registration ping).
+  // The signing secret returned when the webhook is registered must already be
+  // stored for this tenant. Native Mercury events are never allowed to mutate
+  // or trigger financial state without successful signature verification.
   const rawBody = await c.req.text();
   const kv = c.env.FINANCE_KV;
   const secret = await kv.get(`webhook:mercury:secret:${tenantId}`);
   const signatureHeader = c.req.header('Mercury-Signature') ?? '';
 
-  if (secret) {
-    if (!signatureHeader || !(await verifyMercurySignature(rawBody, signatureHeader, secret))) {
-      return c.json({ error: 'invalid_signature' }, 401);
-    }
-  } else {
-    console.warn('[webhook:mercury] No secret for tenant', tenantId, '— signature verification skipped');
+  if (!secret) {
+    return c.json({ error: 'webhook_secret_not_configured' }, 503);
+  }
+  if (!signatureHeader || !(await verifyMercurySignature(rawBody, signatureHeader, secret))) {
+    return c.json({ error: 'invalid_signature' }, 401);
   }
 
   let body: unknown;
@@ -289,271 +262,34 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   }
   await kv.put(dedupKey, rawBody, { expirationTtl: 604800 });
 
-  // Only process transaction events
+  // Mercury webhook payloads are activity signals, not authoritative ledger
+  // records. JSON Merge Patch events may be partial and may arrive out of order.
+  // The canonical ChittyConnect -> chittyconnect-finance reconciliation path
+  // fetches the current provider record before any financial mutation.
   if (event.resourceType !== 'transaction') {
     return c.json({ received: true, resourceType: event.resourceType }, 200);
   }
 
-  // For transaction creates/updates, extract fields from mergePatch.
-  // Ledger eligibility is determined before amount handling so status-only
-  // failure/cancellation updates can neutralize a previously materialized row.
-  const patch = (event.mergePatch ?? {}) as Record<string, unknown>;
-  const amount = typeof patch.amount === 'number' ? patch.amount : null;
-  const description = (patch.bankDescription as string) ?? (patch.counterpartyName as string) ?? '';
-  const counterpartyName = (patch.counterpartyName as string) ?? null;
-  // `event.occurredAt` is a property of the EVENT, not of the movement. The two
-  // legs of one transfer arrive as two separate events with two different
-  // `occurredAt` values, so deriving a group key from it would give the legs
-  // different groups — and the `getTransactionByExternalId` dedupe above makes
-  // that permanent, since neither row is ever revisited. A leg with no real
-  // `postedAt` is still a transfer: it is booked to clearing with no group and
-  // surfaces as an ungrouped leg, which is a visible queue item rather than a
-  // silently mispaired one.
-  const postedAt = (patch.postedAt as string) ?? null;
-  // The row still needs a date to be stored; `occurredAt` is an acceptable
-  // fallback for THAT, and only that.
-  const rowDate = postedAt ?? (event.occurredAt as string) ?? null;
-  const mercuryAccountId = (patch.accountId as string) ?? null;
-
-  const externalId = `mercury:${event.resourceId}`;
-  const mercuryStatus =
-    typeof patch.status === 'string' ? patch.status.trim().toLowerCase() : 'unknown';
-  const disposition = mercuryLedgerDisposition(patch);
-
-  if (disposition === 'neutralize') {
-    const db = createDb(c.env.DATABASE_URL);
-    const storage = new SystemStorage(db);
-    const neutralized = await storage.neutralizeTransactionByExternalId(
-      externalId,
-      tenantId,
-      {
-        status: mercuryStatus,
-        eventId: event.id,
-        reason: `Mercury marked transaction ${mercuryStatus}`,
-      },
-    );
-
-    ledgerLog(c, {
-      entityType: 'audit',
-      action: 'webhook.mercury.transaction_neutralized',
-      metadata: {
-        tenantId,
-        externalId,
-        mercuryTransactionId: event.resourceId,
-        mercuryStatus,
-        eventId: event.id,
-        neutralized: Boolean(neutralized),
-      },
-    }, c.env);
-
-    return c.json({
-      received: true,
-      operationType: event.operationType,
-      mercuryStatus,
-      neutralized: Boolean(neutralized),
-    }, 200);
-  }
-
-  // Pending/unknown/incomplete transactions never affect the financial ledger.
-  if (disposition === 'ignore') {
-    return c.json({
-      received: true,
-      operationType: event.operationType,
-      mercuryStatus,
-      ledgerDisposition: 'ignored_non_posting',
-    }, 200);
-  }
-
-  // A status-only posting update cannot be safely reconstructed from a merge
-  // patch. Acknowledge it and let the reconciliation loop fetch the full
-  // transaction by source identity instead of fabricating an amount.
-  if (amount === null) {
-    ledgerLog(c, {
-      entityType: 'audit',
-      action: 'webhook.mercury.transaction_reconciliation_required',
-      metadata: {
-        tenantId,
-        externalId,
-        mercuryTransactionId: event.resourceId,
-        mercuryStatus,
-        eventId: event.id,
-        reason: 'posting_status_without_amount',
-      },
-    }, c.env);
-
-    return c.json({
-      received: true,
-      operationType: event.operationType,
-      mercuryStatus,
-      reconciliationRequired: true,
-    }, 202);
-  }
-
-  // Transfer detection runs BEFORE keyword classification: Mercury flags both
-  // legs of an internal movement with kind='internalTransfer', and such a row
-  // must never be offered an income or expense code however its bank
-  // description reads (docs/CHART-OF-ACCOUNTS.md §5).
-  const mercuryKind = typeof patch.kind === 'string' ? patch.kind : null;
-  const counterpartyNickname =
-    typeof patch.counterpartyNickname === 'string' ? patch.counterpartyNickname : null;
-  const bankDescription = typeof patch.bankDescription === 'string' ? patch.bankDescription : null;
-
-  // The counterparty account is given as a nickname string, not an id we can
-  // resolve to a tenant, so 1910 is not yet reachable from this path — see the
-  // follow-up note in the PR. `selectTransferClearingCode` returns 1900 when the
-  // counterparty tenant is unknown, which is the documented default.
-  // The bank's `kind` decides the TYPE; only the grouping key depends on
-  // postedAt. A known internal transfer with no postedAt is still a transfer —
-  // falling back to income/expense there would reintroduce exactly this bug. It
-  // is booked to 1900 with no transfer_group, and surfaces in the clearing
-  // check's `ungroupedRows` as a leg that cannot be paired.
-  const transferClassification =
-    mercuryKind && isMercuryInternalTransfer(mercuryKind)
-      ? classifyMercuryInternalTransfer({
-          tenantId,
-          amount,
-          postedAt,
-          kind: mercuryKind,
-          bankDescription,
-          counterpartyNickname,
-          counterpartyTenantId: null,
-        })
-      : null;
-
-  // Auto-classify
-  const transactionType: TransactionType = transferClassification
-    ? 'transfer'
-    : amount >= 0
-      ? 'income'
-      : 'expense';
-  const suggestedCoaCode = transferClassification
-    ? transferClassification.suggestedCoaCode
-    : findAccountCode(description);
-  const isSuspense = suggestedCoaCode === '9010';
-  // A Mercury-flagged internal transfer is a fact from the bank, not a guess.
-  const classificationConfidence = transferClassification ? '0.950' : isSuspense ? '0.100' : '0.700';
-
-  const db = createDb(c.env.DATABASE_URL);
-  const storage = new SystemStorage(db);
-
-  // DB-level dedup
-  const dupRow = await storage.getTransactionByExternalId(externalId, tenantId);
-  if (dupRow) {
-    return c.json({ received: true, duplicate: true, transactionId: dupRow.id }, 200);
-  }
-
-  // Resolve local account from Mercury accountId, or use first active account for tenant
-  let accountId: string | null = null;
-  let resolvedAccountMetadata: Record<string, unknown> | null = null;
-  if (mercuryAccountId) {
-    const acct = await storage.lookupAccountByExternalId(`mercury:${mercuryAccountId}`);
-    if (acct && acct.tenantId === tenantId) {
-      accountId = acct.id;
-      resolvedAccountMetadata = (acct.metadata as Record<string, unknown> | null) ?? null;
-    }
-  }
-  if (!accountId) {
-    // Fallback: use first active account for this tenant, or create a default
-    const accounts = await storage.getAccounts(tenantId);
-    const active = accounts.find((a) => a.isActive);
-    if (active) {
-      accountId = active.id;
-      resolvedAccountMetadata = (active.metadata as Record<string, unknown> | null) ?? null;
-    } else {
-      const created = await storage.createAccount({
-        tenantId,
-        name: 'Mercury Checking',
-        type: 'checking',
-        institution: 'Mercury',
-        externalId: mercuryAccountId ? `mercury:${mercuryAccountId}` : undefined,
-      });
-      accountId = created.id;
-      resolvedAccountMetadata = (created.metadata as Record<string, unknown> | null) ?? null;
-    }
-  }
-
-  // Path B runtime check: emit a structured reconciliation flag when the
-  // legal_person_chittyid binding is missing from account metadata. This
-  // does NOT block ingestion — the contract treats it as partial
-  // enforcement until Path A (column add) lands.
-  const bindingFlag: LegalPersonBindingFlag | null = checkLegalPersonBinding({
-    source: 'mercury',
-    tenantId,
-    accountId: accountId ?? undefined,
-    externalId: mercuryAccountId ? `mercury:${mercuryAccountId}` : null,
-    metadata: resolvedAccountMetadata,
-  });
-  if (bindingFlag) {
-    console.warn('[webhook:mercury] reconciliation flag', bindingFlag);
-  }
-
-  // Advisory ChittySchema validation
-  const schemaResult = await validateRow(c.env, 'FinancialTransactionsInsertSchema', {
-    tenantId,
-    accountId,
-    amount: String(amount),
-    type: transactionType,
-    description,
-    date: rowDate ?? new Date().toISOString(),
-    externalId,
-  });
-
-  if (!schemaResult.ok && schemaResult.errors) {
-    console.warn('[webhook:mercury] ChittySchema advisory', { eventId: event.id, errors: schemaResult.errors });
-  }
-
-  const created = await storage.createTransaction({
-    tenantId,
-    accountId,
-    amount: String(amount),
-    type: transactionType,
-    category: null,
-    description,
-    date: rowDate ? new Date(rowDate) : new Date(),
-    payee: counterpartyName,
-    externalId,
-    suggestedCoaCode,
-    classificationConfidence,
-    metadata: {
-      source: 'mercury_webhook',
-      mercuryTransactionId: event.resourceId,
-      mercuryAccountId,
-      eventId: event.id,
-      operationType: event.operationType,
-      mercuryStatus,
-      // Both legs of one movement carry the same transfer_group, so the pair can
-      // be matched later even though their Mercury ids differ.
-      ...(transferClassification?.metadata ?? {}),
-    },
-  });
-
   ledgerLog(c, {
     entityType: 'audit',
-    action: 'webhook.mercury.transaction_ingested',
+    action: 'webhook.mercury.transaction_reconciliation_required',
     metadata: {
       tenantId,
-      accountId,
-      transactionId: created.id,
-      transactionType,
-      suggestedCoaCode,
-      confidence: classificationConfidence,
-      transferGroup: transferClassification?.transferGroup ?? null,
-      schemaAdvisory: schemaResult.advisory,
-      schemaValid: schemaResult.ok,
-      reconciliationFlag: bindingFlag,
+      mercuryTransactionId: event.resourceId,
+      eventId: event.id,
+      operationType: event.operationType,
+      resourceVersion: event.resourceVersion ?? null,
+      occurredAt: event.occurredAt ?? null,
+      reason: 'authenticated_provider_event',
     },
   }, c.env);
 
   return c.json({
     received: true,
-    transactionId: created.id,
-    type: transactionType,
-    suggestedCoaCode,
-    classificationConfidence,
-    transferGroup: transferClassification?.transferGroup ?? null,
-    schemaAdvisory: schemaResult.advisory,
-    reconciliationFlags: bindingFlag ? [bindingFlag] : [],
-  }, 201);
+    operationType: event.operationType,
+    mercuryTransactionId: event.resourceId,
+    reconciliationRequired: true,
+  }, 202);
 });
 
 // POST /api/webhooks/mercury — Legacy ChittyConnect-normalized path (service-token auth)
