@@ -103,7 +103,7 @@ Surfaced by 33 route modules under `server/routes/`. Categorized below; full ref
 | Mercury | `/api/mercury/{accounts,select-accounts}` | Hybrid |
 | Webhooks | `/api/integrations/{stripe,mercury,wave}/webhook` | Signature-verified |
 | Email | `/api/email/*`, inbound handler for `finance@chitty.cc` | Hybrid |
-| MCP | `/mcp` | ChittyAuth bearer JWT (preferred) / service-token compatibility |
+| MCP | `/mcp` (SDK Streamable HTTP) | ChittyAuth bearer JWT (preferred) / service-token compatibility |
 | Tasks | `/api/tasks` | Hybrid |
 
 ## ChittyLedger-Finance
