@@ -59,7 +59,7 @@
   "observability": { "enabled": false },
 
   "build": {
-    "command": "pnpm install --frozen-lockfile --ignore-workspace && ./node_modules/.bin/vite build --outDir dist/public && test -s dist/public/index.html"
+    "command": "node scripts/build-worker-assets.mjs"
   },
 
   "assets": {
