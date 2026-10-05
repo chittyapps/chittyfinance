@@ -38,16 +38,20 @@ Companion to [CHITTY.md](CHITTY.md), [CHARTER.md](CHARTER.md), [SECURITY.md](SEC
 
 ## MCP Capabilities Exposed by ChittyFinance
 
-Mounted at `/mcp`. Resources include:
-- Financial summaries (tenant-scoped)
-- Transaction queries
-- Property financials (NOI, cap rate, occupancy)
-- Allocation rule preview
-- Schedule E line summary
+Mounted at `/mcp` using the official MCP SDK Streamable HTTP transport. The route is stateless at the transport layer; ChittyFinance remains authoritative for actor and tenant scope.
+
+Current resources:
+- `finance://portfolio/summary` — tenant-scoped portfolio summary
+- `finance://properties` — tenant-scoped property list
+- `finance://tenants` — only memberships visible to the authenticated caller
+
+Current tools:
+- `get-property-advice` — `suggest` intent; reads the selected property and may call ChittyAgent for advisory text
+- `refresh-valuation` — `execute` intent; keep suppressed from default external-client allowlists until write/approval policy is proven
 
 Authentication: verified ChittyAuth bearer JWT for end-user/agent callers; legacy internal service-token callers remain supported with explicit `X-Chitty-User-Id`. Tenant authorization still comes from `tenant_users`. After authorization, every protected request receives a channel-neutral execution context carrying actor, tenant scope, capability/intent, source provenance, and trace metadata. Source metadata never grants financial authority. See [SECURITY.md](SECURITY.md).
 
-> ⚠️ **Phase 2 remaining**: ChittyConnect MCP integration not yet wired. Internal MCP routes work today; cross-service MCP discovery via ChittyConnect is pending.
+> ⚠️ **Cross-client activation remains gated**: protected-resource OAuth metadata and resource-bound ChittyAuth token issuance are tracked separately. Do not declare ChatGPT, Claude, or ChittyClaw connectivity working until MCP Inspector and client-specific proof gates pass.
 
 ## ChittyOS Agents That Interact with ChittyFinance
 
