@@ -24,6 +24,7 @@ const {
   mockGetAccounts,
   mockGetAccount,
   mockCreateAccount,
+  mockNeutralizeTransaction,
 } = vi.hoisted(() => ({
   mockCreateTransaction: vi.fn(),
   mockGetByExternalId: vi.fn(),
@@ -31,6 +32,7 @@ const {
   mockGetAccounts: vi.fn(),
   mockGetAccount: vi.fn(),
   mockCreateAccount: vi.fn(),
+  mockNeutralizeTransaction: vi.fn(),
 }));
 
 vi.mock('../db/connection', () => ({
@@ -50,6 +52,7 @@ vi.mock('../storage/system', () => ({
     getAccounts = mockGetAccounts;
     getAccount = mockGetAccount;
     createAccount = mockCreateAccount;
+    neutralizeTransactionByExternalId = mockNeutralizeTransaction;
   },
 }));
 
@@ -115,6 +118,7 @@ beforeEach(() => {
   mockGetAccounts.mockReset();
   mockGetAccount.mockReset();
   mockCreateAccount.mockReset();
+  mockNeutralizeTransaction.mockReset();
 
   // Default: the tenant already has one account, which is the ordinary path.
   // Individual tests override where they care.
@@ -124,6 +128,7 @@ beforeEach(() => {
   mockCreateAccount.mockResolvedValue({ id: ACCOUNT_ID, tenantId: TENANT_ID, isActive: true, metadata: null });
   mockCreateTransaction.mockImplementation(async (row: Record<string, unknown>) => ({ id: 'tx-created', ...row }));
   mockGetByExternalId.mockResolvedValue(null);
+  mockNeutralizeTransaction.mockResolvedValue(undefined);
 
   global.fetch = originalFetch;
   baseEnv.FINANCE_KV = makeKv();
@@ -131,6 +136,94 @@ beforeEach(() => {
 
 afterEach(() => {
   global.fetch = originalFetch;
+});
+
+describe('POST /api/webhooks/mercury/:tenantId native lifecycle', () => {
+  function nativeEvent(mergePatch: Record<string, unknown>, partial: Record<string, unknown> = {}) {
+    return {
+      id: 'native-evt-1',
+      resourceType: 'transaction',
+      resourceId: 'mtx-native-1',
+      operationType: 'create',
+      occurredAt: '2026-10-05T18:00:00Z',
+      mergePatch,
+      ...partial,
+    };
+  }
+
+  it('does not materialize pending Mercury transactions', async () => {
+    const app = await getApp();
+    const res = await app.request(
+      `/api/webhooks/mercury/${TENANT_ID}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(nativeEvent({
+          amount: -59.5,
+          status: 'pending',
+          accountId: 'mercury-account-1',
+          bankDescription: 'OpenPhone',
+        })),
+      },
+      baseEnv,
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json() as any).ledgerDisposition).toBe('ignored_non_posting');
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockNeutralizeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('neutralizes a previously materialized row on failed status-only update', async () => {
+    mockNeutralizeTransaction.mockResolvedValue({ id: 'existing-row' });
+    const app = await getApp();
+    const res = await app.request(
+      `/api/webhooks/mercury/${TENANT_ID}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(nativeEvent(
+          { status: 'failed' },
+          { id: 'native-evt-failed', operationType: 'update' },
+        )),
+      },
+      baseEnv,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.neutralized).toBe(true);
+    expect(body.mercuryStatus).toBe('failed');
+    expect(mockNeutralizeTransaction).toHaveBeenCalledWith(
+      'mercury:mtx-native-1',
+      TENANT_ID,
+      expect.objectContaining({
+        status: 'failed',
+        eventId: 'native-evt-failed',
+      }),
+    );
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('requests reconciliation for status-only posting updates', async () => {
+    const app = await getApp();
+    const res = await app.request(
+      `/api/webhooks/mercury/${TENANT_ID}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(nativeEvent(
+          { status: 'sent' },
+          { id: 'native-evt-sent', operationType: 'update' },
+        )),
+      },
+      baseEnv,
+    );
+
+    expect(res.status).toBe(202);
+    expect((await res.json() as any).reconciliationRequired).toBe(true);
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/webhooks/mercury', () => {
