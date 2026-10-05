@@ -11,6 +11,7 @@ import {
 } from './transfers';
 import { validateRow } from '../lib/chittyschema';
 import { ledgerLog } from '../lib/ledger-client';
+import { checkLegalPersonBinding, type LegalPersonBindingFlag } from '../lib/legal-person-binding';
 
 export const webhookRoutes = new Hono<HonoEnv>();
 
