@@ -15,6 +15,32 @@ import { checkLegalPersonBinding, type LegalPersonBindingFlag } from '../lib/leg
 
 export const webhookRoutes = new Hono<HonoEnv>();
 
+const MERCURY_TERMINAL_NON_POSTING_STATUSES = new Set([
+  'failed',
+  'cancelled',
+  'canceled',
+  'rejected',
+  'returned',
+  'reversed',
+  'blocked',
+  'voided',
+]);
+
+const MERCURY_POSTING_STATUSES = new Set([
+  'posted',
+  'sent',
+  'settled',
+  'completed',
+]);
+
+function mercuryLedgerDisposition(patch: Record<string, unknown>): 'post' | 'ignore' | 'neutralize' {
+  const status = typeof patch.status === 'string' ? patch.status.trim().toLowerCase() : '';
+  if (MERCURY_TERMINAL_NON_POSTING_STATUSES.has(status)) return 'neutralize';
+  if (typeof patch.postedAt === 'string' && patch.postedAt.length > 0) return 'post';
+  if (MERCURY_POSTING_STATUSES.has(status)) return 'post';
+  return 'ignore';
+}
+
 // ── Mercury native webhook types ──
 
 /** Mercury event envelope (JSON Merge Patch format). */
@@ -268,7 +294,9 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     return c.json({ received: true, resourceType: event.resourceType }, 200);
   }
 
-  // For transaction creates/updates, extract fields from mergePatch
+  // For transaction creates/updates, extract fields from mergePatch.
+  // Ledger eligibility is determined before amount handling so status-only
+  // failure/cancellation updates can neutralize a previously materialized row.
   const patch = (event.mergePatch ?? {}) as Record<string, unknown>;
   const amount = typeof patch.amount === 'number' ? patch.amount : null;
   const description = (patch.bankDescription as string) ?? (patch.counterpartyName as string) ?? '';
@@ -287,12 +315,79 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const rowDate = postedAt ?? (event.occurredAt as string) ?? null;
   const mercuryAccountId = (patch.accountId as string) ?? null;
 
-  // For updates without amount (e.g. status change), just ack
-  if (amount === null) {
-    return c.json({ received: true, operationType: event.operationType }, 200);
+  const externalId = `mercury:${event.resourceId}`;
+  const mercuryStatus =
+    typeof patch.status === 'string' ? patch.status.trim().toLowerCase() : 'unknown';
+  const disposition = mercuryLedgerDisposition(patch);
+
+  if (disposition === 'neutralize') {
+    const db = createDb(c.env.DATABASE_URL);
+    const storage = new SystemStorage(db);
+    const neutralized = await storage.neutralizeTransactionByExternalId(
+      externalId,
+      tenantId,
+      {
+        status: mercuryStatus,
+        eventId: event.id,
+        reason: `Mercury marked transaction ${mercuryStatus}`,
+      },
+    );
+
+    ledgerLog(c, {
+      entityType: 'audit',
+      action: 'webhook.mercury.transaction_neutralized',
+      metadata: {
+        tenantId,
+        externalId,
+        mercuryTransactionId: event.resourceId,
+        mercuryStatus,
+        eventId: event.id,
+        neutralized: Boolean(neutralized),
+      },
+    }, c.env);
+
+    return c.json({
+      received: true,
+      operationType: event.operationType,
+      mercuryStatus,
+      neutralized: Boolean(neutralized),
+    }, 200);
   }
 
-  const externalId = `mercury:${event.resourceId}`;
+  // Pending/unknown/incomplete transactions never affect the financial ledger.
+  if (disposition === 'ignore') {
+    return c.json({
+      received: true,
+      operationType: event.operationType,
+      mercuryStatus,
+      ledgerDisposition: 'ignored_non_posting',
+    }, 200);
+  }
+
+  // A status-only posting update cannot be safely reconstructed from a merge
+  // patch. Acknowledge it and let the reconciliation loop fetch the full
+  // transaction by source identity instead of fabricating an amount.
+  if (amount === null) {
+    ledgerLog(c, {
+      entityType: 'audit',
+      action: 'webhook.mercury.transaction_reconciliation_required',
+      metadata: {
+        tenantId,
+        externalId,
+        mercuryTransactionId: event.resourceId,
+        mercuryStatus,
+        eventId: event.id,
+        reason: 'posting_status_without_amount',
+      },
+    }, c.env);
+
+    return c.json({
+      received: true,
+      operationType: event.operationType,
+      mercuryStatus,
+      reconciliationRequired: true,
+    }, 202);
+  }
 
   // Transfer detection runs BEFORE keyword classification: Mercury flags both
   // legs of an internal movement with kind='internalTransfer', and such a row
@@ -425,6 +520,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
       mercuryAccountId,
       eventId: event.id,
       operationType: event.operationType,
+      mercuryStatus,
       // Both legs of one movement carry the same transfer_group, so the pair can
       // be matched later even though their Mercury ids differ.
       ...(transferClassification?.metadata ?? {}),
