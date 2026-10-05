@@ -205,17 +205,21 @@ webhookRoutes.put('/api/webhooks/mercury/:tenantId/secret', async (c) => {
 // Payload: Mercury event envelope (JSON Merge Patch format)
 //
 // Flow:
-//   1. Verify Mercury-Signature header
-//   2. KV-based idempotency (7-day TTL dedup window)
-//   3. Parse Mercury event envelope
-//   4. For transaction events: resolve account, classify, persist
-//   5. Advisory ChittySchema validation (never blocks)
+//   1. Require the per-tenant Mercury webhook signing secret
+//   2. Verify Mercury-Signature HMAC
+//   3. KV-based idempotency (7-day replay window)
+//   4. Parse the Mercury event envelope
+//   5. Treat transaction events as reconciliation triggers only
+//
+// Native webhook merge patches are partial and may arrive out of order, so this
+// route never performs an authoritative financial mutation.
 //
 // Returns:
-//   200 { received } — non-transaction events or envelope-only
-//   201 { received, transactionId, suggestedCoaCode } — persisted tx
-//   400 on validation failure
+//   200 { received } — non-transaction or duplicate event
+//   202 { received, reconciliationRequired } — verified transaction event
+//   400 on malformed JSON
 //   401 on signature failure
+//   503 when the tenant webhook secret is not provisioned
 webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId');
 
