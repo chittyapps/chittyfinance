@@ -23,14 +23,14 @@ const {
   mockLookupAccountByExternalId,
   mockGetAccounts,
   mockGetAccount,
-  mockCreateAccount,
+  mockCreateAccount
 } = vi.hoisted(() => ({
   mockCreateTransaction: vi.fn(),
   mockGetByExternalId: vi.fn(),
   mockLookupAccountByExternalId: vi.fn(),
   mockGetAccounts: vi.fn(),
   mockGetAccount: vi.fn(),
-  mockCreateAccount: vi.fn(),
+  mockCreateAccount: vi.fn()
 }));
 
 vi.mock('../db/connection', () => ({
@@ -131,6 +131,138 @@ beforeEach(() => {
 
 afterEach(() => {
   global.fetch = originalFetch;
+});
+
+async function mercurySignature(rawBody: string, secret: string, timestamp = '1791234000') {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    encoder.encode(`${timestamp}.${rawBody}`),
+  );
+  const hex = Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, '0')).join('');
+  return `t=${timestamp},v1=${hex}`;
+}
+
+describe('POST /api/webhooks/mercury/:tenantId native lifecycle', () => {
+  function nativeEvent(mergePatch: Record<string, unknown>, partial: Record<string, unknown> = {}) {
+    return {
+      id: 'native-evt-1',
+      resourceType: 'transaction',
+      resourceId: 'mtx-native-1',
+      operationType: 'create',
+      occurredAt: '2026-10-05T18:00:00Z',
+      mergePatch,
+      ...partial,
+    };
+  }
+
+  it('fails closed when the tenant signing secret is absent', async () => {
+    const app = await getApp();
+    const res = await app.request(
+      `/api/webhooks/mercury/${TENANT_ID}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(nativeEvent({ status: 'failed' })),
+      },
+      baseEnv,
+    );
+
+    expect(res.status).toBe(503);
+    expect((await res.json() as any).error).toBe('webhook_secret_not_configured');
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid Mercury signature', async () => {
+    const env = { ...baseEnv, FINANCE_KV: makeKv() };
+    await env.FINANCE_KV.put(`webhook:mercury:secret:${TENANT_ID}`, 'native-secret');
+    const app = await getApp();
+    const res = await app.request(
+      `/api/webhooks/mercury/${TENANT_ID}`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Mercury-Signature': 't=1791234000,v1=deadbeef',
+        },
+        body: JSON.stringify(nativeEvent({ status: 'failed' })),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(401);
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('uses a verified transaction webhook only as a reconciliation trigger', async () => {
+    const env = { ...baseEnv, FINANCE_KV: makeKv() };
+    const secret = 'native-secret';
+    await env.FINANCE_KV.put(`webhook:mercury:secret:${TENANT_ID}`, secret);
+    const rawBody = JSON.stringify(nativeEvent({
+      amount: -59.5,
+      status: 'pending',
+      accountId: 'mercury-account-1',
+      bankDescription: 'OpenPhone',
+    }));
+    const signature = await mercurySignature(rawBody, secret);
+
+    const app = await getApp();
+    const res = await app.request(
+      `/api/webhooks/mercury/${TENANT_ID}`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Mercury-Signature': signature,
+        },
+        body: rawBody,
+      },
+      env,
+    );
+
+    expect(res.status).toBe(202);
+    const body = await res.json() as any;
+    expect(body.reconciliationRequired).toBe(true);
+    expect(body.mercuryTransactionId).toBe('mtx-native-1');
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockGetByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates verified native events before triggering reconciliation twice', async () => {
+    const env = { ...baseEnv, FINANCE_KV: makeKv() };
+    const secret = 'native-secret';
+    await env.FINANCE_KV.put(`webhook:mercury:secret:${TENANT_ID}`, secret);
+    const rawBody = JSON.stringify(nativeEvent({ status: 'sent' }));
+    const signature = await mercurySignature(rawBody, secret);
+    const app = await getApp();
+
+    const request = () => app.request(
+      `/api/webhooks/mercury/${TENANT_ID}`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Mercury-Signature': signature,
+        },
+        body: rawBody,
+      },
+      env,
+    );
+
+    expect((await request()).status).toBe(202);
+    const second = await request();
+    expect(second.status).toBe(200);
+    expect((await second.json() as any).duplicate).toBe(true);
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/webhooks/mercury', () => {
