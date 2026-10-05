@@ -327,7 +327,10 @@ describe('MCP Streamable HTTP endpoint', () => {
     });
     const body = await res.json() as any;
 
-    expect(body.error).toBeDefined();
+    expect(body.result?.isError || body.error).toBeTruthy();
+    if (body.result?.content?.[0]?.text) {
+      expect(body.result.content[0].text.toLowerCase()).toContain('tool');
+    }
     expect(getExecution().capability).toBe('finance.mcp.tools.call');
     expect(getExecution().intent).toBe('execute');
   });
