@@ -273,6 +273,62 @@ export class SystemStorage {
     return row;
   }
 
+  /**
+   * Neutralize a provider transaction that must not affect the ledger.
+   *
+   * We deliberately keep the row (rather than deleting it) because transactions
+   * may already be referenced by allocation/reconciliation records. The original
+   * amount and provider lifecycle state remain in metadata for auditability.
+   */
+  async neutralizeTransactionByExternalId(
+    externalId: string,
+    tenantId: string,
+    details: { status: string; eventId?: string; reason: string },
+  ) {
+    const existing = await this.getTransactionByExternalId(externalId, tenantId);
+    if (!existing) return undefined;
+
+    const existingMetadata =
+      existing.metadata && typeof existing.metadata === 'object'
+        ? (existing.metadata as Record<string, unknown>)
+        : {};
+
+    const [row] = await this.db
+      .update(schema.transactions)
+      .set({
+        amount: '0.00',
+        category: null,
+        coaCode: null,
+        suggestedCoaCode: null,
+        classificationConfidence: null,
+        classifiedBy: null,
+        classifiedAt: null,
+        reconciled: false,
+        reconciledBy: null,
+        reconciledAt: null,
+        metadata: {
+          ...existingMetadata,
+          mercuryDisposition: 'non_posting',
+          mercuryStatus: details.status,
+          mercuryLifecycleEventId: details.eventId ?? null,
+          mercuryNeutralizationReason: details.reason,
+          mercuryOriginalAmount:
+            existingMetadata.mercuryOriginalAmount ?? existing.amount,
+          mercuryNeutralizedAt: new Date().toISOString(),
+        },
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.transactions.externalId, externalId),
+          eq(schema.transactions.tenantId, tenantId),
+        ),
+      )
+      .returning();
+
+    return row;
+  }
+
   async createTransaction(data: typeof schema.transactions.$inferInsert) {
     assertTransactionType(data.type);
     assertPostableCodes(data);
