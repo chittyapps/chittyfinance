@@ -226,7 +226,9 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
     );
     const second = await request();
     expect(second.status).toBe(200);
-    expect((await second.json() as any).duplicate).toBe(true);
+    const duplicate = await second.json() as any;
+    expect(duplicate.duplicate).toBe(true);
+    expect(duplicate).not.toHaveProperty('reconciliationRequired');
     expect(env.FINANCE_KV.put).toHaveBeenCalledTimes(1);
   });
 
