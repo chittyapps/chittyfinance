@@ -62,8 +62,8 @@ function formatTransaction(tx: any) {
 }
 
 type TenantResolution =
-  | { tenant: any; error?: never }
-  | { tenant?: never; error: 'not_found' | 'ambiguous' };
+  | { ok: true; tenant: any }
+  | { ok: false; error: 'not_found' | 'ambiguous' };
 
 /**
  * Resolve tenant references deterministically: UUID first, then unique slug, then
@@ -75,21 +75,21 @@ async function resolveTenant(storage: any, reference: string): Promise<TenantRes
   const normalized = raw.toLowerCase();
 
   const byId = tenants.filter((tenant: any) => tenant.id === raw);
-  if (byId.length === 1) return { tenant: byId[0] };
+  if (byId.length === 1) return { ok: true, tenant: byId[0] };
 
   const bySlug = tenants.filter(
     (tenant: any) => String(tenant.slug || '').trim().toLowerCase() === normalized,
   );
-  if (bySlug.length === 1) return { tenant: bySlug[0] };
-  if (bySlug.length > 1) return { error: 'ambiguous' };
+  if (bySlug.length === 1) return { ok: true, tenant: bySlug[0] };
+  if (bySlug.length > 1) return { ok: false, error: 'ambiguous' };
 
   const byName = tenants.filter(
     (tenant: any) => String(tenant.name || '').trim().toLowerCase() === normalized,
   );
-  if (byName.length === 1) return { tenant: byName[0] };
-  if (byName.length > 1) return { error: 'ambiguous' };
+  if (byName.length === 1) return { ok: true, tenant: byName[0] };
+  if (byName.length > 1) return { ok: false, error: 'ambiguous' };
 
-  return { error: 'not_found' };
+  return { ok: false, error: 'not_found' };
 }
 
 type WindowBounds = { startDateIso?: string; endDateExclusiveIso?: string };
@@ -170,7 +170,7 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/entities', async (c) =>
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/balances', async (c) => {
   const storage = c.get('storage');
   const resolved = await resolveTenant(storage, c.req.param('entity'));
-  if ('error' in resolved) {
+  if (!resolved.ok) {
     const failure = tenantError(resolved.error);
     return c.json(failure.body, failure.status);
   }
@@ -191,7 +191,7 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/balanc
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/transactions', async (c) => {
   const storage = c.get('storage');
   const resolved = await resolveTenant(storage, c.req.param('entity'));
-  if ('error' in resolved) {
+  if (!resolved.ok) {
     const failure = tenantError(resolved.error);
     return c.json(failure.body, failure.status);
   }
@@ -228,7 +228,7 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/transa
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/cash-flow', async (c) => {
   const storage = c.get('storage');
   const resolved = await resolveTenant(storage, c.req.param('entity'));
-  if ('error' in resolved) {
+  if (!resolved.ok) {
     const failure = tenantError(resolved.error);
     return c.json(failure.body, failure.status);
   }
