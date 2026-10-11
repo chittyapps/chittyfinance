@@ -140,30 +140,24 @@ webhookRoutes.post('/api/webhooks/stripe', async (c) => {
   return c.json({ received: true });
 });
 
-// PUT /api/webhooks/mercury/:tenantId/secret — Store per-tenant webhook secret
-// Auth: service token (internal use only)
+// Retired: no webhook signing secret may be accepted or persisted by Finance.
+// Previously this route wrote raw secrets into FINANCE_KV. Existing native
+// receivers remain temporarily compatible with their already-provisioned
+// legacy secrets; new signing secrets MUST be retained by ChittySecrets via
+// the governed ChittyConnect broker, with provider-org-scoped references.
+// Do not add an env/Worker binding/KV/DB fallback or allow a DBA to select
+// a second secret by tenant_id alone.
 webhookRoutes.put('/api/webhooks/mercury/:tenantId/secret', async (c) => {
   const expected = c.env.CHITTY_AUTH_SERVICE_TOKEN;
   if (!expected) return c.json({ error: 'auth_not_configured' }, 500);
-
   const auth = c.req.header('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   if (!token || token !== expected) return c.json({ error: 'unauthorized' }, 401);
 
-  let parsed: { secret?: string };
-  try {
-    parsed = await c.req.json<{ secret: string }>();
-  } catch {
-    return c.json({ error: 'invalid_json' }, 400);
-  }
-  const { secret } = parsed;
-  if (!secret) return c.json({ error: 'secret required' }, 400);
-
-  const tenantId = c.req.param('tenantId');
-  const kv = c.env.FINANCE_KV;
-  await kv.put(`webhook:mercury:secret:${tenantId}`, secret);
-
-  return c.json({ stored: true, tenantId });
+  // Reject before parsing a caller-provided body or touching FINANCE_KV.
+  // Production migration must first verify ChittySecrets reference and
+  // per-provider-organization receiver signature behavior.
+  return c.json({ error: 'LEGACY_MERCURY_SECRET_KV_PROVISIONING_RETIRED' }, 410);
 });
 
 // POST /api/webhooks/mercury/:tenantId — Mercury native webhook (tenant in URL)
@@ -191,10 +185,10 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId');
 
   // Verify Mercury-Signature HMAC.
-  // Each Mercury webhook registration returns a unique secret, so we store
-  // per-tenant secrets in KV at `webhook:mercury:secret:<tenantId>`.
-  // The signing secret returned when the webhook is registered must already be
-  // stored for this tenant. Native Mercury events are never allowed to mutate
+  // Existing registrations may still rely on legacy per-tenant KV secrets.
+  // New registrations must use brokered ChittySecrets scoped to the verified
+  // provider organization, never this retired raw-KV provisioning route.
+  // Native Mercury events are never allowed to mutate
   // or trigger financial state without successful signature verification.
   const rawBody = await c.req.text();
   const kv = c.env.FINANCE_KV;
