@@ -151,6 +151,33 @@ async function mercurySignature(rawBody: string, secret: string, timestamp = '17
   return `t=${timestamp},v1=${hex}`;
 }
 
+describe('Mercury signing-secret provisioning governance', () => {
+  it('rejects the retired per-tenant raw-KV secret write with authorized service identity', async () => {
+    const app = await getApp();
+    const res = await app.request(`/api/webhooks/mercury/${TENANT_ID}/secret`, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ secret: 'fixture-should-not-be-stored' }),
+    }, baseEnv);
+    expect(res.status).toBe(410);
+    expect((await res.json() as any).error).toBe('LEGACY_MERCURY_SECRET_KV_PROVISIONING_RETIRED');
+    expect(baseEnv.FINANCE_KV.put).not.toHaveBeenCalled();
+    expect(baseEnv.FINANCE_KV.get).not.toHaveBeenCalled();
+  });
+
+  it('refuses unauthorized provisioning without writing or reading secret material', async () => {
+    const app = await getApp();
+    const res = await app.request(`/api/webhooks/mercury/${TENANT_ID}/secret`, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer incorrect', 'content-type': 'application/json' },
+      body: JSON.stringify({ secret: 'fixture-should-not-be-stored' }),
+    }, baseEnv);
+    expect(res.status).toBe(401);
+    expect(baseEnv.FINANCE_KV.put).not.toHaveBeenCalled();
+    expect(baseEnv.FINANCE_KV.get).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/webhooks/mercury/:tenantId native lifecycle', () => {
   function nativeEvent(mergePatch: Record<string, unknown>, partial: Record<string, unknown> = {}) {
     return {
