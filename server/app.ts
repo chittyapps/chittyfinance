@@ -41,6 +41,7 @@ import { allocationRoutes } from './accounting/allocations';
 import { classificationRoutes } from './routes/classification';
 import { emailRoutes } from './routes/email';
 import { createAdminSeedRoutes } from './routes/admin-seed';
+import { internalChittyConnectRoutes } from './routes/internal-chittyconnect';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -108,6 +109,16 @@ export function createApp(deps: AppDeps = {}) {
   // Agent routes disabled — ChittyAgent DO is being rebuilt
   app.all('/agent', (c) => c.json({ status: 'agent_disabled', message: 'ChittyAgent is being rebuilt' }, 503));
   app.all('/agent/*', (c) => c.json({ status: 'agent_disabled', message: 'ChittyAgent is being rebuilt' }, 503));
+
+  // ── Private service-binding projection (no bearer secret) ──
+  //
+  // ChittyConnect calls this surface through SVC_FINANCE using the synthetic
+  // https://internal hostname. The route itself verifies that hostname and the
+  // broker caller header. It is read-only and intentionally bypasses browser /
+  // service-token auth so no shared credential has to live in either Worker.
+  app.use('/internal/chittyconnect', storageMiddleware);
+  app.use('/internal/chittyconnect/*', storageMiddleware);
+  app.route('/', internalChittyConnectRoutes);
 
   // ── Webhook routes (custom auth per-route, no tenant required) ──
   app.route('/', webhookRoutes);

@@ -306,6 +306,92 @@ export class SystemStorage {
       .orderBy(desc(schema.transactions.date));
   }
 
+  /**
+   * Read a bounded tenant transaction window for internal projections.
+   *
+   * endDateExclusiveIso is exclusive so date-only callers can represent an
+   * entire end day as the next day's midnight without losing late-day rows.
+   * This method never mutates finance state.
+   */
+  async getTransactionsForTenantWindow(
+    tenantId: string,
+    options: {
+      startDateIso?: string;
+      endDateExclusiveIso?: string;
+      limit: number;
+      offset: number;
+    },
+  ) {
+    const conditions = [eq(schema.transactions.tenantId, tenantId)];
+    if (options.startDateIso) {
+      conditions.push(sql`${schema.transactions.date} >= ${options.startDateIso}`);
+    }
+    if (options.endDateExclusiveIso) {
+      conditions.push(sql`${schema.transactions.date} < ${options.endDateExclusiveIso}`);
+    }
+
+    return this.db
+      .select()
+      .from(schema.transactions)
+      .where(and(...conditions))
+      .orderBy(desc(schema.transactions.date))
+      .limit(options.limit)
+      .offset(options.offset);
+  }
+
+  /**
+   * Aggregate tenant cash flow by currency inside the database.
+   * Cross-currency values are never combined.
+   */
+  async getCashFlowForTenantWindow(
+    tenantId: string,
+    options: { startDateIso?: string; endDateExclusiveIso?: string },
+  ) {
+    const conditions = [eq(schema.transactions.tenantId, tenantId)];
+    if (options.startDateIso) {
+      conditions.push(sql`${schema.transactions.date} >= ${options.startDateIso}`);
+    }
+    if (options.endDateExclusiveIso) {
+      conditions.push(sql`${schema.transactions.date} < ${options.endDateExclusiveIso}`);
+    }
+
+    return this.db
+      .select({
+        currency: schema.transactions.currency,
+        type: schema.transactions.type,
+        total: sql<string>`coalesce(sum(${schema.transactions.amount}), 0)`,
+        transactionCount: sql<number>`count(*)::int`,
+      })
+      .from(schema.transactions)
+      .where(and(...conditions))
+      .groupBy(schema.transactions.currency, schema.transactions.type);
+  }
+
+  /**
+   * Summarize account balances by currency without mixing monetary units.
+   */
+  async getBalanceSummaryByCurrency(tenantId: string) {
+    const LIABILITY_TYPES = ['mortgage', 'loan', 'tax_liability'];
+    const accounts = await this.getAccounts(tenantId);
+    const byCurrency: Record<string, { total_cash: number; total_owed: number; net: number }> = {};
+
+    for (const account of accounts) {
+      const currency = account.currency || 'USD';
+      const amount = Number(account.balance);
+      if (!Number.isFinite(amount)) continue;
+
+      const summary = byCurrency[currency] ?? { total_cash: 0, total_owed: 0, net: 0 };
+      if (account.type === 'credit' || LIABILITY_TYPES.includes(account.type)) {
+        summary.total_owed += Math.abs(amount);
+      } else {
+        summary.total_cash += amount;
+      }
+      summary.net = summary.total_cash - summary.total_owed;
+      byCurrency[currency] = summary;
+    }
+
+    return byCurrency;
+  }
   // ── SUMMARY ──
 
   async getSummary(tenantId: string) {
