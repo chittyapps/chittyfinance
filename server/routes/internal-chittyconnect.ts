@@ -19,13 +19,13 @@ internalChittyConnectRoutes.use('/internal/chittyconnect/*', async (c, next) => 
   const caller = c.req.header('x-chittyos-caller');
 
   if (hostname !== 'internal' || caller !== 'chittyconnect') {
-    // Do not advertise the private surface on the public Worker.
     return c.json({ error: 'not_found' }, 404);
   }
 
   await next();
 });
 
+/** Return only the account fields needed for finance reconciliation. */
 function formatAccount(account: any) {
   return {
     id: account.id,
@@ -33,7 +33,6 @@ function formatAccount(account: any) {
     name: account.name,
     type: account.type,
     institution: account.institution || '',
-    accountNumber: account.accountNumber || undefined,
     balance: Number(account.balance),
     currency: account.currency,
     externalId: account.externalId || undefined,
@@ -43,12 +42,14 @@ function formatAccount(account: any) {
   };
 }
 
+/** Preserve provider/source identity and currency in the transaction projection. */
 function formatTransaction(tx: any) {
   return {
     id: tx.id,
     tenantId: tx.tenantId,
     accountId: tx.accountId,
     amount: Number(tx.amount),
+    currency: tx.currency,
     type: tx.type,
     category: tx.category || undefined,
     description: tx.description,
@@ -60,26 +61,89 @@ function formatTransaction(tx: any) {
   };
 }
 
-async function resolveTenant(storage: any, reference: string) {
+type TenantResolution =
+  | { tenant: any; error?: never }
+  | { tenant?: never; error: 'not_found' | 'ambiguous' };
+
+/**
+ * Resolve tenant references deterministically: UUID first, then unique slug, then
+ * unique exact name. Ambiguous names fail closed instead of choosing a row.
+ */
+async function resolveTenant(storage: any, reference: string): Promise<TenantResolution> {
   const tenants = await storage.getTenants();
-  const normalized = decodeURIComponent(reference).trim().toLowerCase();
+  const raw = reference.trim();
+  const normalized = raw.toLowerCase();
 
-  return tenants.find((tenant: any) =>
-    tenant.id === reference ||
-    String(tenant.slug || '').toLowerCase() === normalized ||
-    String(tenant.name || '').toLowerCase() === normalized
+  const byId = tenants.filter((tenant: any) => tenant.id === raw);
+  if (byId.length === 1) return { tenant: byId[0] };
+
+  const bySlug = tenants.filter(
+    (tenant: any) => String(tenant.slug || '').trim().toLowerCase() === normalized,
   );
+  if (bySlug.length === 1) return { tenant: bySlug[0] };
+  if (bySlug.length > 1) return { error: 'ambiguous' };
+
+  const byName = tenants.filter(
+    (tenant: any) => String(tenant.name || '').trim().toLowerCase() === normalized,
+  );
+  if (byName.length === 1) return { tenant: byName[0] };
+  if (byName.length > 1) return { error: 'ambiguous' };
+
+  return { error: 'not_found' };
 }
 
-function withinWindow(tx: any, start?: string, end?: string) {
-  const time = new Date(tx.date).getTime();
-  if (!Number.isFinite(time)) return false;
-  if (start && time < new Date(start).getTime()) return false;
-  if (end && time > new Date(end).getTime()) return false;
-  return true;
+type WindowBounds = { startDateIso?: string; endDateExclusiveIso?: string };
+
+/** Parse and validate a reconciliation window without silently normalizing bad dates. */
+function parseWindow(start?: string, end?: string): WindowBounds {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+
+  const parseBound = (value: string, endBound: boolean) => {
+    if (dateOnly.test(value)) {
+      const ms = Date.parse(`${value}T00:00:00.000Z`);
+      if (!Number.isFinite(ms) || new Date(ms).toISOString().slice(0, 10) !== value) {
+        throw new Error(`invalid date: ${value}`);
+      }
+      return new Date(ms + (endBound ? 86_400_000 : 0)).toISOString();
+    }
+
+    const ms = Date.parse(value);
+    if (!Number.isFinite(ms)) throw new Error(`invalid date: ${value}`);
+    // Existing semantics made an explicit timestamp inclusive. Represent that
+    // as an exclusive bound one millisecond later for the SQL query.
+    return new Date(ms + (endBound ? 1 : 0)).toISOString();
+  };
+
+  const startDateIso = start ? parseBound(start, false) : undefined;
+  const endDateExclusiveIso = end ? parseBound(end, true) : undefined;
+
+  if (startDateIso && endDateExclusiveIso && Date.parse(startDateIso) >= Date.parse(endDateExclusiveIso)) {
+    throw new Error('start must be before or equal to end');
+  }
+
+  return { startDateIso, endDateExclusiveIso };
 }
 
-// GET /internal/chittyconnect/entities
+/** Parse bounded offset pagination for the private transaction projection. */
+function parsePage(limitRaw?: string, offsetRaw?: string) {
+  const limit = limitRaw === undefined ? 200 : Number(limitRaw);
+  const offset = offsetRaw === undefined ? 0 : Number(offsetRaw);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    throw new Error('limit must be an integer from 1 to 500');
+  }
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error('offset must be a non-negative integer');
+  }
+  return { limit, offset };
+}
+
+/** Translate tenant resolution failures into non-enumerating internal responses. */
+function tenantError(error: 'not_found' | 'ambiguous') {
+  return error === 'ambiguous'
+    ? { body: { error: 'entity_ambiguous' }, status: 409 as const }
+    : { body: { error: 'entity_not_found' }, status: 404 as const };
+}
+
 // System-mode projection used by ChittyConnect to resolve canonical tenant and
 // financial-account bindings before reconciliation. Read-only by design.
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities', async (c) => {
@@ -103,82 +167,101 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/entities', async (c) =>
   return c.json({ entities });
 });
 
-// GET /internal/chittyconnect/entities/:entity/balances
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/balances', async (c) => {
   const storage = c.get('storage');
-  const tenant = await resolveTenant(storage, c.req.param('entity'));
-  if (!tenant) return c.json({ error: 'entity_not_found' }, 404);
+  const resolved = await resolveTenant(storage, c.req.param('entity'));
+  if (!resolved.tenant) {
+    const failure = tenantError(resolved.error);
+    return c.json(failure.body, failure.status);
+  }
+  const tenant = resolved.tenant;
 
-  const [accounts, summary] = await Promise.all([
+  const [accounts, summaryByCurrency] = await Promise.all([
     storage.getAccounts(tenant.id),
-    storage.getSummary(tenant.id),
+    storage.getBalanceSummaryByCurrency(tenant.id),
   ]);
 
   return c.json({
-    entity: {
-      id: tenant.id,
-      name: tenant.name,
-      slug: tenant.slug,
-      type: tenant.type,
-    },
+    entity: { id: tenant.id, name: tenant.name, slug: tenant.slug, type: tenant.type },
     accounts: accounts.map(formatAccount),
-    summary,
+    summaryByCurrency,
   });
 });
 
-// GET /internal/chittyconnect/entities/:entity/transactions?start=&end=
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/transactions', async (c) => {
   const storage = c.get('storage');
-  const tenant = await resolveTenant(storage, c.req.param('entity'));
-  if (!tenant) return c.json({ error: 'entity_not_found' }, 404);
+  const resolved = await resolveTenant(storage, c.req.param('entity'));
+  if (!resolved.tenant) {
+    const failure = tenantError(resolved.error);
+    return c.json(failure.body, failure.status);
+  }
+  const tenant = resolved.tenant;
 
-  const start = c.req.query('start');
-  const end = c.req.query('end');
-  const rows = await storage.getTransactions(tenant.id);
-  const transactions = rows
-    .filter((tx: any) => withinWindow(tx, start, end))
-    .map(formatTransaction);
+  let window: WindowBounds;
+  let page: { limit: number; offset: number };
+  try {
+    window = parseWindow(c.req.query('start'), c.req.query('end'));
+    page = parsePage(c.req.query('limit'), c.req.query('offset'));
+  } catch (error) {
+    return c.json({ error: 'invalid_query', message: error instanceof Error ? error.message : 'invalid query' }, 400);
+  }
+
+  const rows = await storage.getTransactionsForTenantWindow(tenant.id, {
+    ...window,
+    limit: page.limit + 1,
+    offset: page.offset,
+  });
+  const hasMore = rows.length > page.limit;
+  const visible = hasMore ? rows.slice(0, page.limit) : rows;
 
   return c.json({
     entity: { id: tenant.id, name: tenant.name, slug: tenant.slug, type: tenant.type },
-    transactions,
+    transactions: visible.map(formatTransaction),
+    page: {
+      limit: page.limit,
+      offset: page.offset,
+      nextOffset: hasMore ? page.offset + page.limit : null,
+    },
   });
 });
 
-// GET /internal/chittyconnect/entities/:entity/cash-flow?start=&end=
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/cash-flow', async (c) => {
   const storage = c.get('storage');
-  const tenant = await resolveTenant(storage, c.req.param('entity'));
-  if (!tenant) return c.json({ error: 'entity_not_found' }, 404);
+  const resolved = await resolveTenant(storage, c.req.param('entity'));
+  if (!resolved.tenant) {
+    const failure = tenantError(resolved.error);
+    return c.json(failure.body, failure.status);
+  }
+  const tenant = resolved.tenant;
 
-  const start = c.req.query('start');
-  const end = c.req.query('end');
-  const rows = (await storage.getTransactions(tenant.id))
-    .filter((tx: any) => withinWindow(tx, start, end));
+  let window: WindowBounds;
+  try {
+    window = parseWindow(c.req.query('start'), c.req.query('end'));
+  } catch (error) {
+    return c.json({ error: 'invalid_query', message: error instanceof Error ? error.message : 'invalid query' }, 400);
+  }
 
-  let inflows = 0;
-  let outflows = 0;
-  let transferCount = 0;
+  const rows = await storage.getCashFlowForTenantWindow(tenant.id, window);
+  const byCurrency: Record<string, { inflows: number; outflows: number; net: number; transactionCount: number; transferCount: number }> = {};
 
-  for (const tx of rows) {
-    const amount = Number(tx.amount);
-    if (!Number.isFinite(amount)) continue;
-    if (tx.type === 'transfer') {
-      transferCount++;
-      continue;
-    }
-    if (tx.type === 'income') inflows += Math.abs(amount);
-    else if (tx.type === 'expense') outflows += Math.abs(amount);
+  for (const row of rows) {
+    const currency = row.currency || 'USD';
+    const total = Number(row.total);
+    const count = Number(row.transactionCount);
+    if (!Number.isFinite(total) || !Number.isFinite(count)) continue;
+    const bucket = byCurrency[currency] ?? { inflows: 0, outflows: 0, net: 0, transactionCount: 0, transferCount: 0 };
+    bucket.transactionCount += count;
+    if (row.type === 'transfer') bucket.transferCount += count;
+    else if (row.type === 'income') bucket.inflows += Math.abs(total);
+    else if (row.type === 'expense') bucket.outflows += Math.abs(total);
+    bucket.net = bucket.inflows - bucket.outflows;
+    byCurrency[currency] = bucket;
   }
 
   return c.json({
     entity: { id: tenant.id, name: tenant.name, slug: tenant.slug, type: tenant.type },
-    start: start || null,
-    end: end || null,
-    inflows,
-    outflows,
-    net: inflows - outflows,
-    transactionCount: rows.length,
-    transferCount,
+    start: c.req.query('start') || null,
+    end: c.req.query('end') || null,
+    byCurrency,
   });
 });
