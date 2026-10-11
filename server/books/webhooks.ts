@@ -140,31 +140,21 @@ webhookRoutes.post('/api/webhooks/stripe', async (c) => {
   return c.json({ received: true });
 });
 
-// PUT /api/webhooks/mercury/:tenantId/secret — Store per-tenant webhook secret
-// Auth: service token (internal use only)
-webhookRoutes.put('/api/webhooks/mercury/:tenantId/secret', async (c) => {
-  const expected = c.env.CHITTY_AUTH_SERVICE_TOKEN;
-  if (!expected) return c.json({ error: 'auth_not_configured' }, 500);
-
-  const auth = c.req.header('authorization') ?? '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!token || token !== expected) return c.json({ error: 'unauthorized' }, 401);
-
-  let parsed: { secret?: string };
-  try {
-    parsed = await c.req.json<{ secret: string }>();
-  } catch {
-    return c.json({ error: 'invalid_json' }, 400);
-  }
-  const { secret } = parsed;
-  if (!secret) return c.json({ error: 'secret required' }, 400);
-
-  const tenantId = c.req.param('tenantId');
-  const kv = c.env.FINANCE_KV;
-  await kv.put(`webhook:mercury:secret:${tenantId}`, secret);
-
-  return c.json({ stored: true, tenantId });
-});
+// PUT /api/webhooks/mercury/:tenantId/secret — RETIRED.
+// A tenant_id is a technical partition, not a Mercury provider organization
+// identity. Different Mercury organizations (e.g. FC and CHIT) may bind to
+// the same canonical business and tenant but require distinct signing keys.
+// Raw signing secrets must be sealed through the existing ChittyConnect ->
+// ChittySecrets governed broker and ChittyFinance-matched provider scope.
+// Never accept/store them in FINANCE_KV, Worker variables or application state.
+//
+// The existing native webhook receiver below temporarily reads legacy KV
+// secrets to avoid dropping current authenticated deliveries. This is a
+// migration blocker, NOT authorization to register another webhook or persist
+// another secret through this route.
+webhookRoutes.put('/api/webhooks/mercury/:tenantId/secret', (c) =>
+  c.json({ error: 'MERCURY_SIGNING_SECRET_BROKER_REQUIRED' }, 410),
+);
 
 // POST /api/webhooks/mercury/:tenantId — Mercury native webhook (tenant in URL)
 //
