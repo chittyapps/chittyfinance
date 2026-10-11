@@ -133,7 +133,7 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-async function mercurySignature(rawBody: string, secret: string, timestamp = '1791234000') {
+async function mercurySignature(rawBody: string, secret: string, timestamp = String(Math.floor(Date.now() / 1000))) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw',
@@ -258,6 +258,52 @@ describe('POST /api/webhooks/mercury/:tenantId native lifecycle', () => {
     expect(body.mercuryTransactionId).toBe('mtx-native-1');
     expect(mockCreateTransaction).not.toHaveBeenCalled();
     expect(mockGetByExternalId).not.toHaveBeenCalled();
+    const key = `webhook:mercury:${TENANT_ID}:native-evt-1`;
+    const stored = JSON.parse(await env.FINANCE_KV.get(key));
+    expect(stored).toEqual({
+      state: 'reconciliation_required',
+      resourceType: 'transaction',
+      resourceId: 'mtx-native-1',
+      operationType: 'create',
+      resourceVersion: null,
+      occurredAt: '2026-10-05T18:00:00Z',
+    });
+    expect(JSON.stringify(stored)).not.toContain('OpenPhone');
+    expect(JSON.stringify(stored)).not.toContain('mergePatch');
+  });
+
+  it('rejects valid but expired Mercury signatures without writing a pending intent', async () => {
+    const env = { ...baseEnv, FINANCE_KV: makeKv() };
+    const secret = 'native-secret';
+    await env.FINANCE_KV.put(`webhook:mercury:secret:${TENANT_ID}`, secret);
+    const rawBody = JSON.stringify(nativeEvent({ status: 'sent' }));
+    const expired = String(Math.floor(Date.now() / 1000) - 301);
+    const signature = await mercurySignature(rawBody, secret, expired);
+    const app = await getApp();
+    const res = await app.request(`/api/webhooks/mercury/${TENANT_ID}`, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': signature, 'content-type': 'application/json' },
+      body: rawBody,
+    }, env);
+    expect(res.status).toBe(401);
+    expect(await env.FINANCE_KV.get(`webhook:mercury:${TENANT_ID}:native-evt-1`)).toBeNull();
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects valid future-dated Mercury signatures outside clock skew allowance', async () => {
+    const env = { ...baseEnv, FINANCE_KV: makeKv() };
+    const secret = 'native-secret';
+    await env.FINANCE_KV.put(`webhook:mercury:secret:${TENANT_ID}`, secret);
+    const rawBody = JSON.stringify(nativeEvent({ status: 'sent' }));
+    const signature = await mercurySignature(rawBody, secret, String(Math.floor(Date.now() / 1000) + 61));
+    const app = await getApp();
+    const res = await app.request(`/api/webhooks/mercury/${TENANT_ID}`, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': signature, 'content-type': 'application/json' },
+      body: rawBody,
+    }, env);
+    expect(res.status).toBe(401);
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
   });
 
   it('deduplicates verified native events before triggering reconciliation twice', async () => {
