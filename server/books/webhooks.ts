@@ -11,6 +11,8 @@ export const webhookRoutes = new Hono<HonoEnv>();
 
 // ── Mercury native webhook types ──
 
+const MERCURY_WEBHOOK_MAX_BYTES = 524288;
+
 /** Mercury event envelope (JSON Merge Patch format). */
 const mercuryEventSchema = z.object({
   id: z.string(),
@@ -169,8 +171,16 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
 
   const signatureHeader = c.req.header('Mercury-Signature') || '';
   if (!signatureHeader) return c.json({ error: 'missing_mercury_signature' }, 401);
+  // Reject declared oversize bodies before buffering; still measure actual
+  // UTF-8 bytes after reading because Content-Length may be absent or false.
+  const declaredLength = Number(c.req.header('Content-Length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MERCURY_WEBHOOK_MAX_BYTES) {
+    return c.json({ error: 'mercury_webhook_payload_too_large' }, 413);
+  }
   const rawBody = await c.req.text();
-  if (new TextEncoder().encode(rawBody).byteLength > 524288) return c.json({ error: 'mercury_webhook_payload_too_large' }, 413);
+  if (new TextEncoder().encode(rawBody).byteLength > MERCURY_WEBHOOK_MAX_BYTES) {
+    return c.json({ error: 'mercury_webhook_payload_too_large' }, 413);
+  }
 
   let result: { verified: boolean; organizationId: string };
   try {
