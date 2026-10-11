@@ -151,6 +151,30 @@ async function mercurySignature(rawBody: string, secret: string, timestamp = '17
   return `t=${timestamp},v1=${hex}`;
 }
 
+describe('PUT /api/webhooks/mercury/:tenantId/secret — retired', () => {
+  it('cannot persist a one-time Mercury signing secret to tenant KV', async () => {
+    const env = { ...baseEnv, FINANCE_KV: makeKv() };
+    const app = await getApp();
+    const res = await app.request(
+      '/api/webhooks/mercury/' + TENANT_ID + '/secret',
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer svc-token',
+        },
+        body: JSON.stringify({ secret: 'do-not-persist' }),
+      },
+      env,
+    );
+    expect(res.status).toBe(410);
+    expect((await res.json() as any).error).toBe(
+      'MERCURY_SIGNING_SECRET_BROKER_REQUIRED',
+    );
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/webhooks/mercury/:tenantId native lifecycle', () => {
   function nativeEvent(mergePatch: Record<string, unknown>, partial: Record<string, unknown> = {}) {
     return {
