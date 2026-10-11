@@ -1,0 +1,40 @@
+name: One-shot security lockfile refresh
+
+on:
+  push:
+    branches:
+      - fix/security-audit-2026-10-11
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Regenerate lockfile
+        run: pnpm install --lockfile-only
+      - name: Commit lockfile and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "chitcommit"
+          git config user.email "208086304+chitcommit@users.noreply.github.com"
+          git add package.json pnpm-lock.yaml
+          git rm .github/workflows/lock-refresh-security.yml
+          if git diff --cached --quiet; then
+            echo "No lockfile changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: regenerate lockfile for security upgrades"
+          git push origin HEAD:${GITHUB_REF_NAME}
