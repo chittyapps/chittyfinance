@@ -268,6 +268,23 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
     expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
   });
 
+  it('rejects a declared oversize webhook before reading body or calling verifier', async () => {
+    const verifier = { verifyMercuryWebhookSignature: vi.fn() };
+    const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST',
+      headers: {
+        'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64),
+        'Content-Length': '524289',
+      },
+      body: JSON.stringify(event),
+    }, env);
+    expect(res.status).toBe(413);
+    expect(verifier.verifyMercuryWebhookSignature).not.toHaveBeenCalled();
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+  });
+
   it('invalid broker verdict cannot create an activity signal', async () => {
     const env = {
       ...baseEnv, FINANCE_KV: makeKv(),
