@@ -4,14 +4,8 @@ import type { HonoEnv } from '../env';
 import { createDb } from '../db/connection';
 import { SystemStorage } from '../storage/system';
 import { findAccountCode } from '../../database/chart-of-accounts';
-import {
-  classifyMercuryInternalTransfer,
-  isMercuryInternalTransfer,
-  type TransactionType,
-} from './transfers';
 import { validateRow } from '../lib/chittyschema';
 import { ledgerLog } from '../lib/ledger-client';
-import { checkLegalPersonBinding, type LegalPersonBindingFlag } from '../lib/legal-person-binding';
 
 export const webhookRoutes = new Hono<HonoEnv>();
 
@@ -75,34 +69,6 @@ async function verifyMercurySignature(
   }
   return result === 0;
 }
-
-/** ChittyConnect-normalized transaction (legacy path, kept for backwards compat). */
-const normalizedTransactionSchema = z.object({
-  tenantId: z.string().uuid(),
-  accountId: z.string().uuid(),
-  mercuryTransactionId: z.string(),
-  description: z.string(),
-  amount: z.number(),
-  category: z.string().optional().nullable(),
-  postedAt: z.string(),
-  payee: z.string().optional().nullable(),
-  // Transfer detection. ChittyConnect does not forward these today, so both are
-  // optional and the path behaves exactly as before when they are absent. When
-  // ChittyConnect starts forwarding Mercury's `kind`, internal transfers are
-  // detected here too without a second change.
-  kind: z.string().optional().nullable(),
-  counterpartyNickname: z.string().optional().nullable(),
-  bankDescription: z.string().optional().nullable(),
-});
-
-const normalizedEnvelopeSchema = z.object({
-  id: z.string().optional(),
-  eventId: z.string().optional(),
-  type: z.string().optional(),
-  data: z.object({
-    transaction: normalizedTransactionSchema.optional(),
-  }).optional(),
-});
 
 /**
  * Wave webhook transaction payload.
@@ -297,12 +263,16 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   }, 202);
 });
 
-// POST /api/webhooks/mercury — Legacy ChittyConnect-normalized path (service-token auth)
+// POST /api/webhooks/mercury — Retired legacy normalized-ingest endpoint.
+//
+// Never accept a normalized payload as sufficient evidence for a Mercury
+// ledger write. The canonical path is a signed per-tenant Mercury webhook
+// (/api/webhooks/mercury/:tenantId) followed by source-authoritative
+// reconciliation through ChittyConnect. Return an explicit failure rather
+// than silently acknowledge events that cannot be reconciled.
 webhookRoutes.post('/api/webhooks/mercury', async (c) => {
   const expected = c.env.CHITTY_AUTH_SERVICE_TOKEN;
-  if (!expected) {
-    return c.json({ error: 'auth_not_configured' }, 500);
-  }
+  if (!expected) return c.json({ error: 'auth_not_configured' }, 500);
 
   const auth = c.req.header('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
@@ -310,134 +280,10 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
     return c.json({ error: 'unauthorized' }, 401);
   }
 
-  const rawBody = await c.req.json().catch(() => null);
-  const envelope = normalizedEnvelopeSchema.safeParse(rawBody);
-  if (!envelope.success) {
-    return c.json({ error: 'invalid_envelope', details: envelope.error.flatten() }, 400);
-  }
-
-  const eventId = c.req.header('x-event-id') || envelope.data.id || envelope.data.eventId;
-  if (!eventId) {
-    return c.json({ error: 'missing_event_id' }, 400);
-  }
-
-  const kv = c.env.FINANCE_KV;
-  const dedupKey = `webhook:mercury:${eventId}`;
-  const existing = await kv.get(dedupKey);
-  if (existing) {
-    return c.json({ received: true, duplicate: true }, 202);
-  }
-  await kv.put(dedupKey, JSON.stringify(rawBody || {}), { expirationTtl: 604800 });
-
-  const tx = envelope.data.data?.transaction;
-  if (!tx) {
-    return c.json({ received: true }, 202);
-  }
-
-  // Same rule as the native path: Mercury's own `kind` decides, and an internal
-  // movement is never offered an income or expense code.
-  const transferClassification = isMercuryInternalTransfer(tx.kind)
-    ? classifyMercuryInternalTransfer({
-        tenantId: tx.tenantId,
-        amount: tx.amount,
-        postedAt: tx.postedAt,
-        kind: tx.kind as string,
-        bankDescription: tx.bankDescription ?? null,
-        counterpartyNickname: tx.counterpartyNickname ?? null,
-        counterpartyTenantId: null,
-      })
-    : null;
-
-  const transactionType: TransactionType = transferClassification
-    ? 'transfer'
-    : tx.amount >= 0
-      ? 'income'
-      : 'expense';
-  const suggestedCoaCode = transferClassification
-    ? transferClassification.suggestedCoaCode
-    : findAccountCode(tx.description, tx.category ?? undefined);
-  const isSuspense = suggestedCoaCode === '9010';
-  const classificationConfidence = transferClassification ? '0.950' : isSuspense ? '0.100' : '0.700';
-  const externalId = `mercury:${tx.mercuryTransactionId}`;
-
-  const schemaResult = await validateRow(c.env, 'FinancialTransactionsInsertSchema', {
-    tenantId: tx.tenantId,
-    accountId: tx.accountId,
-    amount: String(tx.amount),
-    type: transactionType,
-    description: tx.description,
-    date: tx.postedAt,
-    externalId,
-  });
-
-  if (!schemaResult.ok && schemaResult.errors) {
-    console.warn('[webhook:mercury] ChittySchema advisory', { eventId, errors: schemaResult.errors });
-  }
-
-  const db = createDb(c.env.DATABASE_URL);
-  const storage = new SystemStorage(db);
-
-  const dupRow = await storage.getTransactionByExternalId(externalId, tx.tenantId);
-  if (dupRow) {
-    return c.json({ received: true, duplicate: true, transactionId: dupRow.id }, 202);
-  }
-
-  // Path B runtime check (legacy normalized path).
-  const acctForBinding = await storage.getAccount(tx.accountId, tx.tenantId);
-  const bindingFlag: LegalPersonBindingFlag | null = checkLegalPersonBinding({
-    source: 'mercury',
-    tenantId: tx.tenantId,
-    accountId: tx.accountId,
-    externalId: acctForBinding?.externalId ?? null,
-    metadata: (acctForBinding?.metadata as Record<string, unknown> | null) ?? null,
-  });
-  if (bindingFlag) {
-    console.warn('[webhook:mercury] reconciliation flag', bindingFlag);
-  }
-
-  const created = await storage.createTransaction({
-    tenantId: tx.tenantId,
-    accountId: tx.accountId,
-    amount: String(tx.amount),
-    type: transactionType,
-    category: tx.category ?? null,
-    description: tx.description,
-    date: new Date(tx.postedAt),
-    payee: tx.payee ?? null,
-    externalId,
-    suggestedCoaCode,
-    classificationConfidence,
-    metadata: {
-      source: 'mercury_webhook',
-      mercuryTransactionId: tx.mercuryTransactionId,
-      eventId,
-      ...(transferClassification?.metadata ?? {}),
-    },
-  });
-
-  ledgerLog(c, {
-    entityType: 'audit',
-    action: 'webhook.mercury.transaction_ingested',
-    metadata: {
-      tenantId: tx.tenantId,
-      accountId: tx.accountId,
-      transactionId: created.id,
-      suggestedCoaCode,
-      confidence: classificationConfidence,
-      schemaAdvisory: schemaResult.advisory,
-      schemaValid: schemaResult.ok,
-      reconciliationFlag: bindingFlag,
-    },
-  }, c.env);
-
   return c.json({
-    received: true,
-    transactionId: created.id,
-    suggestedCoaCode,
-    classificationConfidence,
-    schemaAdvisory: schemaResult.advisory,
-    reconciliationFlags: bindingFlag ? [bindingFlag] : [],
-  }, 201);
+    error: 'LEGACY_MERCURY_INGEST_RETIRED',
+    message: 'Use signed Mercury native webhook and canonical provider reconciliation',
+  }, 410);
 });
 
 // POST /api/webhooks/wave — Wave Accounting webhook with real-time classification
