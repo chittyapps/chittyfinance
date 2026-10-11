@@ -45,6 +45,17 @@ export interface Env {
   NODE_ENV?: string;
   APP_VERSION?: string;
   PUBLIC_APP_BASE_URL?: string;
+  /**
+   * Production-only named ChittyConnect RPC. Returns signature validity,
+   * never Mercury signing-secret material.
+   */
+  SVC_MERCURY_WEBHOOK_VERIFIER?: {
+    verifyMercuryWebhookSignature(input: {
+      organizationId: string;
+      rawBody: string;
+      signatureHeader: string;
+    }): Promise<{ verified: boolean; organizationId: string; reason?: string }>;
+  };
   FINANCE_KV: KVNamespace;
   FINANCE_R2: R2Bucket;
   ASSETS: Fetcher;
