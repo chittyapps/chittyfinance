@@ -150,6 +150,82 @@ webhookRoutes.post('/api/webhooks/stripe', async (c) => {
   return c.json({ received: true });
 });
 
+// POST /api/webhooks/mercury/organization/:organizationId
+//
+// Canonical provider-organization-scoped receiver. FC and CHIT can share a
+// technical tenant partition, yet have different Mercury webhook signing keys.
+// Signature validation happens INSIDE ChittySecrets through the existing
+// ChittyConnect named service-binding. This route never touches Neon/Finance,
+// imports a signing secret, or creates a new registry/checkpoint store.
+webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (c) => {
+  const organizationId = c.req.param('organizationId').toLowerCase();
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(organizationId)) {
+    return c.json({ error: 'invalid_mercury_provider_organization' }, 400);
+  }
+  const verifier = c.env.SVC_MERCURY_WEBHOOK_VERIFIER;
+  if (!verifier || typeof verifier.verifyMercuryWebhookSignature !== 'function') {
+    return c.json({ error: 'mercury_signature_broker_unavailable' }, 503);
+  }
+
+  const signatureHeader = c.req.header('Mercury-Signature') || '';
+  if (!signatureHeader) return c.json({ error: 'missing_mercury_signature' }, 401);
+  const rawBody = await c.req.text();
+  if (rawBody.length > 524288) return c.json({ error: 'mercury_webhook_payload_too_large' }, 413);
+
+  let result: { verified: boolean; organizationId: string };
+  try {
+    result = await verifier.verifyMercuryWebhookSignature({
+      organizationId, rawBody, signatureHeader,
+    });
+  } catch {
+    return c.json({ error: 'mercury_signature_broker_unavailable' }, 503);
+  }
+  if (result?.verified !== true || result.organizationId !== organizationId) {
+    return c.json({ error: 'invalid_mercury_signature' }, 401);
+  }
+
+  let body: unknown;
+  try { body = JSON.parse(rawBody); }
+  catch { return c.json({ received: true, verification: 'signature_only' }, 200); }
+  const parsed = mercuryEventSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ received: true, verification: 'signature_only' }, 200);
+  }
+  const event = parsed.data;
+  const kv = c.env.FINANCE_KV;
+  if (!kv) return c.json({ error: 'mercury_webhook_dedupe_unavailable' }, 503);
+  const eventKey = 'webhook:mercury:org:' + organizationId + ':' + event.id;
+  if (await kv.get(eventKey)) return c.json({ received: true, duplicate: true }, 200);
+  // Reuse existing Finance webhook event-idempotency KV, but NEVER store
+  // a signing secret or financial transaction payload in KV.
+  await kv.put(eventKey, '1', { expirationTtl: 604800 });
+
+  ledgerLog(c, {
+    entityType: 'audit',
+    action: 'webhook.mercury.organization_reconciliation_required',
+    metadata: {
+      mercuryOrganizationId: organizationId,
+      mercuryResourceId: event.resourceId,
+      eventId: event.id,
+      resourceType: event.resourceType,
+      operationType: event.operationType,
+      resourceVersion: event.resourceVersion ?? null,
+      occurredAt: event.occurredAt ?? null,
+      reason: 'verified_provider_event',
+    },
+  }, c.env);
+
+  // A verified pending transaction or balance state change IS activity even
+  // when no new posted transaction exists. Finance reads happen only after
+  // chittyconnect-finance evaluates the downstream activity gate.
+  return c.json({
+    received: true,
+    mercuryOrganizationId: organizationId,
+    eventId: event.id,
+    reconciliationRequired: true,
+  }, 202);
+});
+
 // PUT /api/webhooks/mercury/:tenantId/secret — RETIRED.
 // A tenant_id is a technical partition, not a Mercury provider organization
 // identity. Different Mercury organizations (e.g. FC and CHIT) may bind to
