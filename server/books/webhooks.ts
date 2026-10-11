@@ -49,7 +49,7 @@ async function verifyMercurySignature(
 
   // Reject stale/future-dated signatures before HMAC verification, so a
   // leaked signed request cannot be replayed long after Mercury delivered it.
-  if (!/^\\d{1,12}$/.test(timestamp)) return false;
+  if (!/^\d{1,12}$/.test(timestamp)) return false;
   const issuedAtSeconds = Number(timestamp);
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (!Number.isSafeInteger(issuedAtSeconds) ||
