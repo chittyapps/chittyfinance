@@ -214,12 +214,58 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
     expect(env.FINANCE_KV.put).toHaveBeenCalledTimes(1);
     expect(env.FINANCE_KV.put).toHaveBeenCalledWith(
       'webhook:mercury:org:' + ORG_ID + ':provider-event-1',
-      '1', { expirationTtl: 604800 },
+      JSON.stringify({
+        state: 'reconciliation_required',
+        mercuryOrganizationId: ORG_ID,
+        resourceType: 'transaction',
+        resourceId: 'provider-tx-1',
+        operationType: 'update',
+        resourceVersion: null,
+        occurredAt: '2026-10-11T13:00:00Z',
+      }), { expirationTtl: 604800 },
     );
     const second = await request();
     expect(second.status).toBe(200);
     expect((await second.json() as any).duplicate).toBe(true);
     expect(env.FINANCE_KV.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts signed provider creation events with previousValues null as reconciliation intent', async () => {
+    const verifier = { verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+      verified: true, organizationId: ORG_ID,
+    }) };
+    const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    const created = { ...event, id: 'provider-created-null-1', operationType: 'create', previousValues: null };
+    const res = await app.request(PATH, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+      body: JSON.stringify(created),
+    }, env);
+    expect(res.status).toBe(202);
+    expect((await res.json() as any).reconciliationRequired).toBe(true);
+    const stored = JSON.parse(await env.FINANCE_KV.get(
+      'webhook:mercury:org:' + ORG_ID + ':provider-created-null-1',
+    ));
+    expect(stored.state).toBe('reconciliation_required');
+    expect(stored.mercuryOrganizationId).toBe(ORG_ID);
+    expect(stored.resourceId).toBe('provider-tx-1');
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockCreateAccount).not.toHaveBeenCalled();
+  });
+
+  it('enforces provider webhook payload limit by UTF-8 bytes before invoking verifier', async () => {
+    const verifier = { verifyMercuryWebhookSignature: vi.fn() };
+    const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+      body: 'é'.repeat(262145),
+    }, env);
+    expect(res.status).toBe(413);
+    expect(verifier.verifyMercuryWebhookSignature).not.toHaveBeenCalled();
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
   });
 
   it('invalid broker verdict cannot create an activity signal', async () => {
