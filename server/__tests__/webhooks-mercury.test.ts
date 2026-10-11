@@ -285,6 +285,31 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
     expect(mockCreateAccount).not.toHaveBeenCalled();
   });
 
+  it('refuses signed JSON events missing the Mercury event envelope without acknowledging or writing KV', async () => {
+    const verifier = {
+      verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({ verified: true, organizationId: ORG_ID }),
+      acceptMercuryReconciliationIntent: vi.fn(),
+    };
+    const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    for (const raw of [
+      JSON.stringify({ resourceType: 'transaction', resourceId: 'transaction-1' }),
+      '{"id":',
+    ]) {
+      const res = await app.request(PATH, {
+        method: 'POST',
+        headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+        body: raw,
+      }, env);
+      expect(res.status).toBe(503);
+      expect((await res.json() as any).error).toBe('mercury_invalid_event_envelope');
+    }
+    expect(verifier.acceptMercuryReconciliationIntent).not.toHaveBeenCalled();
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockCreateAccount).not.toHaveBeenCalled();
+  });
+
   it('fails closed on a valid signed event when no durable consumer is deployed', async () => {
     const verifier = { verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
       verified: true, organizationId: ORG_ID,
