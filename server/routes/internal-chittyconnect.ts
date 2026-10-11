@@ -170,7 +170,7 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/entities', async (c) =>
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/balances', async (c) => {
   const storage = c.get('storage');
   const resolved = await resolveTenant(storage, c.req.param('entity'));
-  if (!resolved.tenant) {
+  if ('error' in resolved) {
     const failure = tenantError(resolved.error);
     return c.json(failure.body, failure.status);
   }
@@ -191,7 +191,7 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/balanc
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/transactions', async (c) => {
   const storage = c.get('storage');
   const resolved = await resolveTenant(storage, c.req.param('entity'));
-  if (!resolved.tenant) {
+  if ('error' in resolved) {
     const failure = tenantError(resolved.error);
     return c.json(failure.body, failure.status);
   }
@@ -228,7 +228,7 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/transa
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/cash-flow', async (c) => {
   const storage = c.get('storage');
   const resolved = await resolveTenant(storage, c.req.param('entity'));
-  if (!resolved.tenant) {
+  if ('error' in resolved) {
     const failure = tenantError(resolved.error);
     return c.json(failure.body, failure.status);
   }
