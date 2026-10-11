@@ -55,6 +55,30 @@ export interface Env {
       rawBody: string;
       signatureHeader: string;
     }): Promise<{ verified: boolean; organizationId: string; reason?: string }>;
+    /**
+     * Required for acknowledging an organization-scoped Mercury activity event.
+     * The ChittyConnect RPC must attest durable, idempotent handoff to its
+     * governed finance reconciler; it must never mean ledger reconciliation is
+     * complete. If absent, the receiver returns HTTP 503 and Mercury retries.
+     *
+     * This interface does not provision a queue, store, binding or credential.
+     */
+    acceptMercuryReconciliationIntent?(input: {
+      organizationId: string;
+      providerEventId: string;
+      resourceType: string;
+      resourceId: string;
+      operationType: string;
+      resourceVersion: number | null;
+      occurredAt: string | null;
+      idempotencyKey: string;
+    }): Promise<{
+      accepted: boolean;
+      durable: boolean;
+      organizationId: string;
+      idempotencyKey: string;
+      receiptId: string;
+    }>;
   };
   FINANCE_KV: KVNamespace;
   FINANCE_R2: R2Bucket;

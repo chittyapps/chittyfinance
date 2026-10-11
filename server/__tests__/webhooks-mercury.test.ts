@@ -161,6 +161,14 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
     mergePatch: { status: 'pending' },
   };
 
+  const durableReceipt = (providerEventId: string) => ({
+    accepted: true,
+    durable: true,
+    organizationId: ORG_ID,
+    idempotencyKey: 'webhook:mercury:org:' + ORG_ID + ':' + providerEventId,
+    receiptId: 'broker-receipt-' + providerEventId,
+  });
+
   it('fails closed without a deployed private ChittyConnect verifier', async () => {
     const env = { ...baseEnv, FINANCE_KV: makeKv() };
     const app = await getApp();
@@ -189,9 +197,12 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
   });
 
   it('verified pending transaction is a reconciliation trigger, never a direct ledger row', async () => {
-    const verifier = { verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
-      verified: true, organizationId: ORG_ID,
-    }) };
+    const verifier = {
+      verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+        verified: true, organizationId: ORG_ID,
+      }),
+      acceptMercuryReconciliationIntent: vi.fn().mockResolvedValue(durableReceipt('provider-event-1')),
+    };
     const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
     const app = await getApp();
     const raw = JSON.stringify(event);
@@ -209,6 +220,16 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
       organizationId: ORG_ID, rawBody: raw,
       signatureHeader: 't=1791234000,v1=' + 'a'.repeat(64),
     });
+    expect(verifier.acceptMercuryReconciliationIntent).toHaveBeenCalledWith({
+      organizationId: ORG_ID,
+      providerEventId: 'provider-event-1',
+      resourceType: 'transaction',
+      resourceId: 'provider-tx-1',
+      operationType: 'update',
+      resourceVersion: null,
+      occurredAt: '2026-10-11T13:00:00Z',
+      idempotencyKey: 'webhook:mercury:org:' + ORG_ID + ':provider-event-1',
+    });
     expect(mockCreateTransaction).not.toHaveBeenCalled();
     expect(mockCreateAccount).not.toHaveBeenCalled();
     expect(env.FINANCE_KV.put).toHaveBeenCalledTimes(1);
@@ -222,20 +243,26 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
         operationType: 'update',
         resourceVersion: null,
         occurredAt: '2026-10-11T13:00:00Z',
+        dispatchReceiptId: 'broker-receipt-provider-event-1',
       }), { expirationTtl: 604800 },
     );
     const second = await request();
     expect(second.status).toBe(200);
     const duplicate = await second.json() as any;
     expect(duplicate.duplicate).toBe(true);
+    expect(duplicate.dispatchAccepted).toBe(true);
     expect(duplicate).not.toHaveProperty('reconciliationRequired');
+    expect(verifier.acceptMercuryReconciliationIntent).toHaveBeenCalledTimes(2);
     expect(env.FINANCE_KV.put).toHaveBeenCalledTimes(1);
   });
 
   it('accepts signed provider creation events with previousValues null as reconciliation intent', async () => {
-    const verifier = { verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
-      verified: true, organizationId: ORG_ID,
-    }) };
+    const verifier = {
+      verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+        verified: true, organizationId: ORG_ID,
+      }),
+      acceptMercuryReconciliationIntent: vi.fn().mockResolvedValue(durableReceipt('provider-created-null-1')),
+    };
     const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
     const app = await getApp();
     const created = { ...event, id: 'provider-created-null-1', operationType: 'create', previousValues: null };
@@ -252,6 +279,175 @@ describe('POST /api/webhooks/mercury/organization/:organizationId canonical prov
     expect(stored.state).toBe('reconciliation_required');
     expect(stored.mercuryOrganizationId).toBe(ORG_ID);
     expect(stored.resourceId).toBe('provider-tx-1');
+    expect(stored.dispatchReceiptId).toBe('broker-receipt-provider-created-null-1');
+    expect(verifier.acceptMercuryReconciliationIntent).toHaveBeenCalledTimes(1);
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockCreateAccount).not.toHaveBeenCalled();
+  });
+
+  it('refuses signed JSON events missing the Mercury event envelope without acknowledging or writing KV', async () => {
+    const verifier = {
+      verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({ verified: true, organizationId: ORG_ID }),
+      acceptMercuryReconciliationIntent: vi.fn(),
+    };
+    const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    for (const raw of [
+      JSON.stringify({ resourceType: 'transaction', resourceId: 'transaction-1' }),
+      '{"id":',
+    ]) {
+      const res = await app.request(PATH, {
+        method: 'POST',
+        headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+        body: raw,
+      }, env);
+      expect(res.status).toBe(503);
+      expect((await res.json() as any).error).toBe('mercury_invalid_event_envelope');
+    }
+    expect(verifier.acceptMercuryReconciliationIntent).not.toHaveBeenCalled();
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockCreateAccount).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a valid signed event when no durable consumer is deployed', async () => {
+    const verifier = { verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+      verified: true, organizationId: ORG_ID,
+    }) };
+    const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST', headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+      body: JSON.stringify(event),
+    }, env);
+    expect(res.status).toBe(503);
+    expect((await res.json() as any).error).toBe('mercury_reconciliation_consumer_unavailable');
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockCreateAccount).not.toHaveBeenCalled();
+  });
+
+  it('refuses non-durable, misbound or receipt-less broker confirmations without persisting intent', async () => {
+    const app = await getApp();
+    for (const incomplete of [
+      { ...durableReceipt(event.id), durable: false },
+      { ...durableReceipt(event.id), accepted: false },
+      null,
+      { ...durableReceipt(event.id), organizationId: 'e15f4a46-e328-11ee-9e22-5f2c16c0b48b' },
+      { ...durableReceipt(event.id), receiptId: '' },
+      { ...durableReceipt(event.id), idempotencyKey: 'wrong-event-key' },
+    ]) {
+      const env = {
+        ...baseEnv, FINANCE_KV: makeKv(),
+        SVC_MERCURY_WEBHOOK_VERIFIER: {
+          verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+            verified: true, organizationId: ORG_ID,
+          }),
+          acceptMercuryReconciliationIntent: vi.fn().mockResolvedValue(incomplete),
+        },
+      };
+      const res = await app.request(PATH, {
+        method: 'POST',
+        headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+        body: JSON.stringify(event),
+      }, env);
+      expect(res.status).toBe(503);
+      expect((await res.json() as any).error).toBe('mercury_reconciliation_dispatch_not_durable');
+      expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+    }
+  });
+
+  it('retries source delivery when the broker throws without creating a KV marker', async () => {
+    const env = {
+      ...baseEnv, FINANCE_KV: makeKv(),
+      SVC_MERCURY_WEBHOOK_VERIFIER: {
+        verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({ verified: true, organizationId: ORG_ID }),
+        acceptMercuryReconciliationIntent: vi.fn().mockRejectedValue(new Error('broker unavailable')),
+      },
+    };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST', headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+      body: JSON.stringify(event),
+    }, env);
+    expect(res.status).toBe(503);
+    expect((await res.json() as any).error).toBe('mercury_reconciliation_dispatch_unavailable');
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+  });
+
+  it('retries the same idempotent dispatch when FINANCE_KV write fails after acceptance', async () => {
+    const kv = makeKv();
+    const realPut = kv.put;
+    kv.put = vi.fn()
+      .mockRejectedValueOnce(new Error('kv write unavailable'))
+      .mockImplementation(realPut);
+    const verifier = {
+      verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+        verified: true, organizationId: ORG_ID,
+      }),
+      acceptMercuryReconciliationIntent: vi.fn().mockResolvedValue(durableReceipt(event.id)),
+    };
+    const env = { ...baseEnv, FINANCE_KV: kv, SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    const request = () => app.request(PATH, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+      body: JSON.stringify(event),
+    }, env);
+
+    const first = await request();
+    expect(first.status).toBe(503);
+    expect((await first.json() as any).error).toBe('mercury_reconciliation_kv_unavailable');
+    expect(await kv.get('webhook:mercury:org:' + ORG_ID + ':' + event.id)).toBeNull();
+
+    const retry = await request();
+    expect(retry.status).toBe(202);
+    expect((await retry.json() as any).dispatchAccepted).toBe(true);
+    expect(verifier.acceptMercuryReconciliationIntent).toHaveBeenCalledTimes(2);
+    const stored = JSON.parse(await kv.get('webhook:mercury:org:' + ORG_ID + ':' + event.id));
+    expect(stored.dispatchReceiptId).toBe('broker-receipt-' + event.id);
+  });
+
+  it('does not acknowledge a broker receipt if the KV replay read fails', async () => {
+    const kv = makeKv();
+    kv.get = vi.fn().mockRejectedValue(new Error('kv read unavailable'));
+    const verifier = {
+      verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+        verified: true, organizationId: ORG_ID,
+      }),
+      acceptMercuryReconciliationIntent: vi.fn().mockResolvedValue(durableReceipt(event.id)),
+    };
+    const env = { ...baseEnv, FINANCE_KV: kv, SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+      body: JSON.stringify(event),
+    }, env);
+    expect(res.status).toBe(503);
+    expect((await res.json() as any).error).toBe('mercury_reconciliation_kv_unavailable');
+    expect(kv.put).not.toHaveBeenCalled();
+    expect(verifier.acceptMercuryReconciliationIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('legacy KV receipt marker cannot bypass missing downstream consumer', async () => {
+    const kv = makeKv();
+    await kv.put('webhook:mercury:org:' + ORG_ID + ':' + event.id, '1');
+    const env = {
+      ...baseEnv, FINANCE_KV: kv,
+      SVC_MERCURY_WEBHOOK_VERIFIER: {
+        verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({ verified: true, organizationId: ORG_ID }),
+      },
+    };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST', headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+      body: JSON.stringify(event),
+    }, env);
+    expect(res.status).toBe(503);
+    expect((await res.json() as any).error).toBe('mercury_reconciliation_consumer_unavailable');
+    // The sole put is the test's own setup, never a handler write.
+    expect(kv.put).toHaveBeenCalledTimes(1);
     expect(mockCreateTransaction).not.toHaveBeenCalled();
     expect(mockCreateAccount).not.toHaveBeenCalled();
   });

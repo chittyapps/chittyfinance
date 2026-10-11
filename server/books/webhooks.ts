@@ -194,33 +194,100 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
     return c.json({ error: 'invalid_mercury_signature' }, 401);
   }
 
+  // Mercury's VerifyWebhook sends an event envelope, not an exempt ping.
+  // Never acknowledge a signed, unparseable source event: it would escape
+  // the Events API reconciliation path without leaving any durable intent.
   let body: unknown;
-  try { body = JSON.parse(rawBody); }
-  catch { return c.json({ received: true, verification: 'signature_only' }, 200); }
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    console.error('[webhook:mercury:organization] unparseable signed envelope', { organizationId });
+    return c.json({ error: 'mercury_invalid_event_envelope' }, 503);
+  }
   const parsed = mercuryEventSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ received: true, verification: 'signature_only' }, 200);
+    console.error('[webhook:mercury:organization] incomplete signed envelope', { organizationId });
+    return c.json({ error: 'mercury_invalid_event_envelope' }, 503);
   }
   const event = parsed.data;
   const kv = c.env.FINANCE_KV;
   if (!kv) return c.json({ error: 'mercury_webhook_dedupe_unavailable' }, 503);
   const eventKey = 'webhook:mercury:org:' + organizationId + ':' + event.id;
-  if (await kv.get(eventKey)) {
-    // A repeated delivery proves receipt only, not reconciliation completion.
-    return c.json({ received: true, duplicate: true }, 200);
+  // Never acknowledge an unconsumed intent. The Finance KV marker is only a
+  // replay hint, and an async ledger audit is not a reconciler dispatch.
+  // ChittyConnect must first durably accept this provider event through its
+  // existing finance adapter, idempotent on the Mercury org and event ID.
+  const acceptIntent = verifier.acceptMercuryReconciliationIntent;
+  if (typeof acceptIntent !== 'function') {
+    console.warn('[webhook:mercury:organization] durable dispatch unavailable', {
+      organizationId, eventId: event.id, reason: 'consumer_method_missing',
+    });
+    return c.json({ error: 'mercury_reconciliation_consumer_unavailable' }, 503);
+  }
+  let dispatch: {
+    accepted: boolean; durable: boolean; organizationId: string;
+    idempotencyKey: string; receiptId: string;
+  };
+  try {
+    dispatch = await acceptIntent.call(verifier, {
+      organizationId,
+      providerEventId: event.id,
+      resourceType: event.resourceType,
+      resourceId: event.resourceId,
+      operationType: event.operationType,
+      resourceVersion: event.resourceVersion ?? null,
+      occurredAt: event.occurredAt ?? null,
+      idempotencyKey: eventKey,
+    });
+  } catch (err) {
+    // Never log raw bodies, signing material, or provider payload fragments.
+    console.error('[webhook:mercury:organization] durable dispatch failed', {
+      organizationId, eventId: event.id,
+      errorClass: err instanceof Error ? err.name : 'unknown',
+    });
+    return c.json({ error: 'mercury_reconciliation_dispatch_unavailable' }, 503);
+  }
+  if (dispatch?.accepted !== true || dispatch.durable !== true ||
+      dispatch.organizationId !== organizationId ||
+      dispatch.idempotencyKey !== eventKey ||
+      typeof dispatch.receiptId !== 'string' || !dispatch.receiptId.trim()) {
+    console.warn('[webhook:mercury:organization] durable receipt rejected', {
+      organizationId, eventId: event.id, reason: 'receipt_identity_or_durability_mismatch',
+    });
+    return c.json({ error: 'mercury_reconciliation_dispatch_not_durable' }, 503);
+  }
+  // Even duplicates must be reaccepted by the governed consumer. A historical
+  // KV value of '1' cannot be treated as proof of dispatch.
+  let existing: string | null;
+  try {
+    existing = await kv.get(eventKey);
+  } catch {
+    console.error('[webhook:mercury:organization] replay read unavailable', { organizationId, eventId: event.id });
+    return c.json({ error: 'mercury_reconciliation_kv_unavailable' }, 503);
+  }
+  if (existing) {
+    return c.json({ received: true, duplicate: true, dispatchAccepted: true }, 200);
   }
   // Existing event-idempotency record holds an outstanding source-linked intent,
   // NOT a reconciliation success receipt or a new checkpoint/ledger/store.
   // Never persist the signed event body, mergePatch or signing secret.
-  await kv.put(eventKey, JSON.stringify({
-    state: 'reconciliation_required',
-    mercuryOrganizationId: organizationId,
-    resourceType: event.resourceType,
-    resourceId: event.resourceId,
-    operationType: event.operationType,
-    resourceVersion: event.resourceVersion ?? null,
-    occurredAt: event.occurredAt ?? null,
-  }), { expirationTtl: 604800 });
+  try {
+    await kv.put(eventKey, JSON.stringify({
+      state: 'reconciliation_required',
+      mercuryOrganizationId: organizationId,
+      resourceType: event.resourceType,
+      resourceId: event.resourceId,
+      operationType: event.operationType,
+      resourceVersion: event.resourceVersion ?? null,
+      occurredAt: event.occurredAt ?? null,
+      dispatchReceiptId: dispatch.receiptId,
+    }), { expirationTtl: 604800 });
+  } catch {
+    // Broker acceptance was durable but local replay metadata could not be
+    // recorded; ask Mercury to retry with the same provider idempotency key.
+    console.error('[webhook:mercury:organization] replay write unavailable', { organizationId, eventId: event.id });
+    return c.json({ error: 'mercury_reconciliation_kv_unavailable' }, 503);
+  }
 
   ledgerLog(c, {
     entityType: 'audit',
@@ -234,6 +301,7 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
       resourceVersion: event.resourceVersion ?? null,
       occurredAt: event.occurredAt ?? null,
       reason: 'verified_provider_event',
+      dispatchReceiptId: dispatch.receiptId,
     },
   }, c.env);
 
@@ -245,6 +313,8 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
     mercuryOrganizationId: organizationId,
     eventId: event.id,
     reconciliationRequired: true,
+    dispatchAccepted: true,
+    dispatchReceiptId: dispatch.receiptId,
   }, 202);
 });
 
