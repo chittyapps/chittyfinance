@@ -11,6 +11,8 @@ export const webhookRoutes = new Hono<HonoEnv>();
 
 // ── Mercury native webhook types ──
 
+const MERCURY_WEBHOOK_MAX_BYTES = 524288;
+
 /** Mercury event envelope (JSON Merge Patch format). */
 const mercuryEventSchema = z.object({
   id: z.string(),
@@ -21,7 +23,7 @@ const mercuryEventSchema = z.object({
   occurredAt: z.string().optional(),
   changedPaths: z.array(z.string()).optional(),
   mergePatch: z.record(z.unknown()).optional(),
-  previousValues: z.record(z.unknown()).optional(),
+  previousValues: z.record(z.unknown()).nullable().optional(),
 });
 
 /**
@@ -169,8 +171,16 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
 
   const signatureHeader = c.req.header('Mercury-Signature') || '';
   if (!signatureHeader) return c.json({ error: 'missing_mercury_signature' }, 401);
+  // Reject declared oversize bodies before buffering; still measure actual
+  // UTF-8 bytes after reading because Content-Length may be absent or false.
+  const declaredLength = Number(c.req.header('Content-Length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MERCURY_WEBHOOK_MAX_BYTES) {
+    return c.json({ error: 'mercury_webhook_payload_too_large' }, 413);
+  }
   const rawBody = await c.req.text();
-  if (rawBody.length > 524288) return c.json({ error: 'mercury_webhook_payload_too_large' }, 413);
+  if (new TextEncoder().encode(rawBody).byteLength > MERCURY_WEBHOOK_MAX_BYTES) {
+    return c.json({ error: 'mercury_webhook_payload_too_large' }, 413);
+  }
 
   let result: { verified: boolean; organizationId: string };
   try {
@@ -195,10 +205,22 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
   const kv = c.env.FINANCE_KV;
   if (!kv) return c.json({ error: 'mercury_webhook_dedupe_unavailable' }, 503);
   const eventKey = 'webhook:mercury:org:' + organizationId + ':' + event.id;
-  if (await kv.get(eventKey)) return c.json({ received: true, duplicate: true }, 200);
-  // Reuse existing Finance webhook event-idempotency KV, but NEVER store
-  // a signing secret or financial transaction payload in KV.
-  await kv.put(eventKey, '1', { expirationTtl: 604800 });
+  if (await kv.get(eventKey)) {
+    // A repeated delivery proves receipt only, not reconciliation completion.
+    return c.json({ received: true, duplicate: true }, 200);
+  }
+  // Existing event-idempotency record holds an outstanding source-linked intent,
+  // NOT a reconciliation success receipt or a new checkpoint/ledger/store.
+  // Never persist the signed event body, mergePatch or signing secret.
+  await kv.put(eventKey, JSON.stringify({
+    state: 'reconciliation_required',
+    mercuryOrganizationId: organizationId,
+    resourceType: event.resourceType,
+    resourceId: event.resourceId,
+    operationType: event.operationType,
+    resourceVersion: event.resourceVersion ?? null,
+    occurredAt: event.occurredAt ?? null,
+  }), { expirationTtl: 604800 });
 
   ledgerLog(c, {
     entityType: 'audit',
