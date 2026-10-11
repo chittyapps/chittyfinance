@@ -265,256 +265,66 @@ describe('POST /api/webhooks/mercury/:tenantId native lifecycle', () => {
   });
 });
 
-describe('POST /api/webhooks/mercury', () => {
-  it('rejects missing Bearer token with 401', async () => {
+describe('POST /api/webhooks/mercury — retired normalized input', () => {
+  it('rejects missing Bearer credentials without invoking a financial operation', async () => {
     const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      { method: 'POST', body: JSON.stringify(buildEnvelope()) },
-      baseEnv,
-    );
+    const res = await app.request('/api/webhooks/mercury', {
+      method: 'POST',
+      body: JSON.stringify(buildEnvelope()),
+    }, baseEnv);
     expect(res.status).toBe(401);
-  });
-
-  it('rejects wrong token with 401', async () => {
-    const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer wrong', 'content-type': 'application/json' },
-        body: JSON.stringify(buildEnvelope()),
-      },
-      baseEnv,
-    );
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects invalid envelope with 400', async () => {
-    const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify({ data: { transaction: { bad: 'shape' } } }),
-      },
-      baseEnv,
-    );
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
-    expect(body.error).toBe('invalid_envelope');
-  });
-
-  it('persists transaction with auto-classified suggestedCoaCode', async () => {
-    mockGetByExternalId.mockResolvedValue(null);
-    mockCreateTransaction.mockResolvedValue({ id: 'new-tx-id' });
-    // ChittySchema returns valid
-    global.fetch = vi.fn(
-      async () => new Response(JSON.stringify({ valid: true }), { status: 200 }),
-    ) as any;
-
-    const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify(buildEnvelope()),
-      },
-      baseEnv,
-    );
-
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as any;
-    expect(body.received).toBe(true);
-    expect(body.transactionId).toBe('new-tx-id');
-    // "Home Depot" maps to supplies (5080) via TURBOTENANT_CATEGORY_MAP
-    // and "Repairs" category also matches 5070 — category takes precedence
-    expect(body.suggestedCoaCode).toBe('5070');
-    expect(body.classificationConfidence).toBe('0.700');
-    expect(body.schemaAdvisory).toBe(false);
-
-    expect(mockCreateTransaction).toHaveBeenCalledOnce();
-    const call = mockCreateTransaction.mock.calls[0][0];
-    expect(call.tenantId).toBe(TENANT_ID);
-    expect(call.accountId).toBe(ACCOUNT_ID);
-    expect(call.externalId).toBe('mercury:mtx-abc');
-    expect(call.suggestedCoaCode).toBe('5070');
-    expect(call.type).toBe('expense'); // negative amount
-    expect(call.metadata).toEqual({
-      source: 'mercury_webhook',
-      mercuryTransactionId: 'mtx-abc',
-      eventId: 'evt-1',
-    });
-  });
-
-  it('assigns suspense 9010 with low confidence for unmatchable descriptions', async () => {
-    mockGetByExternalId.mockResolvedValue(null);
-    mockCreateTransaction.mockResolvedValue({ id: 'new-tx-id' });
-    global.fetch = vi.fn(
-      async () => new Response(JSON.stringify({ valid: true }), { status: 200 }),
-    ) as any;
-
-    const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify(
-          buildEnvelope({ description: 'xyz unknown merchant', category: null }),
-        ),
-      },
-      baseEnv,
-    );
-
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as any;
-    expect(body.suggestedCoaCode).toBe('9010');
-    expect(body.classificationConfidence).toBe('0.100');
-  });
-
-  it('dedups via KV on repeat event id', async () => {
-    mockGetByExternalId.mockResolvedValue(null);
-    mockCreateTransaction.mockResolvedValue({ id: 'new-tx-id' });
-    global.fetch = vi.fn(
-      async () => new Response(JSON.stringify({ valid: true }), { status: 200 }),
-    ) as any;
-
-    const app = await getApp();
-    const env = { ...baseEnv, FINANCE_KV: makeKv() };
-
-    // First request creates
-    const res1 = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify(buildEnvelope()),
-      },
-      env,
-    );
-    expect(res1.status).toBe(201);
-
-    // Second request with same event id is deduped
-    const res2 = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify(buildEnvelope()),
-      },
-      env,
-    );
-    expect(res2.status).toBe(202);
-    const body = (await res2.json()) as any;
-    expect(body.duplicate).toBe(true);
-    expect(mockCreateTransaction).toHaveBeenCalledOnce(); // only the first one persisted
-  });
-
-  it('dedups via externalId if KV write was lost between retries', async () => {
-    mockGetByExternalId.mockResolvedValue({ id: 'existing-tx-id' });
-    global.fetch = vi.fn(
-      async () => new Response(JSON.stringify({ valid: true }), { status: 200 }),
-    ) as any;
-
-    const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify(buildEnvelope()),
-      },
-      baseEnv,
-    );
-
-    expect(res.status).toBe(202);
-    const body = (await res.json()) as any;
-    expect(body.duplicate).toBe(true);
-    expect(body.transactionId).toBe('existing-tx-id');
     expect(mockCreateTransaction).not.toHaveBeenCalled();
   });
 
-  it('persists even when ChittySchema validation fails (advisory, not blocking)', async () => {
-    mockGetByExternalId.mockResolvedValue(null);
-    mockCreateTransaction.mockResolvedValue({ id: 'new-tx-id' });
-    global.fetch = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({ valid: false, errors: [{ path: 'amount', message: 'bad' }] }),
-          { status: 200 },
-        ),
-    ) as any;
-
+  it('rejects the wrong service credential', async () => {
     const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify(buildEnvelope()),
-      },
-      baseEnv,
-    );
-
-    // Still persisted despite schema failure — advisory, not blocking
-    expect(res.status).toBe(201);
-    expect(mockCreateTransaction).toHaveBeenCalledOnce();
+    const res = await app.request('/api/webhooks/mercury', {
+      method: 'POST',
+      headers: { authorization: 'Bearer wrong', 'content-type': 'application/json' },
+      body: JSON.stringify(buildEnvelope()),
+    }, baseEnv);
+    expect(res.status).toBe(401);
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
   });
 
-  it('persists even when ChittySchema is unreachable', async () => {
-    mockGetByExternalId.mockResolvedValue(null);
-    mockCreateTransaction.mockResolvedValue({ id: 'new-tx-id' });
-    global.fetch = vi.fn(async () => {
-      throw new TypeError('fetch failed');
-    }) as any;
-
+  it('fails explicitly for authorized callers rather than acknowledging an unsourced transaction', async () => {
     const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify(buildEnvelope()),
-      },
-      baseEnv,
-    );
-
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as any;
-    expect(body.schemaAdvisory).toBe(true);
-    expect(mockCreateTransaction).toHaveBeenCalledOnce();
+    const res = await app.request('/api/webhooks/mercury', {
+      method: 'POST',
+      headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
+      body: JSON.stringify(buildEnvelope()),
+    }, baseEnv);
+    expect(res.status).toBe(410);
+    expect((await res.json() as any).error).toBe('LEGACY_MERCURY_INGEST_RETIRED');
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockGetByExternalId).not.toHaveBeenCalled();
   });
 
-  it('acks envelope-only events (no transaction) with 202', async () => {
+  it('never parses or writes unverified/malformed normalized events into finance', async () => {
     const app = await getApp();
-    const res = await app.request(
-      '/api/webhooks/mercury',
-      {
-        method: 'POST',
-        headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
-        body: JSON.stringify({ id: 'evt-noop', type: 'account.created' }),
-      },
-      baseEnv,
-    );
-    expect(res.status).toBe(202);
+    const env = { ...baseEnv, FINANCE_KV: makeKv() };
+    const res = await app.request('/api/webhooks/mercury', {
+      method: 'POST',
+      headers: { authorization: 'Bearer svc-token', 'content-type': 'application/json' },
+      body: '{malformed',
+    }, env);
+    expect(res.status).toBe(410);
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockGetByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when service authorization is not configured', async () => {
+    const app = await getApp();
+    const env = { ...baseEnv, CHITTY_AUTH_SERVICE_TOKEN: undefined };
+    const res = await app.request('/api/webhooks/mercury', {
+      method: 'POST',
+      headers: { authorization: 'Bearer svc-token' },
+    }, env);
+    expect(res.status).toBe(500);
     expect(mockCreateTransaction).not.toHaveBeenCalled();
   });
 });
 
-/**
- * Guard against the drift that made every test in this file fail with a 500:
- * the route grew storage calls the stand-in above did not implement. If this
- * fails, add the missing method to MockSystemStorage rather than deleting the
- * assertion -- a stand-in narrower than the route is a suite that tests nothing.
- *
- * It matches direct `storage.method(` calls only, which is every call the route
- * currently makes. It would miss `storage[name](...)`, a destructured method, or
- * a call split across lines after the dot. Those are worth avoiding in the route
- * for exactly this reason; if one appears, this guard silently stops covering it.
- */
 describe('storage surface', () => {
   it('implements every storage method the webhook route calls', async () => {
     const src = await import('node:fs').then((fs) =>
