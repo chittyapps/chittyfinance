@@ -131,14 +131,14 @@
         "MODE": "system",
         "NODE_ENV": "staging",
         "APP_VERSION": "2.0.0",
-        "CHITTYCONNECT_API_BASE": "https://connect.chitty.cc"
+        "CHITTYCONNECT_API_BASE": ""
       },
       "triggers": { "crons": ["0 9 * * *"] },
       "kv_namespaces": [
-        { "binding": "FINANCE_KV", "id": "517b63be4d7144c197b5bdf851f12041" }
+        { "binding": "FINANCE_KV", "id": "89d0b3bc875e49c4a3a9091de6a080aa" }
       ],
       "r2_buckets": [
-        { "binding": "FINANCE_R2", "bucket_name": "chittyfinance-storage" }
+        { "binding": "FINANCE_R2", "bucket_name": "chittyfinance-storage-preview" }
       ],
       "durable_objects": {
         "bindings": [{ "name": "CF_AGENT", "class_name": "ChittyAgent" }]
