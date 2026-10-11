@@ -151,6 +151,97 @@ async function mercurySignature(rawBody: string, secret: string, timestamp = Str
   return `t=${timestamp},v1=${hex}`;
 }
 
+describe('POST /api/webhooks/mercury/organization/:organizationId canonical provider receiver', () => {
+  const ORG_ID = '9082ea0c-07a8-11ef-b331-734021561438';
+  const PATH = '/api/webhooks/mercury/organization/' + ORG_ID;
+  const event = {
+    id: 'provider-event-1', resourceType: 'transaction',
+    resourceId: 'provider-tx-1', operationType: 'update',
+    occurredAt: '2026-10-11T13:00:00Z',
+    mergePatch: { status: 'pending' },
+  };
+
+  it('fails closed without a deployed private ChittyConnect verifier', async () => {
+    const env = { ...baseEnv, FINANCE_KV: makeKv() };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': 't=1791234000,v1=deadbeef' },
+      body: JSON.stringify(event),
+    }, env);
+    expect(res.status).toBe(503);
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+  });
+
+  it('does not trust caller-controlled org identity without broker confirmation', async () => {
+    const verifier = { verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+      verified: true, organizationId: 'e15f4a46-e328-11ee-9e22-5f2c16c0b48b',
+    }) };
+    const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': 't=1791234000,v1=deadbeef' },
+      body: JSON.stringify(event),
+    }, env);
+    expect(res.status).toBe(401);
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+  });
+
+  it('verified pending transaction is a reconciliation trigger, never a direct ledger row', async () => {
+    const verifier = { verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+      verified: true, organizationId: ORG_ID,
+    }) };
+    const env = { ...baseEnv, FINANCE_KV: makeKv(), SVC_MERCURY_WEBHOOK_VERIFIER: verifier };
+    const app = await getApp();
+    const raw = JSON.stringify(event);
+    const request = () => app.request(PATH, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': 't=1791234000,v1=' + 'a'.repeat(64) },
+      body: raw,
+    }, env);
+    const first = await request();
+    expect(first.status).toBe(202);
+    const body = await first.json() as any;
+    expect(body.reconciliationRequired).toBe(true);
+    expect(body.mercuryOrganizationId).toBe(ORG_ID);
+    expect(verifier.verifyMercuryWebhookSignature).toHaveBeenCalledWith({
+      organizationId: ORG_ID, rawBody: raw,
+      signatureHeader: 't=1791234000,v1=' + 'a'.repeat(64),
+    });
+    expect(mockCreateTransaction).not.toHaveBeenCalled();
+    expect(mockCreateAccount).not.toHaveBeenCalled();
+    expect(env.FINANCE_KV.put).toHaveBeenCalledTimes(1);
+    expect(env.FINANCE_KV.put).toHaveBeenCalledWith(
+      'webhook:mercury:org:' + ORG_ID + ':provider-event-1',
+      '1', { expirationTtl: 604800 },
+    );
+    const second = await request();
+    expect(second.status).toBe(200);
+    expect((await second.json() as any).duplicate).toBe(true);
+    expect(env.FINANCE_KV.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalid broker verdict cannot create an activity signal', async () => {
+    const env = {
+      ...baseEnv, FINANCE_KV: makeKv(),
+      SVC_MERCURY_WEBHOOK_VERIFIER: {
+        verifyMercuryWebhookSignature: vi.fn().mockResolvedValue({
+          verified: false, organizationId: ORG_ID,
+        }),
+      },
+    };
+    const app = await getApp();
+    const res = await app.request(PATH, {
+      method: 'POST',
+      headers: { 'Mercury-Signature': 't=1791234000,v1=deadbeef' },
+      body: JSON.stringify(event),
+    }, env);
+    expect(res.status).toBe(401);
+    expect(env.FINANCE_KV.put).not.toHaveBeenCalled();
+  });
+});
+
 describe('PUT /api/webhooks/mercury/:tenantId/secret — retired', () => {
   it('cannot persist a one-time Mercury signing secret to tenant KV', async () => {
     const env = { ...baseEnv, FINANCE_KV: makeKv() };
