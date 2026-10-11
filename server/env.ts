@@ -77,7 +77,7 @@ export interface Env {
       durable: boolean;
       organizationId: string;
       idempotencyKey: string;
-      receiptId?: string;
+      receiptId: string;
     }>;
   };
   FINANCE_KV: KVNamespace;
