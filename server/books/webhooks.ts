@@ -211,6 +211,9 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
   // existing finance adapter, idempotent on the Mercury org and event ID.
   const acceptIntent = verifier.acceptMercuryReconciliationIntent;
   if (typeof acceptIntent !== 'function') {
+    console.warn('[webhook:mercury:organization] durable dispatch unavailable', {
+      organizationId, eventId: event.id, reason: 'consumer_method_missing',
+    });
     return c.json({ error: 'mercury_reconciliation_consumer_unavailable' }, 503);
   }
   let dispatch: {
@@ -228,33 +231,55 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
       occurredAt: event.occurredAt ?? null,
       idempotencyKey: eventKey,
     });
-  } catch {
+  } catch (err) {
+    // Never log raw bodies, signing material, or provider payload fragments.
+    console.error('[webhook:mercury:organization] durable dispatch failed', {
+      organizationId, eventId: event.id,
+      errorClass: err instanceof Error ? err.name : 'unknown',
+    });
     return c.json({ error: 'mercury_reconciliation_dispatch_unavailable' }, 503);
   }
   if (dispatch?.accepted !== true || dispatch.durable !== true ||
       dispatch.organizationId !== organizationId ||
       dispatch.idempotencyKey !== eventKey ||
       typeof dispatch.receiptId !== 'string' || !dispatch.receiptId.trim()) {
+    console.warn('[webhook:mercury:organization] durable receipt rejected', {
+      organizationId, eventId: event.id, reason: 'receipt_identity_or_durability_mismatch',
+    });
     return c.json({ error: 'mercury_reconciliation_dispatch_not_durable' }, 503);
   }
   // Even duplicates must be reaccepted by the governed consumer. A historical
   // KV value of '1' cannot be treated as proof of dispatch.
-  if (await kv.get(eventKey)) {
+  let existing: string | null;
+  try {
+    existing = await kv.get(eventKey);
+  } catch {
+    console.error('[webhook:mercury:organization] replay read unavailable', { organizationId, eventId: event.id });
+    return c.json({ error: 'mercury_reconciliation_kv_unavailable' }, 503);
+  }
+  if (existing) {
     return c.json({ received: true, duplicate: true, dispatchAccepted: true }, 200);
   }
   // Existing event-idempotency record holds an outstanding source-linked intent,
   // NOT a reconciliation success receipt or a new checkpoint/ledger/store.
-  // Never persist signed content, the mergePatch, or signing key.
-  await kv.put(eventKey, JSON.stringify({
-    state: 'reconciliation_required',
-    mercuryOrganizationId: organizationId,
-    resourceType: event.resourceType,
-    resourceId: event.resourceId,
-    operationType: event.operationType,
-    resourceVersion: event.resourceVersion ?? null,
-    occurredAt: event.occurredAt ?? null,
-    dispatchReceiptId: dispatch.receiptId,
-  }), { expirationTtl: 604800 });
+  // Never persist the signed event body, mergePatch or signing secret.
+  try {
+    await kv.put(eventKey, JSON.stringify({
+      state: 'reconciliation_required',
+      mercuryOrganizationId: organizationId,
+      resourceType: event.resourceType,
+      resourceId: event.resourceId,
+      operationType: event.operationType,
+      resourceVersion: event.resourceVersion ?? null,
+      occurredAt: event.occurredAt ?? null,
+      dispatchReceiptId: dispatch.receiptId,
+    }), { expirationTtl: 604800 });
+  } catch {
+    // Broker acceptance was durable but local replay metadata could not be
+    // recorded; ask Mercury to retry with the same provider idempotency key.
+    console.error('[webhook:mercury:organization] replay write unavailable', { organizationId, eventId: event.id });
+    return c.json({ error: 'mercury_reconciliation_kv_unavailable' }, 503);
+  }
 
   ledgerLog(c, {
     entityType: 'audit',
