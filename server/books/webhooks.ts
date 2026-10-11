@@ -206,7 +206,8 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
   if (!kv) return c.json({ error: 'mercury_webhook_dedupe_unavailable' }, 503);
   const eventKey = 'webhook:mercury:org:' + organizationId + ':' + event.id;
   if (await kv.get(eventKey)) {
-    return c.json({ received: true, duplicate: true, reconciliationRequired: true }, 200);
+    // A repeated delivery proves receipt only, not reconciliation completion.
+    return c.json({ received: true, duplicate: true }, 200);
   }
   // Existing event-idempotency record holds an outstanding source-linked intent,
   // NOT a reconciliation success receipt or a new checkpoint/ledger/store.
