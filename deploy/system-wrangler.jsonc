@@ -26,6 +26,17 @@
     { "pattern": "finance.chitty.cc/*", "zone_name": "chitty.cc" }
   ],
 
+  // Production-only, non-secret named RPC. Finance receives boolean verdicts,
+  // never Mercury signing keys. No staging/dev inheritance.
+  "services": [
+    {
+      "binding": "SVC_MERCURY_WEBHOOK_VERIFIER",
+      "service": "chittyconnect",
+      "entrypoint": "ChittyConnectFinanceWebhookVerifier",
+      "environment": "production"
+    }
+  ],
+
   // Hyperdrive binding for fractal scope projection into ChittyOS-Core
   "hyperdrive": [
     { "binding": "CHITTYOS_CORE_DB", "id": "1d126444cff1416cb415447e6cc6d15a" },
@@ -164,6 +175,14 @@
       "workers_dev": false,
       "routes": [
         { "pattern": "finance.chitty.cc/*", "zone_name": "chitty.cc" }
+      ],
+      "services": [
+        {
+          "binding": "SVC_MERCURY_WEBHOOK_VERIFIER",
+          "service": "chittyconnect",
+          "entrypoint": "ChittyConnectFinanceWebhookVerifier",
+          "environment": "production"
+        }
       ],
       "send_email": [
         { "name": "EMAIL", "allowed_sender_addresses": ["finance@chitty.cc", "noreply@chitty.cc"] }
