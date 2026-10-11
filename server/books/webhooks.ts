@@ -47,6 +47,16 @@ async function verifyMercurySignature(
 
   if (!timestamp || !signature) return false;
 
+  // Reject stale/future-dated signatures before HMAC verification, so a
+  // leaked signed request cannot be replayed long after Mercury delivered it.
+  if (!/^\\d{1,12}$/.test(timestamp)) return false;
+  const issuedAtSeconds = Number(timestamp);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(issuedAtSeconds) ||
+      issuedAtSeconds < nowSeconds - 300 || issuedAtSeconds > nowSeconds + 60) {
+    return false;
+  }
+
   const signedPayload = `${timestamp}.${rawBody}`;
   const encoder = new TextEncoder();
 
@@ -231,7 +241,17 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
   if (existing) {
     return c.json({ received: true, duplicate: true }, 200);
   }
-  await kv.put(dedupKey, rawBody, { expirationTtl: 604800 });
+  // Reuse the existing idempotency record to retain a minimal, source-linked
+  // reconciliation intent. Do NOT store the raw bank event or its mergePatch
+  // inside KV. This is an intent marker, not proof of finance reconciliation.
+  await kv.put(dedupKey, JSON.stringify({
+    state: 'reconciliation_required',
+    resourceType: event.resourceType,
+    resourceId: event.resourceId,
+    operationType: event.operationType,
+    resourceVersion: event.resourceVersion ?? null,
+    occurredAt: event.occurredAt ?? null,
+  }), { expirationTtl: 604800 });
 
   // Mercury webhook payloads are activity signals, not authoritative ledger
   // records. JSON Merge Patch events may be partial and may arrive out of order.
