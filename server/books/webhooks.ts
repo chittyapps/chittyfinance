@@ -194,12 +194,20 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
     return c.json({ error: 'invalid_mercury_signature' }, 401);
   }
 
+  // Mercury's VerifyWebhook sends an event envelope, not an exempt ping.
+  // Never acknowledge a signed, unparseable source event: it would escape
+  // the Events API reconciliation path without leaving any durable intent.
   let body: unknown;
-  try { body = JSON.parse(rawBody); }
-  catch { return c.json({ received: true, verification: 'signature_only' }, 200); }
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    console.error('[webhook:mercury:organization] unparseable signed envelope', { organizationId });
+    return c.json({ error: 'mercury_invalid_event_envelope' }, 503);
+  }
   const parsed = mercuryEventSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ received: true, verification: 'signature_only' }, 200);
+    console.error('[webhook:mercury:organization] incomplete signed envelope', { organizationId });
+    return c.json({ error: 'mercury_invalid_event_envelope' }, 503);
   }
   const event = parsed.data;
   const kv = c.env.FINANCE_KV;
