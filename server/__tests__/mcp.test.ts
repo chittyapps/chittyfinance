@@ -33,7 +33,7 @@ function createMockStorage() {
   };
 }
 
-function buildApp() {
+function buildApp(authMethod: 'chittyauth' | 'session' | 'service' | 'none' = 'chittyauth') {
   const app = new Hono<HonoEnv>();
   const storage = createMockStorage();
   let observedExecution: any;
@@ -43,7 +43,7 @@ function buildApp() {
     c.set('storage', storage as any);
     c.set('tenantId', 'test-tenant');
     c.set('userId', 'user-1');
-    c.set('authMethod', 'chittyauth');
+    if (authMethod !== 'none') c.set('authMethod', authMethod);
     c.set('executionContext', {
       actor: { userId: 'user-1', authMethod: 'chittyauth' },
       source: { service: 'test', claimed: false },
@@ -75,6 +75,39 @@ describe('MCP endpoint', () => {
 
   beforeEach(() => {
     ({ app, storage, getExecution } = buildApp());
+  });
+
+  // ── Delegated authorization (P0 #175) ──
+
+  it('denies the legacy service-token identity even with a chosen user and tenant', async () => {
+    const { app: legacyApp, storage: legacyStorage } = buildApp('service');
+    for (const [method, params] of [
+      ['initialize', undefined],
+      ['resources/read', { uri: 'finance://properties' }],
+      ['tools/list', undefined],
+      ['tools/call', { name: 'get-property-advice', arguments: { propertyId: 'p1', message: 'hello' } }],
+    ] as const) {
+      const res = await rpc(legacyApp, method, params);
+      expect(res.status).toBe(403);
+      expect((await res.json() as any).error).toBe('delegated_identity_required');
+    }
+    expect(legacyStorage.getProperties).not.toHaveBeenCalled();
+    expect(legacyStorage.getProperty).not.toHaveBeenCalled();
+  });
+
+  it('denies missing authMethod even if userId and tenantId were prefilled', async () => {
+    const { app: unverifiedApp, storage: unverifiedStorage } = buildApp('none');
+    const res = await rpc(unverifiedApp, 'resources/read', { uri: 'finance://tenants' });
+    expect(res.status).toBe(403);
+    expect((await res.json() as any).error).toBe('delegated_identity_required');
+    expect(unverifiedStorage.getUserTenants).not.toHaveBeenCalled();
+  });
+
+  it('preserves existing verified-session identity access', async () => {
+    const { app: sessionApp } = buildApp('session');
+    const res = await rpc(sessionApp, 'tools/list');
+    expect(res.status).toBe(200);
+    expect((await res.json() as any).result.tools).toHaveLength(2);
   });
 
   // ── Protocol ──
