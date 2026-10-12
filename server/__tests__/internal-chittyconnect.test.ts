@@ -302,10 +302,10 @@ const bindingPath = 'https://internal/internal/chittyconnect/mercury/account-bin
 
 function bindingStorage(overrides: Record<string, unknown> = {}) {
   return makeStorage({
-    getTenants: vi.fn(async () => [{
+    getTenant: vi.fn(async () => ({
       id: bindingTenantId, name: bindingBusiness, isActive: true,
       metadata: { canonicalBusinessIdentity: bindingBusiness },
-    }]),
+    })),
     getMercuryAccountBindingsByExternalId: vi.fn(async () => [{
       id: bindingFinanceAccountId, tenantId: bindingTenantId,
       externalId: bindingAccountId, institution: 'Mercury', isActive: true,
@@ -366,17 +366,61 @@ describe('Mercury exact finance account-binding guard', () => {
     }
   });
 
+  it('rejects tenants lacking explicit governed business identity even when display name matches', async () => {
+    const storage = bindingStorage({
+      getTenant: vi.fn(async () => ({
+        id: bindingTenantId, name: bindingBusiness, isActive: true, metadata: {},
+      })),
+    });
+    const res = await makeApp(storage).request(bindingPath, { headers: internalHeaders });
+    expect(res.status).toBe(409);
+    expect((storage as any).getMercuryAccountBindingsByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('rejects inactive tenants/accounts, non-Mercury institutions and inconsistent org provenance', async () => {
+    const disabledTenant = await makeApp(bindingStorage({
+      getTenant: vi.fn(async () => ({
+        id: bindingTenantId, name: bindingBusiness, isActive: false,
+        metadata: { canonicalBusinessIdentity: bindingBusiness },
+      })),
+    })).request(bindingPath, { headers: internalHeaders });
+    expect(disabledTenant.status).toBe(409);
+
+    for (const row of [
+      { id: bindingFinanceAccountId, tenantId: bindingTenantId, externalId: bindingAccountId,
+        institution: 'Mercury', isActive: false, metadata: { mercuryOrganizationId: bindingOrgId } },
+      { id: bindingFinanceAccountId, tenantId: bindingTenantId, externalId: bindingAccountId,
+        institution: 'Wave', isActive: true, metadata: { mercuryOrganizationId: bindingOrgId } },
+      { id: bindingFinanceAccountId, tenantId: bindingTenantId, externalId: bindingAccountId,
+        institution: 'Mercury', isActive: true,
+        metadata: { mercuryOrganizationId: bindingOrgId, mercuryOrgId: 'different-org' } },
+    ]) {
+      const res = await makeApp(bindingStorage({
+        getMercuryAccountBindingsByExternalId: vi.fn(async () => [row]),
+      })).request(bindingPath, { headers: internalHeaders });
+      expect(res.status).toBe(409);
+    }
+  });
+
   it('rejects a tenant identity collision, invalid IDs and Finance database read failures', async () => {
     const wrongTenant = await makeApp(bindingStorage({
-      getTenants: vi.fn(async () => [{ id: bindingTenantId, name: 'Incorrect Owner', isActive: true }]),
+      getTenant: vi.fn(async () => ({
+        id: bindingTenantId, name: 'Incorrect Owner', isActive: true,
+        metadata: { canonicalBusinessIdentity: 'Incorrect Owner' },
+      })),
     })).request(bindingPath, { headers: internalHeaders });
     expect(wrongTenant.status).toBe(409);
 
     const storage = bindingStorage();
-    const invalid = await makeApp(storage).request(
-      bindingPath.replace(bindingOrgId, 'APTA'), { headers: internalHeaders },
-    );
-    expect(invalid.status).toBe(400);
+    const app = makeApp(storage);
+    for (const invalidPath of [
+      bindingPath.replace(bindingOrgId, 'APTA'),
+      bindingPath.replace(bindingAccountId, 'invalid-account'),
+      bindingPath.replace(bindingTenantId, 'invalid-tenant'),
+    ]) {
+      const invalid = await app.request(invalidPath, { headers: internalHeaders });
+      expect(invalid.status).toBe(400);
+    }
     expect((storage as any).getMercuryAccountBindingsByExternalId).not.toHaveBeenCalled();
 
     const unavailable = await makeApp(bindingStorage({
