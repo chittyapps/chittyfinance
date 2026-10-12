@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
+import { isLegalPersonChittyId } from '../lib/legal-person-binding';
 
 /**
  * Private ChittyConnect -> ChittyFinance read projection.
@@ -244,6 +245,12 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/account-binding
     if (!orgProvenance.length ||
         !orgProvenance.every(v => v.toLowerCase() === organizationId.toLowerCase())) {
       return c.json({ error: 'provider_organization_binding_conflict' }, 409);
+    }
+    // Mercury multitenant contract requires an explicit Legal Person ChittyID
+    // for a new governed reconciliation pass. Preserve the legacy webhook path:
+    // its older rows are flagged but never silently promoted to trusted binds.
+    if (!isLegalPersonChittyId(fields.legal_person_chittyid)) {
+      return c.json({ error: 'legal_person_binding_missing' }, 409);
     }
     if (typeof account.id !== 'string' || !mercuryIdentityUuid.test(account.id)) {
       return c.json({ error: 'finance_account_binding_invalid' }, 503);
