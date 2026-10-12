@@ -110,6 +110,59 @@ describe('private ChittyConnect finance projection', () => {
     expect(body.entities[0].accounts[0].accountNumber).toBeUndefined();
   });
 
+  it('resolves global Mercury source ownership without tenant or DBA guessing', async () => {
+    const lookup = vi.fn(async (id: string) => id === 'mercury:source-tx-1'
+      ? [{ tenantId: tenant.id, financeAccountId: account.id }] : []);
+    const storage = makeStorage({ getTransactionOwnersByExternalId: lookup });
+    const app = makeApp(storage);
+    const url = 'https://internal/internal/chittyconnect/mercury/source-owner/mercury%3Asource-tx-1';
+    const found = await app.request(url, { headers: internalHeaders });
+    expect(found.status).toBe(200);
+    expect(await found.json()).toEqual({
+      sourceIdentity: 'mercury:source-tx-1',
+      owner: { tenantId: tenant.id, financeAccountId: account.id },
+    });
+    expect(lookup).toHaveBeenCalledWith('mercury:source-tx-1');
+    const missing = await app.request(
+      'https://internal/internal/chittyconnect/mercury/source-owner/mercury%3Asource-tx-2',
+      { headers: internalHeaders },
+    );
+    expect(missing.status).toBe(200);
+    expect(await missing.json()).toEqual({ sourceIdentity: 'mercury:source-tx-2', owner: null });
+  });
+
+  it('never exposes the source-owner preflight on the public host', async () => {
+    const lookup = vi.fn(async () => [{ tenantId: tenant.id, financeAccountId: account.id }]);
+    const app = makeApp(makeStorage({ getTransactionOwnersByExternalId: lookup }));
+    const url = '/internal/chittyconnect/mercury/source-owner/mercury%3Asource-tx-1';
+    expect((await app.request('https://finance.chitty.cc' + url, { headers: internalHeaders })).status).toBe(404);
+    expect((await app.request('https://internal' + url, {
+      headers: { 'X-ChittyOS-Caller': 'not-chittyconnect' },
+    })).status).toBe(404);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for invalid source identities, duplicate owners, and database errors', async () => {
+    const duplicate = vi.fn(async () => [
+      { tenantId: tenant.id, financeAccountId: account.id },
+      { tenantId: 'tenant-2', financeAccountId: 'account-2' },
+    ]);
+    const app = makeApp(makeStorage({ getTransactionOwnersByExternalId: duplicate }));
+    const url = 'https://internal/internal/chittyconnect/mercury/source-owner/';
+    const bad = await app.request(url + 'APTA', { headers: internalHeaders });
+    expect(bad.status).toBe(400);
+    expect(duplicate).not.toHaveBeenCalled();
+    const conflicting = await app.request(url + 'mercury%3Asource-tx-1', { headers: internalHeaders });
+    expect(conflicting.status).toBe(409);
+    expect(await conflicting.json()).toEqual({ error: 'finance_duplicate_source_ownership' });
+    const unavailable = makeApp(makeStorage({
+      getTransactionOwnersByExternalId: vi.fn(async () => { throw new Error('sensitive connection details'); }),
+    }));
+    const failed = await unavailable.request(url + 'mercury%3Asource-tx-1', { headers: internalHeaders });
+    expect(failed.status).toBe(503);
+    expect(JSON.stringify(await failed.json())).not.toContain('sensitive connection details');
+  });
+
   it('returns balance summaries grouped by currency', async () => {
     const res = await makeApp().request(
       'https://internal/internal/chittyconnect/entities/aribia-llc/balances',

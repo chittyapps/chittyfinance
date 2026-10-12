@@ -273,6 +273,27 @@ export class SystemStorage {
     return row;
   }
 
+  /**
+   * Global Mercury source-owner lookup, across ALL tenant partitions.
+   * The finance SOT, not a caller-supplied per-account baseline, decides
+   * whether an external Mercury transaction has already been booked.
+   * Return at most two rows so conflicting duplicate owners fail closed.
+   * Read-only and intentionally free of tenant-name/DBA heuristics.
+   */
+  async getTransactionOwnersByExternalId(externalId: string) {
+    if (!/^mercury:[A-Za-z0-9-]{1,256}$/.test(externalId)) {
+      throw new Error('invalid Mercury source identity');
+    }
+    return this.db
+      .select({
+        tenantId: schema.transactions.tenantId,
+        financeAccountId: schema.transactions.accountId,
+      })
+      .from(schema.transactions)
+      .where(eq(schema.transactions.externalId, externalId))
+      .limit(2);
+  }
+
   async createTransaction(data: typeof schema.transactions.$inferInsert) {
     assertTransactionType(data.type);
     assertPostableCodes(data);
