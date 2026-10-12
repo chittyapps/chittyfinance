@@ -294,6 +294,7 @@ const bindingAccountId = '22222222-2222-4222-8222-222222222222';
 const bindingTenantId = '33333333-3333-4333-8333-333333333333';
 const bindingFinanceAccountId = '44444444-4444-4444-8444-444444444444';
 const bindingBusiness = 'ARIBIA LLC - MGMT';
+const testLegalPersonId = '26-A-LGL-0001-P-10-C-Z';
 const bindingPath = 'https://internal/internal/chittyconnect/mercury/account-binding?' +
   new URLSearchParams({
     organizationId: bindingOrgId, accountId: bindingAccountId,
@@ -309,7 +310,7 @@ function bindingStorage(overrides: Record<string, unknown> = {}) {
     getMercuryAccountBindingsByExternalId: vi.fn(async () => [{
       id: bindingFinanceAccountId, tenantId: bindingTenantId,
       externalId: bindingAccountId, institution: 'Mercury', isActive: true,
-      metadata: { mercuryOrganizationId: bindingOrgId },
+      metadata: { mercuryOrganizationId: bindingOrgId, legal_person_chittyid: testLegalPersonId },
     }]),
     ...overrides,
   });
@@ -353,7 +354,7 @@ describe('Mercury exact finance account-binding guard', () => {
 
     for (const row of [
       { id: bindingFinanceAccountId, tenantId: 'other-tenant', externalId: bindingAccountId,
-        institution: 'Mercury', isActive: true, metadata: { mercuryOrganizationId: bindingOrgId } },
+        institution: 'Mercury', isActive: true, metadata: { mercuryOrganizationId: bindingOrgId, legal_person_chittyid: testLegalPersonId } },
       { id: bindingFinanceAccountId, tenantId: bindingTenantId, externalId: bindingAccountId,
         institution: 'Mercury', isActive: true, metadata: { mercuryOrganizationId: 'other-organization' } },
       { id: bindingFinanceAccountId, tenantId: bindingTenantId, externalId: bindingAccountId,
@@ -399,6 +400,35 @@ describe('Mercury exact finance account-binding guard', () => {
         getMercuryAccountBindingsByExternalId: vi.fn(async () => [row]),
       })).request(bindingPath, { headers: internalHeaders });
       expect(res.status).toBe(409);
+    }
+  });
+
+  it('blocks a provider account without a verified Legal Person ChittyID, despite exact Mercury IDs', async () => {
+    const storage = bindingStorage({
+      getMercuryAccountBindingsByExternalId: vi.fn(async () => [{
+        id: bindingFinanceAccountId, tenantId: bindingTenantId,
+        externalId: bindingAccountId, institution: 'Mercury', isActive: true,
+        metadata: { mercuryOrganizationId: bindingOrgId },
+      }]),
+    });
+    const res = await makeApp(storage).request(bindingPath, { headers: internalHeaders });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'legal_person_binding_missing' });
+    expect((storage as any).createTransaction).toBeUndefined();
+  });
+
+  it('rejects a non-Person or malformed Legal Person assertion', async () => {
+    for (const chittyId of ['26-A-LGL-0001-T-10-C-Z', 'APTA', '']) {
+      const storage = bindingStorage({
+        getMercuryAccountBindingsByExternalId: vi.fn(async () => [{
+          id: bindingFinanceAccountId, tenantId: bindingTenantId,
+          externalId: bindingAccountId, institution: 'Mercury', isActive: true,
+          metadata: { mercuryOrganizationId: bindingOrgId, legal_person_chittyid: chittyId },
+        }]),
+      });
+      const res = await makeApp(storage).request(bindingPath, { headers: internalHeaders });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: 'legal_person_binding_missing' });
     }
   });
 
