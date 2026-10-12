@@ -225,6 +225,25 @@ export class SystemStorage {
     return row;
   }
 
+  /**
+   * Cross-tenant Mercury account binding read. Return up to two exact matches
+   * so duplicate source-account attribution is a conflict, never first-wins.
+   * This method does not infer identity from names, masked digits or DBAs.
+   */
+  async getMercuryAccountBindingsByExternalId(externalId: string) {
+    return this.db.select({
+      id: schema.accounts.id,
+      tenantId: schema.accounts.tenantId,
+      externalId: schema.accounts.externalId,
+      institution: schema.accounts.institution,
+      metadata: schema.accounts.metadata,
+      isActive: schema.accounts.isActive,
+    })
+      .from(schema.accounts)
+      .where(eq(schema.accounts.externalId, externalId))
+      .limit(2);
+  }
+
   async createAccount(data: typeof schema.accounts.$inferInsert) {
     const [row] = await this.db.insert(schema.accounts).values(data).returning();
     return row;
