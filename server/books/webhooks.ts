@@ -270,6 +270,8 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
   }
   // Existing event-idempotency record holds an outstanding source-linked intent,
   // NOT a reconciliation success receipt or a new checkpoint/ledger/store.
+  // An unreconciled intent must never expire on a fixed time-to-live; it may
+  // only be cleared by a separately verified downstream reconciliation path.
   // Never persist the signed event body, mergePatch or signing secret.
   try {
     await kv.put(eventKey, JSON.stringify({
@@ -281,7 +283,7 @@ webhookRoutes.post('/api/webhooks/mercury/organization/:organizationId', async (
       resourceVersion: event.resourceVersion ?? null,
       occurredAt: event.occurredAt ?? null,
       dispatchReceiptId: dispatch.receiptId,
-    }), { expirationTtl: 604800 });
+    }));
   } catch {
     // Broker acceptance was durable but local replay metadata could not be
     // recorded; ask Mercury to retry with the same provider idempotency key.
@@ -393,14 +395,15 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
 
   const event = parsed.data;
 
-  // KV idempotency — 7-day dedup window
+  // KV idempotency — retained while reconciliation remains outstanding
   const dedupKey = `webhook:mercury:${tenantId}:${event.id}`;
   const existing = await kv.get(dedupKey);
   if (existing) {
     return c.json({ received: true, duplicate: true }, 200);
   }
   // Reuse the existing idempotency record to retain a minimal, source-linked
-  // reconciliation intent. Do NOT store the raw bank event or its mergePatch
+  // reconciliation intent WITHOUT a TTL until source reconciliation is verified.
+  // Do NOT store the raw bank event or its mergePatch
   // inside KV. This is an intent marker, not proof of finance reconciliation.
   await kv.put(dedupKey, JSON.stringify({
     state: 'reconciliation_required',
@@ -409,7 +412,7 @@ webhookRoutes.post('/api/webhooks/mercury/:tenantId', async (c) => {
     operationType: event.operationType,
     resourceVersion: event.resourceVersion ?? null,
     occurredAt: event.occurredAt ?? null,
-  }), { expirationTtl: 604800 });
+  }));
 
   // Mercury webhook payloads are activity signals, not authoritative ledger
   // records. JSON Merge Patch events may be partial and may arrive out of order.
