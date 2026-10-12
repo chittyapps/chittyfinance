@@ -177,6 +177,90 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/source-owner/:s
   return c.json({ sourceIdentity, owner });
 });
 
+/**
+ * Exact Mercury account -> Finance account binding, queried globally.
+ *
+ * A provider account ID alone cannot prove its organization or legal owner.
+ * Require the stored Finance tenant's canonical business identity AND an
+ * explicit matching Mercury organization ID in existing account metadata.
+ * Never infer a match from a display name, account last four or DBA.
+ * This is a read-only preflight; unmatched accounts stay unbound for review.
+ */
+const mercuryAccountUuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/account-binding', async (c) => {
+  const organizationId = c.req.query('organizationId') || '';
+  const externalAccountId = c.req.query('accountId') || '';
+  const tenantId = c.req.query('tenantId') || '';
+  const canonicalBusinessIdentity = c.req.query('canonicalBusinessIdentity') || '';
+  if (!mercuryAccountUuid.test(organizationId) ||
+      !mercuryAccountUuid.test(externalAccountId) ||
+      !mercuryAccountUuid.test(tenantId) ||
+      !canonicalBusinessIdentity.trim() || canonicalBusinessIdentity.length > 200) {
+    return c.json({ error: 'invalid_mercury_binding_query' }, 400);
+  }
+
+  const storage = c.get('storage');
+  try {
+    const tenants = await storage.getTenants();
+    if (!Array.isArray(tenants)) {
+      return c.json({ error: 'finance_tenant_coverage_unavailable' }, 503);
+    }
+    const exactTenants = tenants.filter((t: any) => t.id === tenantId);
+    if (exactTenants.length !== 1) {
+      return c.json({ error: 'finance_tenant_identity_conflict' }, 409);
+    }
+    const t = exactTenants[0];
+    const identityInMetadata = t.metadata &&
+      typeof t.metadata === 'object' && !Array.isArray(t.metadata) &&
+      typeof t.metadata.canonicalBusinessIdentity === 'string'
+        ? t.metadata.canonicalBusinessIdentity : null;
+    if (t.isActive !== true ||
+        (identityInMetadata ?? t.name) !== canonicalBusinessIdentity) {
+      return c.json({ error: 'finance_tenant_identity_conflict' }, 409);
+    }
+
+    const rows = await storage.getMercuryAccountBindingsByExternalId(externalAccountId);
+    if (!Array.isArray(rows) || rows.length > 2) {
+      return c.json({ error: 'finance_account_coverage_unavailable' }, 503);
+    }
+    if (rows.length > 1) {
+      return c.json({ error: 'mercury_account_ownership_ambiguous' }, 409);
+    }
+    if (!rows.length) {
+      return c.json({ financeAccountId: null, status: 'unbound' }, 200);
+    }
+
+    const account = rows[0];
+    if (!account || account.tenantId !== tenantId ||
+        account.externalId !== externalAccountId ||
+        !['mercury', 'mercury bank'].includes(String(account.institution || '').toLowerCase()) ||
+        account.isActive !== true) {
+      return c.json({ error: 'finance_account_binding_conflict' }, 409);
+    }
+    const metadata = account.metadata;
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return c.json({ error: 'provider_organization_provenance_missing' }, 409);
+    }
+    const fields = metadata as Record<string, unknown>;
+    const orgProvenance = [
+      fields.mercuryOrganizationId, fields.mercuryOrgId, fields.providerOrganizationId,
+    ].filter((v): v is string => typeof v === 'string');
+    if (!orgProvenance.length ||
+        !orgProvenance.every(v => v.toLowerCase() === organizationId.toLowerCase())) {
+      return c.json({ error: 'provider_organization_binding_conflict' }, 409);
+    }
+    if (typeof account.id !== 'string' || !mercuryAccountUuid.test(account.id)) {
+      return c.json({ error: 'finance_account_binding_invalid' }, 503);
+    }
+    return c.json({
+      financeAccountId: account.id, tenantId,
+      organizationId, externalAccountId,
+    });
+  } catch {
+    return c.json({ error: 'finance_account_coverage_unavailable' }, 503);
+  }
+});
+
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities', async (c) => {
   const storage = c.get('storage');
   const tenants = await storage.getTenants();
