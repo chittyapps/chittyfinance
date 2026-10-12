@@ -25,6 +25,101 @@ internalChittyConnectRoutes.use('/internal/chittyconnect/*', async (c, next) => 
   await next();
 });
 
+/**
+ * GET /internal/chittyconnect/mercury/pending
+ *
+ * Inspect only the EXISTING Mercury event-idempotency records in FINANCE_KV.
+ * No PostgreSQL, account/tenant lookup, or transaction comparison runs here.
+ * This is a pre-finance activity signal, NOT authorization to reconcile:
+ * existing keys identify the technical tenant but do not bind the Mercury
+ * provider organization. FC and CHIT can share a tenant yet require separate
+ * source credentials and webhook secrets.
+ *
+ * Read-only, cursor-bounded, existing KV namespace only. Never read or return
+ * the legacy `webhook:mercury:secret:*` entries, raw payloads, or amounts.
+ */
+internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/pending', async (c) => {
+  const rawLimit = c.req.query('limit') ?? '50';
+  const limit = Number(rawLimit);
+  const cursor = c.req.query('cursor');
+  if (!/^\d+$/.test(rawLimit) || !Number.isInteger(limit) || limit < 1 || limit > 100 ||
+      (cursor !== undefined && (cursor.length < 1 || cursor.length > 2048))) {
+    return c.json({ error: 'invalid_query' }, 400);
+  }
+
+  const kv = c.env.FINANCE_KV;
+  if (!kv || typeof kv.list !== 'function' || typeof kv.get !== 'function') {
+    return c.json({ error: 'mercury_intent_source_unavailable' }, 503);
+  }
+
+  try {
+    const page = await kv.list({ prefix: 'webhook:mercury:', limit, ...(cursor ? { cursor } : {}) });
+    if (!page || !Array.isArray(page.keys) || typeof page.list_complete !== 'boolean') {
+      return c.json({ error: 'mercury_intent_coverage_incomplete' }, 503);
+    }
+
+    const intents: Array<{
+      tenantId: string;
+      eventId: string;
+      state: 'reconciliation_required' | 'legacy_unverified';
+      resourceType: string | null;
+      resourceId: string | null;
+      occurredAt: string | null;
+      expiresAt: string | null;
+      identityVerified: false;
+    }> = [];
+
+    for (const key of page.keys) {
+      const parts = /^webhook:mercury:([^:]+):([^:]+)$/.exec(key.name);
+      // The matching legacy `secret:<tenantId>` namespace MUST NOT be read.
+      if (!parts || parts[1] === 'secret') continue;
+      const value = await kv.get(key.name);
+      if (value === null) continue;
+
+      let metadata: Record<string, unknown> | null = null;
+      try {
+        const candidate: unknown = JSON.parse(value);
+        if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+          metadata = candidate as Record<string, unknown>;
+        }
+      } catch {
+        // Old dedup records stored raw payloads: never promote them to source facts.
+      }
+
+      const verifiedShape = metadata?.state === 'reconciliation_required' &&
+        typeof metadata.resourceType === 'string' &&
+        typeof metadata.resourceId === 'string';
+      intents.push({
+        tenantId: parts[1],
+        eventId: parts[2],
+        state: verifiedShape ? 'reconciliation_required' : 'legacy_unverified',
+        resourceType: verifiedShape ? String(metadata?.resourceType) : null,
+        resourceId: verifiedShape ? String(metadata?.resourceId) : null,
+        occurredAt: verifiedShape && typeof metadata?.occurredAt === 'string' ? metadata.occurredAt : null,
+        expiresAt: typeof key.expiration === 'number'
+          ? new Date(key.expiration * 1000).toISOString()
+          : null,
+        identityVerified: false,
+      });
+    }
+
+    return c.json({
+      source: 'existing_finance_kv_mercury_receipts',
+      coverageComplete: page.list_complete,
+      nextCursor: page.list_complete ? null : page.cursor || null,
+      // Do not assert no activity unless every key has been inspected.
+      activity: intents.length ? 'pending' : (page.list_complete ? 'none_on_page' : 'incomplete'),
+      intents,
+      // KV tenant/event receipt alone cannot determine provider organization.
+      financeWakeAllowed: false,
+      blockedBy: 'provider_organization_identity_not_verified',
+    });
+  } catch {
+    // Do not leak KV values or untrusted source errors.
+    return c.json({ error: 'mercury_intent_read_failed' }, 503);
+  }
+});
+
 /** Return only the account fields needed for finance reconciliation. */
 function formatAccount(account: any) {
   return {
