@@ -117,7 +117,16 @@ export function createApp(deps: AppDeps = {}) {
   // broker caller header. It is read-only and intentionally bypasses browser /
   // service-token auth so no shared credential has to live in either Worker.
   app.use('/internal/chittyconnect', storageMiddleware);
-  app.use('/internal/chittyconnect/*', storageMiddleware);
+  app.use('/internal/chittyconnect/*', async (c, next) => {
+    // The Mercury receipt-coverage gate reads existing KV only. Reaching for a
+    // Postgres connection before this decision would violate the webhook-first
+    // no-activity/no-Neon-wake invariant. Its service-binding policy is still
+    // enforced by internalChittyConnectRoutes' private-hostname middleware.
+    if (c.req.path === '/internal/chittyconnect/mercury/pending') {
+      return next();
+    }
+    return storageMiddleware(c, next);
+  });
   app.route('/', internalChittyConnectRoutes);
 
   // ── Webhook routes (custom auth per-route, no tenant required) ──
