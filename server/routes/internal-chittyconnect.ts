@@ -210,10 +210,11 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/account-binding
       return c.json({ error: 'finance_tenant_identity_conflict' }, 409);
     }
     const t = exactTenants[0];
-    const identityInMetadata = t.metadata &&
-      typeof t.metadata === 'object' && !Array.isArray(t.metadata) &&
-      typeof t.metadata.canonicalBusinessIdentity === 'string'
-        ? t.metadata.canonicalBusinessIdentity : null;
+    const tenantMetadata = t.metadata as Record<string, unknown> | null;
+    const identityInMetadata = tenantMetadata &&
+      typeof tenantMetadata === 'object' && !Array.isArray(tenantMetadata) &&
+      typeof tenantMetadata.canonicalBusinessIdentity === 'string'
+        ? tenantMetadata.canonicalBusinessIdentity : null;
     if (t.isActive !== true ||
         (identityInMetadata ?? t.name) !== canonicalBusinessIdentity) {
       return c.json({ error: 'finance_tenant_identity_conflict' }, 409);
