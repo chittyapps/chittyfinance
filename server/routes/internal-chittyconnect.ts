@@ -146,6 +146,37 @@ function tenantError(error: 'not_found' | 'ambiguous') {
 
 // System-mode projection used by ChittyConnect to resolve canonical tenant and
 // financial-account bindings before reconciliation. Read-only by design.
+/**
+ * Globally resolve a Mercury transaction's existing owner in ChittyFinance.
+ * A shared DBA or technical tenant partition must never establish identity.
+ * Only the private ChittyConnect service-binding caller can use this route.
+ * A null owner means an authoritative complete read found zero matches.
+ * Storage errors and duplicate ownership fail closed, not as "not found".
+ */
+internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/source-owner/:sourceIdentity', async (c) => {
+  const sourceIdentity = c.req.param('sourceIdentity');
+  if (!/^mercury:[A-Za-z0-9-]{1,256}$/.test(sourceIdentity)) {
+    return c.json({ error: 'invalid_mercury_source_identity' }, 400);
+  }
+  let rows: Array<{ tenantId: string; financeAccountId: string }>;
+  try {
+    rows = await c.get('storage').getTransactionOwnersByExternalId(sourceIdentity);
+  } catch {
+    return c.json({ error: 'finance_source_owner_query_unavailable' }, 503);
+  }
+  if (!Array.isArray(rows) || rows.length > 2) {
+    return c.json({ error: 'finance_source_owner_coverage_unavailable' }, 503);
+  }
+  if (rows.length > 1) {
+    return c.json({ error: 'finance_duplicate_source_ownership' }, 409);
+  }
+  const owner = rows[0] ?? null;
+  if (owner && (!owner.tenantId?.trim() || !owner.financeAccountId?.trim())) {
+    return c.json({ error: 'finance_source_owner_coverage_unavailable' }, 503);
+  }
+  return c.json({ sourceIdentity, owner });
+});
+
 internalChittyConnectRoutes.get('/internal/chittyconnect/entities', async (c) => {
   const storage = c.get('storage');
   const tenants = await storage.getTenants();
