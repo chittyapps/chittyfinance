@@ -288,3 +288,101 @@ describe('private ChittyConnect finance projection', () => {
     });
   });
 });
+
+const bindingOrgId = '11111111-1111-4111-8111-111111111111';
+const bindingAccountId = '22222222-2222-4222-8222-222222222222';
+const bindingTenantId = '33333333-3333-4333-8333-333333333333';
+const bindingFinanceAccountId = '44444444-4444-4444-8444-444444444444';
+const bindingBusiness = 'ARIBIA LLC - MGMT';
+const bindingPath = 'https://internal/internal/chittyconnect/mercury/account-binding?' +
+  new URLSearchParams({
+    organizationId: bindingOrgId, accountId: bindingAccountId,
+    tenantId: bindingTenantId, canonicalBusinessIdentity: bindingBusiness,
+  }).toString();
+
+function bindingStorage(overrides: Record<string, unknown> = {}) {
+  return makeStorage({
+    getTenants: vi.fn(async () => [{
+      id: bindingTenantId, name: bindingBusiness, isActive: true,
+      metadata: { canonicalBusinessIdentity: bindingBusiness },
+    }]),
+    getMercuryAccountBindingsByExternalId: vi.fn(async () => [{
+      id: bindingFinanceAccountId, tenantId: bindingTenantId,
+      externalId: bindingAccountId, institution: 'Mercury', isActive: true,
+      metadata: { mercuryOrganizationId: bindingOrgId },
+    }]),
+    ...overrides,
+  });
+}
+
+describe('Mercury exact finance account-binding guard', () => {
+  it('returns an exact, read-only provider and canonical tenant match', async () => {
+    const storage = bindingStorage();
+    const response = await makeApp(storage).request(bindingPath, { headers: internalHeaders });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      financeAccountId: bindingFinanceAccountId, tenantId: bindingTenantId,
+      organizationId: bindingOrgId, externalAccountId: bindingAccountId,
+    });
+    expect((storage as any).getMercuryAccountBindingsByExternalId).toHaveBeenCalledWith(bindingAccountId);
+  });
+
+  it('rejects public or spoofed request origin before reading any ledger rows', async () => {
+    const storage = bindingStorage();
+    const app = makeApp(storage);
+    const publicPath = bindingPath.replace('https://internal/', 'https://finance.chitty.cc/');
+    expect((await app.request(publicPath, { headers: internalHeaders })).status).toBe(404);
+    expect((await app.request(bindingPath, { headers: { 'X-ChittyOS-Caller': 'unknown' } })).status).toBe(404);
+    expect((storage as any).getMercuryAccountBindingsByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('reports an unbound account without creating or guessing an account identity', async () => {
+    const storage = bindingStorage({ getMercuryAccountBindingsByExternalId: vi.fn(async () => []) });
+    const response = await makeApp(storage).request(bindingPath, { headers: internalHeaders });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ financeAccountId: null, status: 'unbound' });
+  });
+
+  it('rejects duplicate provider account rows, wrong tenant and wrong provider organization', async () => {
+    const duplicate = bindingStorage({ getMercuryAccountBindingsByExternalId: vi.fn(async () => [
+      { id: bindingFinanceAccountId }, { id: 'another' },
+    ]) });
+    const repeated = await makeApp(duplicate).request(bindingPath, { headers: internalHeaders });
+    expect(repeated.status).toBe(409);
+    expect(await repeated.json()).toEqual({ error: 'mercury_account_ownership_ambiguous' });
+
+    for (const row of [
+      { id: bindingFinanceAccountId, tenantId: 'other-tenant', externalId: bindingAccountId,
+        institution: 'Mercury', isActive: true, metadata: { mercuryOrganizationId: bindingOrgId } },
+      { id: bindingFinanceAccountId, tenantId: bindingTenantId, externalId: bindingAccountId,
+        institution: 'Mercury', isActive: true, metadata: { mercuryOrganizationId: 'other-organization' } },
+      { id: bindingFinanceAccountId, tenantId: bindingTenantId, externalId: bindingAccountId,
+        institution: 'Mercury', isActive: true, metadata: {} },
+    ]) {
+      const response = await makeApp(bindingStorage({
+        getMercuryAccountBindingsByExternalId: vi.fn(async () => [row]),
+      })).request(bindingPath, { headers: internalHeaders });
+      expect(response.status).toBe(409);
+    }
+  });
+
+  it('rejects a tenant identity collision, invalid IDs and Finance database read failures', async () => {
+    const wrongTenant = await makeApp(bindingStorage({
+      getTenants: vi.fn(async () => [{ id: bindingTenantId, name: 'Incorrect Owner', isActive: true }]),
+    })).request(bindingPath, { headers: internalHeaders });
+    expect(wrongTenant.status).toBe(409);
+
+    const storage = bindingStorage();
+    const invalid = await makeApp(storage).request(
+      bindingPath.replace(bindingOrgId, 'APTA'), { headers: internalHeaders },
+    );
+    expect(invalid.status).toBe(400);
+    expect((storage as any).getMercuryAccountBindingsByExternalId).not.toHaveBeenCalled();
+
+    const unavailable = await makeApp(bindingStorage({
+      getMercuryAccountBindingsByExternalId: vi.fn(async () => { throw new Error('private-db-secret'); }),
+    })).request(bindingPath, { headers: internalHeaders });
+    expect(unavailable.status).toBe(503);
+    expect(JSON.stringify(await unavailable.json())).not.toContain('private-db-secret');
+  });
+});
