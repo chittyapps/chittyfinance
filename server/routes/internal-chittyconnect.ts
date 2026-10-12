@@ -186,37 +186,32 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/source-owner/:s
  * Never infer a match from a display name, account last four or DBA.
  * This is a read-only preflight; unmatched accounts stay unbound for review.
  */
-const mercuryAccountUuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+const mercuryIdentityUuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/account-binding', async (c) => {
   const organizationId = c.req.query('organizationId') || '';
   const externalAccountId = c.req.query('accountId') || '';
   const tenantId = c.req.query('tenantId') || '';
   const canonicalBusinessIdentity = c.req.query('canonicalBusinessIdentity') || '';
-  if (!mercuryAccountUuid.test(organizationId) ||
-      !mercuryAccountUuid.test(externalAccountId) ||
-      !mercuryAccountUuid.test(tenantId) ||
+  if (!mercuryIdentityUuid.test(organizationId) ||
+      !mercuryIdentityUuid.test(externalAccountId) ||
+      !mercuryIdentityUuid.test(tenantId) ||
       !canonicalBusinessIdentity.trim() || canonicalBusinessIdentity.length > 200) {
     return c.json({ error: 'invalid_mercury_binding_query' }, 400);
   }
 
   const storage = c.get('storage');
   try {
-    const tenants = await storage.getTenants();
-    if (!Array.isArray(tenants)) {
-      return c.json({ error: 'finance_tenant_coverage_unavailable' }, 503);
-    }
-    const exactTenants = tenants.filter((t: any) => t.id === tenantId);
-    if (exactTenants.length !== 1) {
+    // The tenant UUID is a technical partition, never proof of the owner.
+    // Require its explicitly governed canonical identity in existing metadata;
+    // a human-editable tenant display name is never binding evidence.
+    const tenant = await storage.getTenant(tenantId);
+    if (!tenant || tenant.isActive !== true) {
       return c.json({ error: 'finance_tenant_identity_conflict' }, 409);
     }
-    const t = exactTenants[0];
-    const tenantMetadata = t.metadata as Record<string, unknown> | null;
-    const identityInMetadata = tenantMetadata &&
-      typeof tenantMetadata === 'object' && !Array.isArray(tenantMetadata) &&
-      typeof tenantMetadata.canonicalBusinessIdentity === 'string'
-        ? tenantMetadata.canonicalBusinessIdentity : null;
-    if (t.isActive !== true ||
-        (identityInMetadata ?? t.name) !== canonicalBusinessIdentity) {
+    const tenantMetadata = tenant.metadata as Record<string, unknown> | null;
+    if (!tenantMetadata || typeof tenantMetadata !== 'object' ||
+        Array.isArray(tenantMetadata) ||
+        tenantMetadata.canonicalBusinessIdentity !== canonicalBusinessIdentity) {
       return c.json({ error: 'finance_tenant_identity_conflict' }, 409);
     }
 
@@ -250,14 +245,18 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/account-binding
         !orgProvenance.every(v => v.toLowerCase() === organizationId.toLowerCase())) {
       return c.json({ error: 'provider_organization_binding_conflict' }, 409);
     }
-    if (typeof account.id !== 'string' || !mercuryAccountUuid.test(account.id)) {
+    if (typeof account.id !== 'string' || !mercuryIdentityUuid.test(account.id)) {
       return c.json({ error: 'finance_account_binding_invalid' }, 503);
     }
     return c.json({
       financeAccountId: account.id, tenantId,
       organizationId, externalAccountId,
     });
-  } catch {
+  } catch (error) {
+    // Do not log account metadata, private provider payloads or credentials.
+    console.error('[mercury:account-binding] authoritative lookup failed', {
+      errorClass: error instanceof Error ? error.name : 'unknown',
+    });
     return c.json({ error: 'finance_account_coverage_unavailable' }, 503);
   }
 });
