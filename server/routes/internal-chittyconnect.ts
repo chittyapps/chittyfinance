@@ -144,6 +144,76 @@ function tenantError(error: 'not_found' | 'ambiguous') {
     : { body: { error: 'entity_not_found' }, status: 404 as const };
 }
 
+/**
+ * Authoritatively resolve one existing Mercury account into ChittyFinance.
+ * Both the external Mercury organization and account must be explicitly stored;
+ * a matching last-four, display label, shared DBA or inferred tenant is invalid.
+ * The storage method checks external account ID across ALL Finance tenants.
+ */
+internalChittyConnectRoutes.get('/internal/chittyconnect/mercury/account-binding/:accountId', async (c) => {
+  const accountId = c.req.param('accountId');
+  const organizationId = c.req.query('organizationId');
+  const tenantId = c.req.query('tenantId');
+  const canonicalBusinessIdentity = c.req.query('canonicalBusinessIdentity');
+  const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+  if (!uuid.test(accountId) || !organizationId || !uuid.test(organizationId) ||
+      !tenantId || !uuid.test(tenantId) ||
+      !canonicalBusinessIdentity || canonicalBusinessIdentity.length > 128) {
+    return c.json({ error: 'invalid_mercury_account_binding_request' }, 400);
+  }
+
+  let tenants: any[];
+  let candidates: any[];
+  try {
+    const storage = c.get('storage');
+    [tenants, candidates] = await Promise.all([
+      storage.getTenants(),
+      storage.getMercuryAccountBindingCandidatesByExternalId(accountId),
+    ]);
+  } catch {
+    return c.json({ error: 'finance_account_binding_query_unavailable' }, 503);
+  }
+  if (!Array.isArray(tenants) || !Array.isArray(candidates)) {
+    return c.json({ error: 'finance_account_binding_coverage_unavailable' }, 503);
+  }
+  if (candidates.length > 1) {
+    return c.json({ error: 'finance_duplicate_provider_account_binding' }, 409);
+  }
+  const matchingTenant = tenants.filter((t: any) => t.id === tenantId);
+  const tenant = matchingTenant.length === 1 ? matchingTenant[0] : null;
+  const tenantMetadata = tenant?.metadata;
+  if (!tenant || !tenant.isActive || !tenantMetadata ||
+      typeof tenantMetadata !== 'object' ||
+      (tenantMetadata as Record<string, unknown>).canonicalBusinessIdentity !== canonicalBusinessIdentity) {
+    return c.json({ error: 'finance_canonical_tenant_binding_unverified' }, 409);
+  }
+
+  const row = candidates[0];
+  if (!row || row.tenantId !== tenantId || row.externalId !== accountId ||
+      row.isActive !== true ||
+      !/^Mercury(?: Bank)?$/i.test(String(row.institution ?? '')) ||
+      typeof row.financeAccountId !== 'string' || !row.financeAccountId.trim()) {
+    return c.json({ error: 'finance_exact_provider_account_binding_unverified' }, 409);
+  }
+  const metadata = row.metadata;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return c.json({ error: 'finance_provider_organization_binding_unverified' }, 409);
+  }
+  const orgFields = ['mercuryOrganizationId', 'mercuryOrgId']
+    .filter(key => Object.prototype.hasOwnProperty.call(metadata, key))
+    .map(key => (metadata as Record<string, unknown>)[key]);
+  if (orgFields.length === 0 || orgFields.some(id => id !== organizationId)) {
+    return c.json({ error: 'finance_provider_organization_binding_unverified' }, 409);
+  }
+  return c.json({
+    organizationId,
+    accountId,
+    tenantId,
+    canonicalBusinessIdentity,
+    financeAccountId: row.financeAccountId,
+  });
+});
+
 // System-mode projection used by ChittyConnect to resolve canonical tenant and
 // financial-account bindings before reconciliation. Read-only by design.
 /**
