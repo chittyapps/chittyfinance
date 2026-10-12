@@ -263,6 +263,19 @@ async function callTool(
 // ── MCP HTTP Endpoint ──
 
 mcpRoutes.post('/mcp', async (c) => {
+  // P0 tenant-authorization containment (chittyapps/chittyfinance#175):
+  // The legacy shared service token can be paired with a caller-controlled
+  // X-Chitty-User-Id. The membership lookup alone cannot prove which actor
+  // supplied that claimed user ID. Do not admit this path for finance MCP.
+  //
+  // No new tokens, claims or databases: accept only actor-bound, previously
+  // verified ChittyAuth bearer/cookie identities or an authenticated session.
+  // All other paths (including an absent auth context) fail closed.
+  const authMethod = c.get('authMethod');
+  if (authMethod !== 'chittyauth' && authMethod !== 'session') {
+    return c.json({ error: 'delegated_identity_required' }, 403);
+  }
+
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
   const userId = c.get('userId');
