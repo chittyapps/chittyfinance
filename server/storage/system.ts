@@ -216,6 +216,29 @@ export class SystemStorage {
     return row;
   }
 
+  /**
+   * Exact cross-tenant Mercury account binding preflight.
+   * Return at most two source-account matches so duplicates fail closed.
+   * This is a read-only projection; caller must also verify the provider
+   * organization and canonical Finance tenant using authoritative metadata.
+   */
+  async getMercuryAccountBindingCandidatesByExternalId(externalId: string) {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(externalId)) {
+      throw new Error('invalid Mercury account identity');
+    }
+    return this.db.select({
+      financeAccountId: schema.accounts.id,
+      tenantId: schema.accounts.tenantId,
+      institution: schema.accounts.institution,
+      externalId: schema.accounts.externalId,
+      isActive: schema.accounts.isActive,
+      metadata: schema.accounts.metadata,
+    })
+      .from(schema.accounts)
+      .where(eq(schema.accounts.externalId, externalId))
+      .limit(2);
+  }
+
   /** Look up an account by external_id across all tenants (for webhook resolution). */
   async lookupAccountByExternalId(externalId: string) {
     const [row] = await this.db
