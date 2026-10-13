@@ -17,6 +17,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 import { setExecutionOperation, type ExecutionIntent } from '../middleware/execution-context';
+import { buildReiHubReconciliationPlan, type ReiHubSnapshot } from '../books/rei-hub-reconciliation';
 
 export const mcpRoutes = new Hono<HonoEnv>();
 
@@ -95,6 +96,21 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
         message: { type: 'string', description: 'Question or context for the AI advisor' },
       },
       required: ['propertyId', 'message'],
+    },
+  },
+  {
+    name: 'compare-rei-hub-snapshot',
+    description: 'Compare a ChittyScrape REI Hub snapshot against existing ChittyFinance transactions and return a dry-run repair plan. Performs no financial writes.',
+    intent: 'suggest',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        snapshot: {
+          type: 'object',
+          description: 'ChittyScrape REI Hub snapshot containing bookedTransactions rows.',
+        },
+      },
+      required: ['snapshot'],
     },
   },
   {
@@ -238,6 +254,49 @@ async function callTool(
       advice += `Type: ${property.propertyType}, Value: $${Number(property.currentValue || 0).toLocaleString()}\n`;
       advice += `Regarding: ${message}\n\nRule-based advice: Review property financials, check occupancy, and ensure lease terms are competitive.`;
       return { content: [{ type: 'text', text: advice }] };
+    }
+
+    case 'compare-rei-hub-snapshot': {
+      const snapshot = args.snapshot as ReiHubSnapshot | undefined;
+      if (!snapshot?.bookedTransactions || !Array.isArray(snapshot.bookedTransactions.rows)) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              error: 'invalid_snapshot',
+              message: 'Expected snapshot.bookedTransactions.rows from ChittyScrape rei-hub.',
+            }),
+          }],
+        };
+      }
+
+      const [transactions, properties] = await Promise.all([
+        storage.getTransactions(tenantId),
+        storage.getProperties(tenantId),
+      ]);
+      const plan = buildReiHubReconciliationPlan(snapshot, transactions, properties);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            mode: 'dry-run',
+            authority: {
+              sourceOfTruth: 'chittyfinance',
+              sourceRole: 'comparison-evidence',
+              writesPerformed: false,
+            },
+            execution: {
+              propertyAssignments: 'PATCH /api/transactions/:id',
+              classificationSuggestions: 'POST /api/classification/suggest',
+              authoritativeClassification: 'POST /api/classification/classify (L2 role required)',
+              reconciliation: 'POST /api/classification/reconcile (L2 role required)',
+              coaMutation: 'POST/PATCH /api/coa (L4 owner/admin required)',
+            },
+            plan,
+          }),
+        }],
+      };
     }
 
     case 'refresh-valuation': {
