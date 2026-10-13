@@ -42,6 +42,7 @@ import { classificationRoutes } from './routes/classification';
 import { emailRoutes } from './routes/email';
 import { createAdminSeedRoutes } from './routes/admin-seed';
 import { internalChittyConnectRoutes } from './routes/internal-chittyconnect';
+import { reiHubRoutes } from './routes/rei-hub';
 import { createDb } from './db/connection';
 import { SystemStorage } from './storage/system';
 
@@ -175,6 +176,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/', valuationRoutes);
   app.route('/', portfolioRoutes);
   app.route('/', importRoutes);
+  app.route('/', reiHubRoutes);
   app.route('/', reportRoutes);
   app.route('/', taxRoutes);
   app.route('/', allocationRoutes);
