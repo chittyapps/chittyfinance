@@ -188,7 +188,7 @@ export function parseReiHubBookedTransactions(snapshot: ReiHubSnapshot): {
       qualityFlags.push(`row ${index + 1}: epoch date 1970-01-01`);
     }
 
-    if (normalizeText(vendor).includes('inactive')) {
+    if (vendor.toLowerCase().includes('inactive')) {
       qualityFlags.push(`row ${index + 1}: inactive vendor/payee marker`);
     }
 
@@ -285,6 +285,10 @@ export function buildReiHubReconciliationPlan(
 
     const best = candidates[0];
     const second = candidates[1];
+    if (best.score < 0.76) {
+      ambiguousSourceRows.push({ source, candidateTransactionIds: candidates.map((candidate) => candidate.tx.id) });
+      continue;
+    }
     if (second && Math.abs(best.score - second.score) < 0.04) {
       ambiguousSourceRows.push({
         source,
