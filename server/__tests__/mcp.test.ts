@@ -30,6 +30,14 @@ function createMockStorage() {
     getProperty: vi.fn().mockResolvedValue({
       id: 'p1', name: 'City Studio', address: '550 W Surf', propertyType: 'condo', currentValue: '350000',
     }),
+    getUserRoleForTenant: vi.fn().mockResolvedValue('owner'),
+    getTransaction: vi.fn().mockResolvedValue({ id: 'tx1', tenantId: 'test-tenant', reconciled: false, coaCode: null, suggestedCoaCode: '9010', type: 'expense' }),
+    updateTransaction: vi.fn().mockImplementation((_id: string, _tenantId: string, data: any) => Promise.resolve({ id: 'tx1', ...data })),
+    getChartOfAccountByCode: vi.fn().mockResolvedValue({ id: 'coa-5070', code: '5070', tenantId: null }),
+    classifyTransaction: vi.fn().mockImplementation((_id: string, _tenant: string, code: string) => Promise.resolve({ id: 'tx1', coaCode: code, reconciled: false })),
+    reconcileTransaction: vi.fn().mockResolvedValue({ row: { id: 'tx1', coaCode: '5070', reconciled: true }, written: true }),
+    createChartOfAccount: vi.fn().mockImplementation((data: any) => Promise.resolve({ id: 'coa-new', ...data })),
+    updateChartOfAccount: vi.fn().mockImplementation((id: string, tenantId: string, data: any) => Promise.resolve({ id, tenantId, code: data.code ?? '7777', name: data.name ?? 'Updated', ...data })),
     getTransactions: vi.fn().mockResolvedValue([
       { id: 'tx1', date: new Date('2026-10-01T12:00:00Z'), amount: '-125.50', description: 'HOME DEPOT 1234', payee: 'Home Depot', propertyId: null, suggestedCoaCode: '9010', reconciled: false, type: 'expense' },
     ]),
@@ -200,10 +208,15 @@ describe('MCP endpoint', () => {
   it('lists tools', async () => {
     const res = await rpc(app, 'tools/list');
     const body = await res.json() as any;
-    expect(body.result.tools).toHaveLength(3);
+    expect(body.result.tools).toHaveLength(8);
     expect(body.result.tools.map((t: any) => t.name)).toEqual([
       'get-property-advice',
       'compare-rei-hub-snapshot',
+      'assign-transaction-property',
+      'classify-transaction',
+      'reconcile-transaction',
+      'create-coa-account',
+      'update-coa-account',
       'refresh-valuation',
     ]);
   });
@@ -242,6 +255,66 @@ describe('MCP endpoint', () => {
     expect(payload.plan.matchedRows).toBe(1);
     expect(getExecution().capability).toBe('finance.mcp.tool:compare-rei-hub-snapshot');
     expect(getExecution().intent).toBe('suggest');
+  });
+
+  it('classifies through MCP only with L2 authority', async () => {
+    const res = await rpc(app, 'tools/call', {
+      name: 'classify-transaction',
+      arguments: { transactionId: 'tx1', coaCode: '5070', confidence: 0.9, reason: 'REI Hub cross-check' },
+    });
+    const body = await res.json() as any;
+    expect(body.result.content[0].text).toContain('"coaCode":"5070"');
+    expect(storage.classifyTransaction).toHaveBeenCalled();
+    expect(getExecution().intent).toBe('execute');
+
+    storage.getUserRoleForTenant.mockResolvedValueOnce('viewer');
+    const denied = await rpc(app, 'tools/call', {
+      name: 'classify-transaction',
+      arguments: { transactionId: 'tx1', coaCode: '5070', reason: 'attempt' },
+    }, 2);
+    expect(denied.status).toBe(500);
+    const deniedBody = await denied.json() as any;
+    expect(deniedBody.error.message).toContain('L2');
+  });
+
+  it('reconciles through MCP only with L2 authority', async () => {
+    const res = await rpc(app, 'tools/call', {
+      name: 'reconcile-transaction',
+      arguments: { transactionId: 'tx1' },
+    });
+    const body = await res.json() as any;
+    expect(body.result.content[0].text).toContain('"reconciled":true');
+    expect(storage.reconcileTransaction).toHaveBeenCalledWith('tx1', 'test-tenant', 'user-1');
+  });
+
+  it('requires L4 authority for COA mutations', async () => {
+    const create = await rpc(app, 'tools/call', {
+      name: 'create-coa-account',
+      arguments: { code: '7777', name: 'REI Hub Review', type: 'expense' },
+    });
+    expect(create.status).toBe(200);
+    expect(storage.createChartOfAccount).toHaveBeenCalled();
+
+    storage.getUserRoleForTenant.mockResolvedValueOnce('manager');
+    const denied = await rpc(app, 'tools/call', {
+      name: 'update-coa-account',
+      arguments: { accountId: 'coa-new', name: 'Nope' },
+    }, 2);
+    expect(denied.status).toBe(500);
+    const deniedBody = await denied.json() as any;
+    expect(deniedBody.error.message).toContain('L4');
+  });
+
+  it('refuses MCP property mutation on a reconciled transaction', async () => {
+    storage.getTransaction.mockResolvedValueOnce({ id: 'tx1', reconciled: true, coaCode: '5070' });
+    const res = await rpc(app, 'tools/call', {
+      name: 'assign-transaction-property',
+      arguments: { transactionId: 'tx1', propertyId: 'p1', reason: 'REI Hub property match' },
+    });
+    expect(res.status).toBe(500);
+    const body = await res.json() as any;
+    expect(body.error.message).toContain('reconciled');
+    expect(storage.updateTransaction).not.toHaveBeenCalled();
   });
 
   it('calls refresh-valuation', async () => {
