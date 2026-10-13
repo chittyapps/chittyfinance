@@ -30,6 +30,9 @@ function createMockStorage() {
     getProperty: vi.fn().mockResolvedValue({
       id: 'p1', name: 'City Studio', address: '550 W Surf', propertyType: 'condo', currentValue: '350000',
     }),
+    getTransactions: vi.fn().mockResolvedValue([
+      { id: 'tx1', date: new Date('2026-10-01T12:00:00Z'), amount: '-125.50', description: 'HOME DEPOT 1234', payee: 'Home Depot', propertyId: null, suggestedCoaCode: '9010', reconciled: false, type: 'expense' },
+    ]),
   };
 }
 
@@ -197,9 +200,10 @@ describe('MCP endpoint', () => {
   it('lists tools', async () => {
     const res = await rpc(app, 'tools/list');
     const body = await res.json() as any;
-    expect(body.result.tools).toHaveLength(2);
+    expect(body.result.tools).toHaveLength(3);
     expect(body.result.tools.map((t: any) => t.name)).toEqual([
       'get-property-advice',
+      'compare-rei-hub-snapshot',
       'refresh-valuation',
     ]);
   });
@@ -214,6 +218,29 @@ describe('MCP endpoint', () => {
     expect(body.result.content[0].text).toContain('City Studio');
     expect(body.result.content[0].text).toContain('Rule-based advice');
     expect(getExecution().capability).toBe('finance.mcp.tool:get-property-advice');
+    expect(getExecution().intent).toBe('suggest');
+  });
+
+  it('calls compare-rei-hub-snapshot without financial writes', async () => {
+    const res = await rpc(app, 'tools/call', {
+      name: 'compare-rei-hub-snapshot',
+      arguments: {
+        snapshot: {
+          source: 'rei-hub',
+          snapshotSha256: 'abc123',
+          bookedTransactions: {
+            headers: ['Account', 'Date', 'Description', 'Debit', 'Credit', 'Property', 'Vendor'],
+            rows: [['Repairs', '10/01/2026', 'HOME DEPOT 1234', '125.50', '', 'City Studio', 'Home Depot']],
+          },
+        },
+      },
+    });
+    const body = await res.json() as any;
+    const payload = JSON.parse(body.result.content[0].text);
+    expect(payload.mode).toBe('dry-run');
+    expect(payload.authority.writesPerformed).toBe(false);
+    expect(payload.plan.matchedRows).toBe(1);
+    expect(getExecution().capability).toBe('finance.mcp.tool:compare-rei-hub-snapshot');
     expect(getExecution().intent).toBe('suggest');
   });
 
