@@ -1,52 +1,23 @@
 /**
  * MCP (Model Context Protocol) endpoint for ChittyFinance.
  *
- * Exposes financial data as MCP resources and tools for cross-service queries.
- * Implements JSON-RPC 2.0 over HTTP POST per the MCP specification.
- *
- * Resources:
- *   finance://portfolio/summary - Portfolio-level financial overview
- *   finance://properties         - Property list with key metrics
- *   finance://tenants            - Tenant/entity list
- *
- * Tools:
- *   get-property-advice   - Get AI financial advice for a property
- *   refresh-valuation     - Refresh property valuation from external providers
+ * Business handlers remain tenant-scoped by ChittyFinance. Protocol and
+ * Streamable HTTP transport are delegated to the official MCP SDK.
  */
 
 import { Hono } from 'hono';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { z } from 'zod';
+import type { Context } from 'hono';
 import type { HonoEnv } from '../env';
 import { setExecutionOperation, type ExecutionIntent } from '../middleware/execution-context';
 
 export const mcpRoutes = new Hono<HonoEnv>();
 
-// ── JSON-RPC Types ──
-
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: string | number;
-  method: string;
-  params?: Record<string, any>;
-}
-
-function rpcOk(id: string | number, result: any) {
-  return { jsonrpc: '2.0' as const, id, result };
-}
-
-function rpcError(id: string | number | null, code: number, message: string) {
-  return { jsonrpc: '2.0' as const, id, error: { code, message } };
-}
-
-// ── MCP Protocol Constants ──
-
 const SERVER_INFO = {
   name: 'chittyfinance',
   version: '2.0.0',
-};
-
-const CAPABILITIES = {
-  resources: { listChanged: false },
-  tools: {},
 };
 
 const RESOURCE_CAPABILITIES: Record<string, string> = {
@@ -55,32 +26,10 @@ const RESOURCE_CAPABILITIES: Record<string, string> = {
   'finance://tenants': 'finance.mcp.resources.read:tenants',
 };
 
-const RESOURCES = [
-  {
-    uri: 'finance://portfolio/summary',
-    name: 'Portfolio Summary',
-    description: 'Aggregated financial overview across all properties: total value, NOI, cap rate, occupancy.',
-    mimeType: 'application/json',
-  },
-  {
-    uri: 'finance://properties',
-    name: 'Properties',
-    description: 'List of all properties with address, type, value, and key metrics.',
-    mimeType: 'application/json',
-  },
-  {
-    uri: 'finance://tenants',
-    name: 'Tenants',
-    description: 'List of all legal entities (LLCs, properties, management companies) in the tenant hierarchy.',
-    mimeType: 'application/json',
-  },
-];
-
 interface McpToolDefinition {
-  name: string;
+  name: 'get-property-advice' | 'refresh-valuation';
   description: string;
   intent: ExecutionIntent;
-  inputSchema: Record<string, any>;
 }
 
 const TOOL_DEFINITIONS: McpToolDefinition[] = [
@@ -88,51 +37,46 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
     name: 'get-property-advice',
     description: 'Get AI-powered financial advice for a specific property.',
     intent: 'suggest',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        propertyId: { type: 'string', description: 'UUID of the property' },
-        message: { type: 'string', description: 'Question or context for the AI advisor' },
-      },
-      required: ['propertyId', 'message'],
-    },
   },
   {
     name: 'refresh-valuation',
     description: 'Refresh property valuation estimates from external providers (Zillow, Redfin, HouseCanary, ATTOM, County).',
     intent: 'execute',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        propertyId: { type: 'string', description: 'UUID of the property to refresh' },
-      },
-      required: ['propertyId'],
-    },
   },
 ];
 
-const TOOLS = TOOL_DEFINITIONS.map(({ intent: _intent, ...tool }) => tool);
-
-// ── Resource Handlers ──
-
-async function readResource(uri: string, storage: any, tenantId: string, userId: string): Promise<{ contents: any[] }> {
+async function readResource(
+  uri: string,
+  storage: any,
+  tenantId: string,
+  userId: string,
+): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> {
   switch (uri) {
     case 'finance://portfolio/summary': {
       const properties = await storage.getProperties(tenantId);
       const summaries = await Promise.all(
-        properties.map(async (p: any) => {
+        properties.map(async (property: any) => {
           try {
-            return await storage.getPropertyFinancials(p.id, tenantId);
+            return await storage.getPropertyFinancials(property.id, tenantId);
           } catch {
             return null;
           }
-        })
+        }),
       );
       const valid = summaries.filter(Boolean);
-      const totalValue = properties.reduce((s: number, p: any) => s + Number(p.currentValue || 0), 0);
-      const totalNOI = valid.reduce((s: number, f: any) => s + (f.noi || 0), 0);
-      const totalUnits = valid.reduce((s: number, f: any) => s + (f.totalUnits || 0), 0);
-      const occupiedUnits = valid.reduce((s: number, f: any) => s + (f.occupiedUnits || 0), 0);
+      const totalValue = properties.reduce(
+        (sum: number, property: any) => sum + Number(property.currentValue || 0),
+        0,
+      );
+      const totalNOI = valid.reduce((sum: number, financials: any) => sum + (financials.noi || 0), 0);
+      const totalUnits = valid.reduce(
+        (sum: number, financials: any) => sum + (financials.totalUnits || 0),
+        0,
+      );
+      const occupiedUnits = valid.reduce(
+        (sum: number, financials: any) => sum + (financials.occupiedUnits || 0),
+        0,
+      );
 
       return {
         contents: [{
@@ -157,15 +101,15 @@ async function readResource(uri: string, storage: any, tenantId: string, userId:
         contents: [{
           uri,
           mimeType: 'application/json',
-          text: JSON.stringify(properties.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            address: p.address,
-            city: p.city,
-            state: p.state,
-            propertyType: p.propertyType,
-            currentValue: p.currentValue,
-            isActive: p.isActive,
+          text: JSON.stringify(properties.map((property: any) => ({
+            id: property.id,
+            name: property.name,
+            address: property.address,
+            city: property.city,
+            state: property.state,
+            propertyType: property.propertyType,
+            currentValue: property.currentValue,
+            isActive: property.isActive,
           }))),
         }],
       };
@@ -178,14 +122,14 @@ async function readResource(uri: string, storage: any, tenantId: string, userId:
           uri,
           mimeType: 'application/json',
           text: JSON.stringify(memberships.map((membership: any) => {
-            const t = membership.tenant;
+            const tenant = membership.tenant;
             return {
-              id: t.id,
-              name: t.name,
-              slug: t.slug,
-              type: t.type,
-              parentId: t.parentId,
-              isActive: t.isActive,
+              id: tenant.id,
+              name: tenant.name,
+              slug: tenant.slug,
+              type: tenant.type,
+              parentId: tenant.parentId,
+              isActive: tenant.isActive,
               role: membership.role,
             };
           })),
@@ -198,15 +142,13 @@ async function readResource(uri: string, storage: any, tenantId: string, userId:
   }
 }
 
-// ── Tool Handlers ──
-
 async function callTool(
-  name: string,
+  name: McpToolDefinition['name'],
   args: Record<string, any>,
   storage: any,
   tenantId: string,
   env: any,
-): Promise<{ content: any[] }> {
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   switch (name) {
     case 'get-property-advice': {
       const { propertyId, message } = args;
@@ -215,7 +157,6 @@ async function callTool(
         return { content: [{ type: 'text', text: `Property ${propertyId} not found.` }] };
       }
 
-      // Try ChittyAgent, fallback to rule-based
       const agentBase = env.CHITTYAGENT_API_BASE;
       const agentToken = env.CHITTYAGENT_API_TOKEN;
       let advice = `Property: ${property.name} (${property.address})\n`;
@@ -224,15 +165,24 @@ async function callTool(
         try {
           const res = await fetch(`${agentBase}/chat`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${agentToken}` },
-            body: JSON.stringify({ context: `Property: ${property.name}, ${property.address}`, message, service: 'chittyfinance' }),
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${agentToken}`,
+            },
+            body: JSON.stringify({
+              context: `Property: ${property.name}, ${property.address}`,
+              message,
+              service: 'chittyfinance',
+            }),
           });
           if (res.ok) {
             const data = await res.json() as any;
             advice += data.response || data.content || 'No advice available.';
             return { content: [{ type: 'text', text: advice }] };
           }
-        } catch { /* fall through to rule-based */ }
+        } catch {
+          // Fall through to the deterministic rule-based response.
+        }
       }
 
       advice += `Type: ${property.propertyType}, Value: $${Number(property.currentValue || 0).toLocaleString()}\n`;
@@ -254,74 +204,150 @@ async function callTool(
         }],
       };
     }
-
-    default:
-      throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-// ── MCP HTTP Endpoint ──
-
-mcpRoutes.post('/mcp', async (c) => {
+function buildMcpServer(c: Context<HonoEnv>): McpServer {
   const storage = c.get('storage');
   const tenantId = c.get('tenantId');
   const userId = c.get('userId');
 
-  let body: JsonRpcRequest;
+  const server = new McpServer(SERVER_INFO);
+
+  server.registerResource(
+    'portfolio-summary',
+    'finance://portfolio/summary',
+    {
+      title: 'Portfolio Summary',
+      description: 'Aggregated financial overview across all properties: total value, NOI, cap rate, occupancy.',
+      mimeType: 'application/json',
+    },
+    async (uri) => readResource(uri.href, storage, tenantId, userId),
+  );
+
+  server.registerResource(
+    'properties',
+    'finance://properties',
+    {
+      title: 'Properties',
+      description: 'List of all properties with address, type, value, and key metrics.',
+      mimeType: 'application/json',
+    },
+    async (uri) => readResource(uri.href, storage, tenantId, userId),
+  );
+
+  server.registerResource(
+    'tenants',
+    'finance://tenants',
+    {
+      title: 'Tenants',
+      description: 'List of legal entities available to the authorized caller.',
+      mimeType: 'application/json',
+    },
+    async (uri) => readResource(uri.href, storage, tenantId, userId),
+  );
+
+  server.registerTool(
+    'get-property-advice',
+    {
+      description: TOOL_DEFINITIONS[0].description,
+      inputSchema: {
+        propertyId: z.string().min(1).describe('UUID of the property'),
+        message: z.string().min(1).describe('Question or context for the AI advisor'),
+      },
+    },
+    async ({ propertyId, message }) => callTool(
+      'get-property-advice',
+      { propertyId, message },
+      storage,
+      tenantId,
+      c.env,
+    ),
+  );
+
+  server.registerTool(
+    'refresh-valuation',
+    {
+      description: TOOL_DEFINITIONS[1].description,
+      inputSchema: {
+        propertyId: z.string().min(1).describe('UUID of the property to refresh'),
+      },
+    },
+    async ({ propertyId }) => callTool(
+      'refresh-valuation',
+      { propertyId },
+      storage,
+      tenantId,
+      c.env,
+    ),
+  );
+
+  return server;
+}
+
+/**
+ * Preserve ChittyFinance execution provenance while leaving protocol validation
+ * to the MCP SDK. This observer never authorizes a request and never mutates
+ * caller/tenant scope.
+ */
+async function observeMcpOperation(c: Context<HonoEnv>): Promise<void> {
+  if (c.req.method !== 'POST') {
+    setExecutionOperation(c, `finance.mcp.transport:${c.req.method.toLowerCase()}`, 'read');
+    return;
+  }
+
+  let body: any;
   try {
-    body = await c.req.json();
+    body = await c.req.raw.clone().json();
   } catch {
-    return c.json(rpcError(null, -32700, 'Parse error'), 400);
+    return;
   }
 
-  if (body.jsonrpc !== '2.0' || !body.method) {
-    return c.json(rpcError(body.id ?? null, -32600, 'Invalid request'), 400);
-  }
+  if (!body || Array.isArray(body) || typeof body.method !== 'string') return;
 
-  try {
-    switch (body.method) {
-      case 'initialize':
-        setExecutionOperation(c, 'finance.mcp.initialize', 'read');
-        return c.json(rpcOk(body.id, {
-          protocolVersion: '2024-11-05',
-          serverInfo: SERVER_INFO,
-          capabilities: CAPABILITIES,
-        }));
-
-      case 'resources/list':
-        setExecutionOperation(c, 'finance.mcp.resources.list', 'read');
-        return c.json(rpcOk(body.id, { resources: RESOURCES }));
-
-      case 'resources/read': {
-        const uri = body.params?.uri;
-        if (!uri) return c.json(rpcError(body.id, -32602, 'Missing uri param'), 400);
-        setExecutionOperation(c, RESOURCE_CAPABILITIES[uri] ?? 'finance.mcp.resources.read:unknown', 'read');
-        const result = await readResource(uri, storage, tenantId, userId);
-        return c.json(rpcOk(body.id, result));
-      }
-
-      case 'tools/list':
-        setExecutionOperation(c, 'finance.mcp.tools.list', 'read');
-        return c.json(rpcOk(body.id, { tools: TOOLS }));
-
-      case 'tools/call': {
-        const toolName = body.params?.name;
-        const toolArgs = body.params?.arguments || {};
-        if (!toolName) return c.json(rpcError(body.id, -32602, 'Missing tool name'), 400);
-        const toolDefinition = TOOL_DEFINITIONS.find((tool) => tool.name === toolName);
-        setExecutionOperation(
-          c,
-          toolDefinition ? `finance.mcp.tool:${toolName}` : 'finance.mcp.tools.call',
-          toolDefinition?.intent ?? 'execute',
-        );
-        const result = await callTool(toolName, toolArgs, storage, tenantId, c.env);
-        return c.json(rpcOk(body.id, result));
-      }
-
-      default:
-        return c.json(rpcError(body.id, -32601, `Method not found: ${body.method}`), 404);
+  switch (body.method) {
+    case 'initialize':
+      setExecutionOperation(c, 'finance.mcp.initialize', 'read');
+      break;
+    case 'resources/list':
+      setExecutionOperation(c, 'finance.mcp.resources.list', 'read');
+      break;
+    case 'resources/read': {
+      const uri = typeof body.params?.uri === 'string' ? body.params.uri : '';
+      setExecutionOperation(
+        c,
+        RESOURCE_CAPABILITIES[uri] ?? 'finance.mcp.resources.read:unknown',
+        'read',
+      );
+      break;
     }
-  } catch (err: any) {
-    return c.json(rpcError(body.id, -32000, err.message || 'Internal error'), 500);
+    case 'tools/list':
+      setExecutionOperation(c, 'finance.mcp.tools.list', 'read');
+      break;
+    case 'tools/call': {
+      const toolName = typeof body.params?.name === 'string' ? body.params.name : '';
+      const definition = TOOL_DEFINITIONS.find((tool) => tool.name === toolName);
+      setExecutionOperation(
+        c,
+        definition ? `finance.mcp.tool:${toolName}` : 'finance.mcp.tools.call',
+        definition?.intent ?? 'execute',
+      );
+      break;
+    }
+    default:
+      setExecutionOperation(c, `finance.mcp.method:${body.method}`, 'read');
   }
+}
+
+mcpRoutes.all('/mcp', async (c) => {
+  await observeMcpOperation(c);
+
+  const server = buildMcpServer(c);
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+
+  await server.connect(transport);
+  return transport.handleRequest(c.req.raw);
 });
