@@ -70,6 +70,11 @@ waveCallbackRoute.get('/api/integrations/wave/callback', async (c) => {
       return c.redirect(`${baseUrl}/connections?wave=error&reason=no_businesses`);
     }
 
+    // A tenant-to-Wave-business mapping must be explicit. Never bind the
+    // first returned business to a multi-entity ChittyFinance tenant.
+    if (businesses.length !== 1) {
+      return c.redirect(`${baseUrl}/connections?wave=error&reason=business_selection_required`);
+    }
     const business = businesses[0];
     // Create storage directly — no middleware available for public callback
     const db = createDb(c.env.DATABASE_URL);
