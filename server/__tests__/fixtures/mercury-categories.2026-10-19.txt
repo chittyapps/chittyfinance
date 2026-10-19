@@ -1,0 +1,66 @@
+# Mercury custom expense categories, as the org held them on 2026-10-19.
+#
+# PROVENANCE: Mercury MCP `listCategories` (limit 1000, order asc), read 2026-10-19
+# ~12:42 UTC. Recorded verbatim — no name was normalised, re-cased or de-duplicated on
+# the way in. `expense-LITIGATION-RELATED` really is upper-case in Mercury.
+#
+# WHY THIS FILE EXISTS: §11 of docs/CHART-OF-ACCOUNTS.md is a mapping contract keyed on
+# these names. Six names it mapped had no live category behind them, and nothing could
+# tell: a mapping keyed on `expense-late-fee` can never match `expense-late_fee`, and it
+# fails by matching nothing rather than by erroring. Nobody notices a sync that quietly
+# does nothing. This snapshot makes the doc's keys checkable in CI without CI holding a
+# Mercury credential.
+#
+# REFRESHING: re-run listCategories, replace this file, update MERCURY_SNAPSHOT_DATE in
+# server/__tests__/mercury-category-parity.test.ts, and reconcile §11 in the same commit.
+# Refreshing it without reconciling the doc defeats the point of having it.
+#
+# Format: <category id>|<name>
+16d5145a-bc75-4472-9d33-059b826794cc|revenue-rental-income
+24c90087-b917-45e3-afcf-e5518ebff6b9|expense-cleaning
+27ff5236-098d-443c-996b-921a5bd220bc|refund
+41abb67d-1312-42f1-9f17-941137395958|chitty
+547f3368-a634-4508-9dd4-81dcc19c6ae4|expense-late_fee
+5c340954-edf3-4f66-86d4-5698751d59ca|member-distribution
+5cc91ef2-3621-49b1-8583-7e5adb5d5464|liability-mortgage
+74f54d3d-68bb-4a15-ba1a-cdb2cecdb744|revenue-fees-movein
+889e46b2-76f9-485d-a0fd-6408bffd4d87|lakesideloft
+97dce257-3e4c-4cab-ac70-b5eb6c893af3|citystudio
+9c25a0c5-2049-4c35-a9af-17e4dd1f2045|cozycastle
+a8b9aa0a-f059-4be4-a5f1-615c7d358200|liability-arias
+bf3194cb-2c75-4109-8535-3ad3d657a76d|expense-shared
+c12326d9-c9ca-466a-84d7-8400ba38a70a|revenue-fees-application
+c2b9dd91-cb23-41e8-b42e-666cdb0c14e9|expense-utilities
+c994b8ec-1b93-4ccd-bde4-9e89964f463c|expense-association_dues
+d9305b79-5e02-4918-82a9-05bc20445633|airbnb
+e358e87e-4a95-4185-a704-2458fde45eaa|revenue-all-inclusive-rental
+f49a5b27-32a7-4992-95ab-a0c91b2e34d9|liability-deposits-damage
+f711b7f9-fae7-4c28-bacf-615f2f798105|expense-connectivity
+f924679d-284b-4fec-993b-c036282541d5|revenue-fees-parking
+fe33f32c-3def-41c3-ad63-6311d639903b|villavista
+abc545b4-fc28-45c6-a848-e605188fb46f|member-contribution
+cdc0e231-9d6c-4ff4-b2d3-b9a91592f709|expense-insurance
+a0f61cb0-e1f4-492e-9fca-3ebb56552338|expense-legal
+c6126db3-01b3-4886-923e-3dea86cf9e3f|expense-labor
+c6919eb9-a06a-4b7a-8848-657a72dcc675|liability-credit_card_payment
+bce69795-59fd-4839-aa2a-732bf6601011|expense-capital-improvement
+263cd5b5-fd4d-48da-83f2-a430ba19dae8|expense-LITIGATION-RELATED
+a4b0d4b7-ab4e-4c41-8a24-4eef4276286d|expense-software
+b5886a43-6896-422f-9200-8e10fbee7886|transfer-intracompany
+b9fb846a-7784-46bc-859b-9e2031807c14|expense-travel
+142afd59-5e05-441a-8342-0053121041e4|expense-supplies
+83135d20-0c9b-448f-9331-2db84ec702ba|ignore-failed
+182b9618-88d5-4e00-a9af-d360a306db03|transfer-intercompany
+de19a069-f5f2-4ec8-9bc7-660275c8cce2|revenue-mixed
+c485f72e-9df3-46bd-beff-e0ec39415b49|expense-petty_cash
+cce0d32f-0f78-470a-a1c3-c26cff8c205e|expense-furnishings_decor
+3651f6d4-09e7-4f23-97ba-9d851c611f09|expense-marketing
+7842fcbd-b1a7-4ce7-9488-2f5658bce71c|expense-repairs
+5da341d4-eaae-446b-8b05-f78a0a2501c3|revenue-management-income
+22d5fef2-fff4-42d0-b9ea-2104d6f90dae|revenue-parking
+472743b5-6554-4f43-9120-b6fb73b662a8|arias-liability
+669594bd-f52e-461b-97e3-a41f0b86e0cc|revenue-application-fees
+b136c242-1129-47c9-bd6d-064b2542bb47|itcanbellc
+e15c3f8e-3de1-45b9-af01-ddeedc1d246c|security-deposit-refund
+ed143427-f089-42f1-8c4f-b55c153f991d|revenue-furnished-rental
+d2d2df2e-3abc-424f-a04b-1b9e378f1a29|expense-discount-or-credit

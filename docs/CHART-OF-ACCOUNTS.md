@@ -763,7 +763,7 @@ the mapping in §11 is what allows the history to be read either way.
 
 **Why this way round:** a category is one free-text field per transaction, so encoding
 four dimensions in it guarantees collisions and duplicates — which is exactly what the
-current 60 categories show. GL codes are a separate field, already present, already
+live categories show (48 of them, verified 2026-10-19; see §11.1). GL codes are a separate field, already present, already
 matching this chart.
 
 ## 11. Mercury → ChittyFinance mapping (existing categories)
@@ -771,6 +771,17 @@ matching this chart.
 Mapping contract for history. Not yet implemented in any importer. Every row resolves to
 accounts declared in §14; where a category maps to more than one, the Account cell names
 the closed output set and a rule (R1–R6) below names the input that selects within it.
+
+**Reconciled against live Mercury 2026-10-19.** Every key in the table below either exists
+as a live category or is listed in §11.1 as absent. That is enforced by
+`server/__tests__/mercury-category-parity.test.ts` against the recorded snapshot
+`server/__tests__/fixtures/mercury-categories.2026-10-19.txt`, because this table had
+drifted in the one direction nothing detects: a key that matches no live category fails by
+matching nothing, silently. `expense-petty-cash` was such a key — the live category is
+`expense-petty_cash`, so this table's decision to treat petty cash as an asset movement to
+1050 rather than an expense had been reaching **20 transactions totalling $1,784.49
+(2025-07-06 → 2026-09-19, all Cash App debits) through a key that could never match any of
+them.**
 
 | Mercury category | Account | Other dimension |
 |---|---|---|
@@ -797,7 +808,7 @@ the closed output set and a rule (R1–R6) below names the input that selects wi
 | `expense-software` | 6010 | — |
 | `expense-marketing` | 5000 | — |
 | `expense-travel` | 5010 | — |
-| `expense-petty-cash` | 1050 | asset, not expense |
+| `expense-petty_cash`, `expense-petty-cash` | 1050 | asset, not expense; the hyphen form has no live category (§11.1) |
 | `expense-capital-improvement` | 1500, 1510, 1520, 1600, 1610, 1620 — rule R3 | see §8 |
 | `expense-discount-or-credit` | 4000, 4005, 4008 — rule R4, contra-revenue | — |
 | `mortgage`, `liability-mortgage` | 2500, 5300, 5090, 5040 — rule R5 | see §7 |
@@ -814,6 +825,38 @@ the closed output set and a rule (R1–R6) below names the input that selects wi
 | `it-can-be-llc`, `itcanbellc`, `chitty` | — | `tenant_id` (data scope, not the legal entity — see §9) |
 | `airbnb` | — | booking channel; no field exists yet (see §9) |
 | `expense-shared` | allocation rule | see `allocation_rules` |
+
+### 11.1 Keys with no live Mercury category (verified 2026-10-19)
+
+These names stay in the table above: §10 says **retire, don't delete, until historical
+rows are re-coded**, and a key's resolution still has to be readable if the category
+reappears or if an export of older rows carries it. What changed is that their absence is
+now *stated* rather than implied, and checked.
+
+| Key | Live category it was probably meant to be | Note |
+|---|---|---|
+| `revenue-managementincome` | `revenue-management-income` | spelling variant |
+| `expense-association-dues` | `expense-association_dues` | hyphen for underscore |
+| `expense-late-fee` | `expense-late_fee` | hyphen for underscore |
+| `expense-hoa` | `expense-association_dues` | older name |
+| `mortgage` | `liability-mortgage` | older name |
+| `distribution` | `member-distribution` | older name |
+| `transfer` | `transfer-intracompany` / `transfer-intercompany` | older name, before the split |
+| `failed` | `ignore-failed` | older name |
+| `villa-vista` | `villavista` | hyphen variant |
+| `it-can-be-llc` | `itcanbellc` | hyphen variant |
+| `aptarlene` | — | no live category; property no longer tagged |
+| `expense-petty-cash` | `expense-petty_cash` | **was the only key in the table, so the 1050 mapping matched nothing.** Corrected above; the hyphen form is kept here only as history |
+
+**The lesson this table encodes.** Every entry failed the same way: it matched nothing, and
+matching nothing raises no error. The four underscore-for-hyphen cases are the dangerous
+shape, because the name looks right. `expense-petty_cash` is the proof that it is not a
+theoretical concern — 20 transactions, $1,784.49, unmapped for as long as the table has
+existed.
+
+Two live categories are deliberately unmapped: `liability-arias` and `arias-liability`,
+removed from the table in #211. Both hold zero transactions. They still exist in Mercury —
+the Mercury API exposes no category delete, so they can only be removed in the UI.
 
 ### Resolution rules
 
