@@ -52,6 +52,7 @@ import type { HonoEnv } from '../env';
 import {
   seedChartOfAccounts,
   createDefaultAuditSink,
+  PERSISTED_FIELDS,
   type SeedPlan,
 } from '../../database/seeds/chart-of-accounts';
 
@@ -65,7 +66,30 @@ import {
  *
  * Exported so the guard can be tested (and mutated) as a pure function.
  */
-export const seedRequestSchema = z.object({ apply: z.literal(true).optional() }).strict();
+export const seedRequestSchema = z
+  .object({
+    apply: z.literal(true).optional(),
+    /**
+     * Narrow what the apply writes. See SeedScope in the seed module for why this exists.
+     *
+     * Validated at the boundary rather than left to the seed's own normalizeScope(): an
+     * empty array and a field name that is not persisted are 400s here, not a 500 from
+     * inside the write path. The seed keeps its own guard for library callers.
+     *
+     * A scope on a bare POST is meaningful — it rehearses the narrow apply — so it is
+     * allowed without `apply`.
+     */
+    scope: z
+      .object({
+        fields: z.array(z.enum(PERSISTED_FIELDS)).nonempty().optional(),
+        // Chart codes are four digits. Rejecting anything else here means a typo cannot
+        // reach the planner and come back as a successful apply of zero rows.
+        codes: z.array(z.string().regex(/^\d{4}$/)).nonempty().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 /** Stable hex sha256, for naming the exact document that gated the run. */
 async function sha256Hex(text: string): Promise<string> {
@@ -85,6 +109,15 @@ function summarize(plan: SeedPlan) {
     duplicateCodes: plan.duplicateCodes.length,
     extraneous: plan.extraneous.length,
     statements: plan.inserts.length + plan.updates.length,
+    // Always present, including on an unscoped run, so the audit artifact for a scoped
+    // apply cannot be mistaken for one that brought the whole chart into sync.
+    scope: plan.scope,
+    deferred: {
+      inserts: plan.deferred.inserts.length,
+      updates: plan.deferred.updates.length,
+      partiallyWritten: plan.deferred.fields.length,
+      unmatchedCodes: plan.deferred.unmatchedCodes,
+    },
   };
 }
 
@@ -125,7 +158,9 @@ export function createAdminSeedRoutes(chartDocument?: string) {
       return c.json(
         {
           error: 'invalid_request',
-          message: 'Body accepts only {"apply": true}. Any other value is refused rather than treated as a dry run.',
+          message:
+            'Body accepts {"apply": true} and an optional {"scope": {"fields": [...], "codes": [...]}}. ' +
+            'Any other value is refused rather than treated as a dry run.',
           issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
         },
         400,
@@ -137,6 +172,7 @@ export function createAdminSeedRoutes(chartDocument?: string) {
     const plan = await seedChartOfAccounts({
       db: c.get('db'),
       apply,
+      scope: parsed.data.scope,
       // The bundled document when the Worker entry supplied one. `undefined` leaves the
       // seed on its filesystem default, which is correct under Node and throws — before
       // any write — in a Worker built without the Text rule.

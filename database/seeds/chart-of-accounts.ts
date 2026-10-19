@@ -17,6 +17,12 @@
 // subtype, description, schedule_e_line, tax_deductible, parent_code. It deliberately
 // does NOT write metadata, is_active or modified_by on existing rows — see §"What this
 // seed does not write" below.
+//
+// An apply can be NARROWED to a set of fields and/or codes — see SeedScope. A scope only
+// ever subtracts; it cannot write a row or a column the unscoped apply would not have
+// written. The CLI above has no scope flags: the operator-facing scoped apply is
+// POST /api/admin/seed/chart-of-accounts, where DATABASE_URL is a Worker secret rather
+// than a shell variable.
 
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -102,7 +108,7 @@ export interface SeedPlan {
   updates: Array<{
     id: string;
     row: SeedAccountRow;
-    changedFields: string[];
+    changedFields: PersistedField[];
   }>;
   /** Codes present in both and identical on every persisted field. */
   unchanged: string[];
@@ -119,6 +125,32 @@ export interface SeedPlan {
   duplicateCodes: string[];
   /** Global codes in the table that the projection no longer defines. Reported, never deleted. */
   extraneous: string[];
+  /**
+   * What a scope held back. Empty on an unscoped plan.
+   *
+   * This exists so a scoped apply cannot read as "the chart is now in sync". A plan that
+   * writes four tax_deductible corrections while ten header accounts are still missing
+   * must say so in the same artifact, or the next operator reads a clean summary and
+   * believes the hierarchy landed.
+   */
+  deferred: {
+    /** Inserts the scope excluded. A field scope always excludes every insert — see narrowScope(). */
+    inserts: SeedAccountRow[];
+    /** Updates no requested field touched. */
+    updates: Array<{ id: string; row: SeedAccountRow; changedFields: PersistedField[] }>;
+    /**
+     * Updates the scope kept but trimmed: the fields that differ and were NOT written,
+     * per code. An entry here means that row is still drifted after this apply.
+     */
+    fields: Array<{ code: string; applied: PersistedField[]; deferred: PersistedField[] }>;
+    /**
+     * Codes named in `scope.codes` that match nothing in the projection. Reported so a
+     * typo'd code does not come back as a successful apply of zero rows.
+     */
+    unmatchedCodes: string[];
+  };
+  /** The scope this plan was computed under, or null when unscoped. */
+  scope: { fields: PersistedField[] | null; codes: string[] | null } | null;
 }
 
 /** Fields compared to decide whether an existing row needs an update, and the exact SET list. */
@@ -131,6 +163,75 @@ export const PERSISTED_FIELDS = [
   'taxDeductible',
   'parentCode',
 ] as const;
+
+/** One of the columns the authoritative document defines. */
+export type PersistedField = (typeof PERSISTED_FIELDS)[number];
+
+/**
+ * Narrow what an apply is allowed to write.
+ *
+ * WHY THIS EXISTS
+ *
+ * The unscoped apply is all-or-nothing, and §3 (document authoritative) pulls against
+ * §6 (never hand-write apply SQL) the moment the two pending changes have different
+ * risk. Production currently needs four `tax_deductible` corrections on rows that already
+ * exist — four UPDATEs, idempotent, no structural effect. The same unscoped apply would
+ * also insert ten header accounts and set `parent_code` on 37 children, over a
+ * connection with no interactive transactions, so a mid-apply failure leaves a
+ * half-built hierarchy. Hand-writing the four UPDATEs instead is exactly what produced
+ * the defect being corrected: §6 is not negotiable, so the seed has to be able to carry
+ * a smaller change.
+ *
+ * A scope never widens anything. Every write it performs is a write the unscoped plan
+ * would also have performed, on the same row, with the same value.
+ */
+export interface SeedScope {
+  /**
+   * Write only these columns. Omitted means every column in PERSISTED_FIELDS.
+   *
+   * A field scope narrower than PERSISTED_FIELDS **cannot insert**. An INSERT writes every
+   * column by definition, so calling it a `taxDeductible`-only change would be false; the
+   * inserts are reported under `deferred.inserts` instead. A code-only scope may insert.
+   */
+  fields?: readonly PersistedField[];
+  /** Write only these account codes. Omitted means every code in the projection. */
+  codes?: readonly string[];
+}
+
+/**
+ * Validate a scope and resolve it to concrete lists. Refuses rather than silently
+ * degrading, on the same reasoning as the route's `.strict()` guard: a request that meant
+ * to write and names a field that does not exist must not come back reporting a
+ * successful apply of nothing.
+ */
+export function normalizeScope(
+  scope: SeedScope | undefined,
+): { fields: PersistedField[] | null; codes: string[] | null } | null {
+  if (!scope) return null;
+  let fields: PersistedField[] | null = null;
+  if (scope.fields !== undefined) {
+    if (scope.fields.length === 0) {
+      throw new Error('scope.fields is empty: every update would be a no-op. Omit it to write every field.');
+    }
+    const unknown = scope.fields.filter((f) => !PERSISTED_FIELDS.includes(f));
+    if (unknown.length) {
+      throw new Error(
+        `scope.fields names ${unknown.length} field(s) the seed does not persist: ${unknown.join(', ')}. ` +
+          `Persisted fields are: ${PERSISTED_FIELDS.join(', ')}.`,
+      );
+    }
+    fields = [...new Set(scope.fields)];
+  }
+  let codes: string[] | null = null;
+  if (scope.codes !== undefined) {
+    if (scope.codes.length === 0) {
+      throw new Error('scope.codes is empty: no row would be written. Omit it to write every code.');
+    }
+    codes = [...new Set(scope.codes)];
+  }
+  if (fields === null && codes === null) return null;
+  return { fields, codes };
+}
 
 /** Project REI_CHART_OF_ACCOUNTS into the rows the table should hold. */
 export function projectSeedRows(): SeedAccountRow[] {
@@ -146,7 +247,7 @@ export function projectSeedRows(): SeedAccountRow[] {
   }));
 }
 
-function changedFields(existing: ExistingAccountRow, desired: SeedAccountRow): string[] {
+function changedFields(existing: ExistingAccountRow, desired: SeedAccountRow): PersistedField[] {
   return PERSISTED_FIELDS.filter((field) => existing[field] !== desired[field]);
 }
 
@@ -157,6 +258,7 @@ function changedFields(existing: ExistingAccountRow, desired: SeedAccountRow): s
 export function computeSeedPlan(
   desired: SeedAccountRow[],
   existing: ExistingAccountRow[],
+  scope?: SeedScope,
 ): SeedPlan {
   const byCode = new Map<string, ExistingAccountRow[]>();
   for (const row of existing) {
@@ -165,6 +267,15 @@ export function computeSeedPlan(
     byCode.set(row.code, rows);
   }
 
+  const resolved = normalizeScope(scope);
+  const codeScope = resolved?.codes ? new Set(resolved.codes) : null;
+  // A field scope narrower than the full list forbids inserts; `fields: PERSISTED_FIELDS`
+  // spelled out in full is the unscoped field set and still inserts.
+  const fieldScope =
+    resolved?.fields && resolved.fields.length < PERSISTED_FIELDS.length
+      ? new Set<PersistedField>(resolved.fields)
+      : null;
+
   const plan: SeedPlan = {
     inserts: [],
     updates: [],
@@ -172,12 +283,16 @@ export function computeSeedPlan(
     inactive: [],
     duplicateCodes: [],
     extraneous: [],
+    deferred: { inserts: [], updates: [], fields: [], unmatchedCodes: [] },
+    scope: resolved,
   };
 
   for (const row of desired) {
     const matches = byCode.get(row.code) ?? [];
     if (matches.length === 0) {
-      plan.inserts.push(row);
+      // Out of code scope, or a field scope that cannot honestly describe an INSERT.
+      if ((codeScope && !codeScope.has(row.code)) || fieldScope) plan.deferred.inserts.push(row);
+      else plan.inserts.push(row);
       continue;
     }
     if (matches.length > 1) {
@@ -188,9 +303,30 @@ export function computeSeedPlan(
     const fields = changedFields(matches[0], row);
     if (fields.length === 0) {
       plan.unchanged.push(row.code);
-    } else {
-      plan.updates.push({ id: matches[0].id, row, changedFields: fields });
+      continue;
     }
+    if (codeScope && !codeScope.has(row.code)) {
+      plan.deferred.updates.push({ id: matches[0].id, row, changedFields: fields });
+      continue;
+    }
+    const applied = fieldScope ? fields.filter((f) => fieldScope.has(f)) : fields;
+    if (applied.length === 0) {
+      plan.deferred.updates.push({ id: matches[0].id, row, changedFields: fields });
+      continue;
+    }
+    if (applied.length < fields.length) {
+      plan.deferred.fields.push({
+        code: row.code,
+        applied,
+        deferred: fields.filter((f) => !applied.includes(f)),
+      });
+    }
+    plan.updates.push({ id: matches[0].id, row, changedFields: applied });
+  }
+
+  if (codeScope) {
+    const projected = new Set(desired.map((r) => r.code));
+    plan.deferred.unmatchedCodes = [...codeScope].filter((c) => !projected.has(c)).sort();
   }
 
   const desiredCodes = new Set(desired.map((r) => r.code));
@@ -229,6 +365,32 @@ export function formatSeedPlan(plan: SeedPlan): string {
       `  ? ${plan.extraneous.length} global code(s) in the table are not in the chart ` +
         `(left alone): ${plan.extraneous.join(', ')}`,
     );
+  }
+  if (plan.scope) {
+    lines.push(
+      `  scope: fields=${plan.scope.fields ? plan.scope.fields.join('+') : 'all'} ` +
+        `codes=${plan.scope.codes ? plan.scope.codes.join(',') : 'all'}`,
+    );
+    const d = plan.deferred;
+    // Stated unconditionally under a scope, including at zero, so "the chart is in sync"
+    // and "the scope wrote everything it was allowed to" never look alike.
+    lines.push(
+      `  DEFERRED by this scope: ${d.inserts.length} insert(s), ${d.updates.length} ` +
+        `whole update(s), ${d.fields.length} partially-written row(s)`,
+    );
+    for (const row of d.inserts) lines.push(`    - insert ${row.code} ${row.name}`);
+    for (const u of d.updates) {
+      lines.push(`    - update ${u.row.code} (${u.changedFields.join(', ')})`);
+    }
+    for (const f of d.fields) {
+      lines.push(`    - ${f.code} still drifted on: ${f.deferred.join(', ')}`);
+    }
+    if (d.unmatchedCodes.length) {
+      lines.push(
+        `  ! scope.codes names ${d.unmatchedCodes.length} code(s) the chart does not ` +
+          `define: ${d.unmatchedCodes.join(', ')}`,
+      );
+    }
   }
   return lines.join('\n');
 }
@@ -345,6 +507,11 @@ export interface SeedOptions {
   audit?: SeedAuditSink;
   /** The authoritative document text. Defaults to reading docs/CHART-OF-ACCOUNTS.md. */
   document?: string;
+  /**
+   * Narrow what the apply writes. Omitted means the whole chart, which is the behaviour
+   * every existing caller gets. See SeedScope.
+   */
+  scope?: SeedScope;
 }
 
 /**
@@ -359,7 +526,9 @@ export async function seedChartOfAccounts(options: SeedOptions = {}): Promise<Se
     db = createDb(databaseUrl);
   }
 
-  const plan = computeSeedPlan(projectSeedRows(), await readGlobalRows(db));
+  // normalizeScope() throws on an invalid scope, and it runs inside computeSeedPlan
+  // before any read is used — so a bad scope fails the dry run too, not just the apply.
+  const plan = computeSeedPlan(projectSeedRows(), await readGlobalRows(db), options.scope);
 
   console.log(options.apply ? 'Applying chart of accounts:' : 'Chart of accounts (dry run):');
   console.log(formatSeedPlan(plan));
@@ -385,19 +554,21 @@ export async function seedChartOfAccounts(options: SeedOptions = {}): Promise<Se
   }
 
   for (const update of plan.updates) {
-    // The SET list is exactly PERSISTED_FIELDS plus updated_at. modified_by is NOT set:
-    // a row last changed by a human L4 auditor keeps that attribution. is_active is NOT
-    // set: activation state is not a chart definition.
+    // The SET list is exactly this update's changedFields plus updated_at. modified_by is
+    // NOT set: a row last changed by a human L4 auditor keeps that attribution. is_active
+    // is NOT set: activation state is not a chart definition.
+    //
+    // Built from changedFields rather than hardcoded to all seven columns, because under a
+    // field scope a hardcoded list would write the columns the scope excluded — the scope
+    // would narrow the plan and change nothing about the SQL. Drizzle builds an UPDATE's
+    // SET list from the keys of .set(), so what is absent here is genuinely not in the
+    // statement (unlike an INSERT, whose column list comes from the table definition).
     await db
       .update(chartOfAccounts)
       .set({
-        name: update.row.name,
-        type: update.row.type,
-        subtype: update.row.subtype,
-        description: update.row.description,
-        scheduleELine: update.row.scheduleELine,
-        taxDeductible: update.row.taxDeductible,
-        parentCode: update.row.parentCode,
+        ...(Object.fromEntries(
+          update.changedFields.map((f) => [f, update.row[f]]),
+        ) as Partial<SeedAccountRow>),
         updatedAt: new Date(),
       })
       // Scoped by id AND tenant_id IS NULL: a tenant override can never be reached.

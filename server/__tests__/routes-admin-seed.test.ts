@@ -292,3 +292,48 @@ describe('seedRequestSchema', () => {
     expect(seedRequestSchema.safeParse({ apply: true, force: true }).success).toBe(false);
   });
 });
+
+// ── Scope at the boundary ────────────────────────────────────────────────────────────
+
+describe('seedRequestSchema: scope', () => {
+  it('accepts a field scope, a code scope, and both', () => {
+    expect(seedRequestSchema.safeParse({ apply: true, scope: { fields: ['taxDeductible'] } }).success).toBe(true);
+    expect(seedRequestSchema.safeParse({ apply: true, scope: { codes: ['5015'] } }).success).toBe(true);
+    expect(
+      seedRequestSchema.safeParse({ apply: true, scope: { fields: ['taxDeductible'], codes: ['5015'] } }).success,
+    ).toBe(true);
+  });
+
+  it('accepts a scope with no apply, because rehearsing the narrow plan is the point of a dry run', () => {
+    expect(seedRequestSchema.safeParse({ scope: { codes: ['5015'] } }).success).toBe(true);
+  });
+
+  it('refuses an empty list at the boundary rather than in the write path', () => {
+    expect(seedRequestSchema.safeParse({ apply: true, scope: { fields: [] } }).success).toBe(false);
+    expect(seedRequestSchema.safeParse({ apply: true, scope: { codes: [] } }).success).toBe(false);
+  });
+
+  it('refuses a column the seed does not persist, including the three it deliberately never writes', () => {
+    for (const field of ['isActive', 'modifiedBy', 'metadata', 'code', 'nonsense']) {
+      expect(
+        seedRequestSchema.safeParse({ apply: true, scope: { fields: [field] } }).success,
+        field,
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a code that is not four digits, so a typo cannot read as a successful apply of nothing', () => {
+    for (const code of ['501', '50155', 'abcd', '', '5015 ', '50-15']) {
+      expect(
+        seedRequestSchema.safeParse({ apply: true, scope: { codes: [code] } }).success,
+        JSON.stringify(code),
+      ).toBe(false);
+    }
+  });
+
+  it('refuses an unknown key inside scope, and a scope that is not an object', () => {
+    expect(seedRequestSchema.safeParse({ apply: true, scope: { feilds: ['name'] } }).success).toBe(false);
+    expect(seedRequestSchema.safeParse({ apply: true, scope: ['taxDeductible'] }).success).toBe(false);
+    expect(seedRequestSchema.safeParse({ apply: true, scope: 'taxDeductible' }).success).toBe(false);
+  });
+});

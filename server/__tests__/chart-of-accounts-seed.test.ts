@@ -8,9 +8,11 @@ import {
   computeSeedPlan,
   formatSeedPlan,
   isMainModule,
+  normalizeScope,
   projectSeedRows,
   seedChartOfAccounts,
   PERSISTED_FIELDS,
+  type SeedScope,
   type ExistingAccountRow,
   type SeedAccountRow,
   type SeedAuditEvent,
@@ -485,12 +487,13 @@ function recordingDb(existingRows: ExistingAccountRow[]) {
   return { db: drizzle(client as never, { schema }), calls };
 }
 
-async function runApply(existingRows: ExistingAccountRow[]) {
+async function runApply(existingRows: ExistingAccountRow[], scope?: SeedScope) {
   const { db, calls } = recordingDb(existingRows);
   const audit: SeedAuditEvent[] = [];
   const plan = await seedChartOfAccounts({
     apply: true,
     db,
+    scope,
     audit: async (event) => {
       audit.push(event);
     },
@@ -520,32 +523,36 @@ describe('seedChartOfAccounts: the statements it emits', () => {
     }
   });
 
-  it('sets exactly the persisted fields plus updated_at, and nothing else', async () => {
+  it('sets exactly the fields that changed plus updated_at, on every statement', async () => {
     // Unlike the INSERT column list, an UPDATE's SET list IS built from the keys of
     // `.set()`, so parsing it does detect an omitted column: dropping taxDeductible from
-    // the seed's `.set({...})` fails this assertion. Its limits, both deliberate: it
-    // inspects one statement, and it checks column names rather than bound values — the
-    // per-column value check lives on the insert guard below.
-    const { calls } = await runApply(devBranchRows());
-    const setClause = UPDATES(calls)[0].sql.split(/\bset\b/i)[1].split(/\bwhere\b/i)[0];
-    const columns = [...setClause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]).sort();
-    expect(columns).toEqual([
-      'description',
-      'name',
-      'parent_code',
-      'schedule_e_line',
-      'subtype',
-      'tax_deductible',
-      'type',
-      'updated_at',
-    ]);
-    // parent_code is in the SET list, not just in the plan: a plan that reports the
-    // change while the SQL omits the column would leave every child NULL forever.
-    expect(setClause).toContain('parent_code');
-    // The three the review named, each its own mutation:
-    expect(setClause).not.toContain('is_active');
-    expect(setClause).not.toContain('modified_by');
-    expect(setClause).not.toContain('metadata');
+    // the seed's `.set({...})` fails this assertion.
+    //
+    // This asserts the SET list equals THIS row's changedFields, not the full seven
+    // columns. An earlier revision hardcoded all seven, which was indistinguishable from
+    // correct while nothing scoped the write — and would have made scope.fields a lie,
+    // narrowing the plan while the SQL still wrote every column.
+    const { plan, calls } = await runApply(devBranchRows());
+    const updates = UPDATES(calls);
+    expect(updates).toHaveLength(plan.updates.length);
+    for (const [i, call] of updates.entries()) {
+      const setClause = call.sql.split(/\bset\b/i)[1].split(/\bwhere\b/i)[0];
+      const columns = [...setClause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]).sort();
+      const expected = [
+        ...plan.updates[i].changedFields.map((f) => FIELD_TO_COLUMN[f]),
+        'updated_at',
+      ].sort();
+      expect(columns, `update ${i} (${plan.updates[i].row.code})`).toEqual(expected);
+      // The three the review named, each its own mutation:
+      expect(setClause).not.toContain('is_active');
+      expect(setClause).not.toContain('modified_by');
+      expect(setClause).not.toContain('metadata');
+    }
+    // Non-vacuity: parent_code reaches a real SET list. A plan that reports the change
+    // while the SQL omits the column would leave every child NULL forever.
+    expect(
+      updates.some((c) => c.sql.split(/\bset\b/i)[1].includes('parent_code')),
+    ).toBe(true);
   });
 
   it('inserts global rows: tenant_id bound null, modified_by the seed', async () => {
@@ -693,5 +700,207 @@ describe('seedChartOfAccounts: it refuses to write a drifted tree', () => {
     } finally {
       if (saved !== undefined) process.env.DATABASE_URL = saved;
     }
+  });
+});
+
+// ── Scoped apply ─────────────────────────────────────────────────────────────────────
+//
+// A scope narrows what an apply writes without ever widening it. The case it exists for:
+// four production rows (5015/5025/5055/6050) carry the wrong tax_deductible, while the
+// same unscoped apply would also insert ten header accounts and set parent_code on 37
+// children over a connection with no interactive transactions. §6 forbids hand-writing
+// the four UPDATEs — hand-written apply SQL, which silently omitted the column, is what
+// produced the defect — so the seed has to be able to carry the smaller change.
+
+/** The four codes whose production tax_deductible is wrong. None of them carries a
+ *  parentCode in the chart, so tax_deductible is their ONLY drift: a code scope over
+ *  these four is the real production apply. */
+const WRONG_DEDUCTIBLE = ['5015', '5025', '5055', '6050'];
+/** Children that DO carry a parentCode, so nulling it drifts them on two fields at once.
+ *  This is what makes the field-narrowing assertions non-vacuous. */
+const DRIFTED_ON_BOTH = ['5100', '5110'];
+
+function productionShapedRows(): ExistingAccountRow[] {
+  return PROJECTED.map((row, i) => ({
+    ...asExisting(row, i),
+    // Production holds no parent_code on any row.
+    parentCode: null,
+    taxDeductible:
+      WRONG_DEDUCTIBLE.includes(row.code) || DRIFTED_ON_BOTH.includes(row.code)
+        ? !row.taxDeductible
+        : row.taxDeductible,
+  }));
+}
+
+describe('the fixture these scope tests rest on', () => {
+  it('holds the four codes with no parentCode and the two children with one', () => {
+    for (const code of WRONG_DEDUCTIBLE) {
+      expect(PROJECTED.find((r) => r.code === code)?.parentCode, code).toBeNull();
+    }
+    for (const code of DRIFTED_ON_BOTH) {
+      expect(PROJECTED.find((r) => r.code === code)?.parentCode, code).toBe('5190');
+    }
+  });
+});
+
+describe('normalizeScope', () => {
+  it('is null when there is nothing to narrow', () => {
+    expect(normalizeScope(undefined)).toBeNull();
+    expect(normalizeScope({})).toBeNull();
+  });
+
+  it('refuses an empty list rather than writing nothing and reporting success', () => {
+    expect(() => normalizeScope({ fields: [] })).toThrow(/scope\.fields is empty/);
+    expect(() => normalizeScope({ codes: [] })).toThrow(/scope\.codes is empty/);
+  });
+
+  it('refuses a field the seed does not persist', () => {
+    expect(() => normalizeScope({ fields: ['isActive' as never] })).toThrow(
+      /does not persist: isActive/,
+    );
+    expect(() => normalizeScope({ fields: ['metadata' as never] })).toThrow(/metadata/);
+  });
+
+  it('dedupes', () => {
+    expect(normalizeScope({ fields: ['taxDeductible', 'taxDeductible'] })).toEqual({
+      fields: ['taxDeductible'],
+      codes: null,
+    });
+  });
+});
+
+describe('computeSeedPlan under a scope', () => {
+  it('a field scope defers every insert, because an INSERT writes every column', () => {
+    const missing = PROJECTED.filter((r) => r.code !== '4000').map((r, i) => asExisting(r, i));
+    const plan = computeSeedPlan(PROJECTED, missing, { fields: ['taxDeductible'] });
+    expect(plan.inserts).toEqual([]);
+    expect(plan.deferred.inserts.map((r) => r.code)).toEqual(['4000']);
+  });
+
+  it('a field scope spelled out in full is the unscoped field set and still inserts', () => {
+    const missing = PROJECTED.filter((r) => r.code !== '4000').map((r, i) => asExisting(r, i));
+    const plan = computeSeedPlan(PROJECTED, missing, { fields: [...PERSISTED_FIELDS] });
+    expect(plan.inserts.map((r) => r.code)).toEqual(['4000']);
+    expect(plan.deferred.inserts).toEqual([]);
+  });
+
+  it('narrows a row drifted on two fields to the one in scope, and says the other is still drifted', () => {
+    const plan = computeSeedPlan(PROJECTED, productionShapedRows(), {
+      fields: ['taxDeductible'],
+    });
+    expect(plan.updates.map((u) => u.row.code).sort()).toEqual(
+      [...WRONG_DEDUCTIBLE, ...DRIFTED_ON_BOTH].sort(),
+    );
+    for (const u of plan.updates) expect(u.changedFields).toEqual(['taxDeductible']);
+    // Only the two children that drifted on both are partially written; the four are done.
+    expect(plan.deferred.fields.map((f) => f.code).sort()).toEqual([...DRIFTED_ON_BOTH].sort());
+    for (const f of plan.deferred.fields) expect(f.deferred).toEqual(['parentCode']);
+    // Every other child with a NULL parent_code is held back whole.
+    expect(plan.deferred.updates.length).toBeGreaterThan(30);
+    for (const u of plan.deferred.updates) expect(u.changedFields).toEqual(['parentCode']);
+  });
+
+  it('a code scope holds back every other row and names a code the chart does not define', () => {
+    const plan = computeSeedPlan(PROJECTED, productionShapedRows(), {
+      codes: ['5100', '3200'],
+    });
+    expect(plan.updates.map((u) => u.row.code)).toEqual(['5100']);
+    // A code-only scope writes every field that drifted on that row.
+    expect(plan.updates[0].changedFields.slice().sort()).toEqual(['parentCode', 'taxDeductible']);
+    expect(plan.deferred.unmatchedCodes).toEqual(['3200']);
+    expect(plan.deferred.fields).toEqual([]);
+  });
+
+  it('reports the deferrals in the plan text, at zero as well as at many', () => {
+    const rows = productionShapedRows();
+    const scoped = formatSeedPlan(computeSeedPlan(PROJECTED, rows, { fields: ['taxDeductible'] }));
+    expect(scoped).toContain('scope: fields=taxDeductible codes=all');
+    expect(scoped).toMatch(/DEFERRED by this scope: 0 insert\(s\), \d+ whole update\(s\)/);
+    expect(scoped).toContain('5100 still drifted on: parentCode');
+    // An unscoped plan says nothing about scope at all.
+    expect(formatSeedPlan(computeSeedPlan(PROJECTED, rows))).not.toContain('DEFERRED');
+  });
+
+  it('a scope never writes a row, or a field, the unscoped plan would not have written', () => {
+    const rows = productionShapedRows();
+    const unscoped = computeSeedPlan(PROJECTED, rows);
+    const byCode = new Map(unscoped.updates.map((u) => [u.row.code, u]));
+    for (const scope of [
+      { fields: ['taxDeductible'] } as SeedScope,
+      { codes: WRONG_DEDUCTIBLE } as SeedScope,
+      { fields: ['taxDeductible'], codes: WRONG_DEDUCTIBLE } as SeedScope,
+    ]) {
+      const scoped = computeSeedPlan(PROJECTED, rows, scope);
+      for (const u of scoped.updates) {
+        const same = byCode.get(u.row.code);
+        expect(same, `${u.row.code} is written under a scope but not unscoped`).toBeDefined();
+        expect(u.id).toBe(same!.id);
+        for (const f of u.changedFields) expect(same!.changedFields).toContain(f);
+      }
+      expect(scoped.inserts.length).toBeLessThanOrEqual(unscoped.inserts.length);
+    }
+  });
+});
+
+describe('seedChartOfAccounts under a scope: the SQL it emits', () => {
+  it('a field scope writes tax_deductible and NOT parent_code — the whole point of it', async () => {
+    // THE mutation gate. Restore the hardcoded seven-column `.set({...})` the seed used to
+    // emit and this fails: 5100 and 5110 would carry parent_code too, so a tax-only apply
+    // would silently also build part of the hierarchy. Scoping the plan without scoping the
+    // SQL is the failure mode this test exists to catch, and it is only detectable because
+    // the fixture has rows that drifted on parentCode as well.
+    const { plan, calls } = await runApply(productionShapedRows(), {
+      fields: ['taxDeductible'],
+    });
+    const updates = UPDATES(calls);
+    expect(updates).toHaveLength(6);
+    expect(plan.updates).toHaveLength(6);
+    for (const call of updates) {
+      const setClause = call.sql.split(/\bset\b/i)[1].split(/\bwhere\b/i)[0];
+      const columns = [...setClause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]).sort();
+      expect(columns).toEqual(['tax_deductible', 'updated_at']);
+      expect(setClause).not.toContain('parent_code');
+    }
+    // A field scope cannot insert.
+    expect(INSERTS(calls)).toHaveLength(0);
+  });
+
+  it('the production apply: a code scope over the four writes four UPDATEs and nothing else', async () => {
+    // The real shape. None of the four carries a parentCode, so tax_deductible is their
+    // only drift and a code scope alone produces the minimal statement — no field scope
+    // needed, and the ten missing headers stay missing until their own operator gate.
+    const { plan, calls } = await runApply(productionShapedRows(), { codes: WRONG_DEDUCTIBLE });
+    const updates = UPDATES(calls);
+    expect(updates).toHaveLength(4);
+    expect(INSERTS(calls)).toHaveLength(0);
+    expect(plan.updates.map((u) => u.row.code).sort()).toEqual([...WRONG_DEDUCTIBLE].sort());
+    for (const call of updates) {
+      const setClause = call.sql.split(/\bset\b/i)[1].split(/\bwhere\b/i)[0];
+      expect([...setClause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]).sort()).toEqual([
+        'tax_deductible',
+        'updated_at',
+      ]);
+      // The VALUE bound is true, not merely "a column was written" — the exact assertion
+      // the 2026-09-18 hand-written apply would have failed.
+      expect(call.params).toContain(true);
+      expect(call.sql).toMatch(/"id" = \$\d+ and "chart_of_accounts"\."tenant_id" is null/);
+    }
+    // The hierarchy is still owed, and the plan says so rather than reading as in sync.
+    expect(plan.deferred.inserts.length + plan.deferred.updates.length).toBeGreaterThan(30);
+  });
+
+  it('audits only the fields it wrote', async () => {
+    const { audit } = await runApply(productionShapedRows(), { codes: WRONG_DEDUCTIBLE });
+    expect(audit).toHaveLength(4);
+    for (const event of audit) {
+      expect(event.action).toBe('update');
+      expect(event.changedFields).toEqual(['taxDeductible']);
+    }
+  });
+
+  it('refuses an invalid scope before it writes anything', async () => {
+    await expect(runApply(productionShapedRows(), { fields: [] })).rejects.toThrow(
+      /scope\.fields is empty/,
+    );
   });
 });
