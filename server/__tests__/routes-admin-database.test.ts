@@ -21,17 +21,20 @@ function selectedColumns(sql: string): string[] {
   return [...list.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
 }
 
-function recordingDeps() {
+function recordingDeps(opts: { knownUser?: boolean; identityThrows?: boolean } = {}) {
+  const { knownUser = true, identityThrows = false } = opts;
   const calls: string[] = [];
   const client = async (sql: string) => {
     calls.push(sql);
     if (/current_database\(\)/i.test(sql)) {
+      if (identityThrows) throw new Error('relation "tenants" does not exist');
       return {
-        rows: [{ database: 'chittyfinance', endpoint_id: 'ep-noisy-tree-akgsi7ne', tenant_count: 8, transaction_count: 12589 }],
+        rows: [{ database: 'chittyfinance', endpoint_id: 'ep-placeholder-0000', tenant_count: 8, transaction_count: 12589 }],
         rowCount: 1,
       };
     }
     if (/\bfrom\s+"users"/i.test(sql)) {
+      if (!knownUser) return { rows: [], rowCount: 0 };
       return { rows: [selectedColumns(sql).map((c) => (c === 'id' ? USER_ID : null))], rowCount: 1 };
     }
     return { rows: [], rowCount: 0 };
@@ -55,13 +58,13 @@ const authed = { headers: { Authorization: `Bearer ${SERVICE_TOKEN}`, 'X-Chitty-
 const identityQueries = (calls: string[]) => calls.filter((s) => /current_database\(\)/i.test(s));
 
 describe('GET /api/admin/database-identity', () => {
-  it('reports database name, endpoint id and global counts', async () => {
+  it('reports database name, endpoint id and global counts (no X-Tenant-ID required)', async () => {
     const { deps, calls } = recordingDeps();
     const res = await createApp(deps).request(PATH, authed, env);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       database: 'chittyfinance',
-      endpointId: 'ep-noisy-tree-akgsi7ne',
+      endpointId: 'ep-placeholder-0000',
       tenantCount: 8,
       transactionCount: 12589,
     });
@@ -71,17 +74,30 @@ describe('GET /api/admin/database-identity', () => {
     expect(query).toMatch(/count\(\*\) from "transactions"/i);
   });
 
-  it('never echoes the connection string or its credential', async () => {
-    const { deps } = recordingDeps();
-    const text = await (await createApp(deps).request(PATH, authed, env)).text();
+  it('on a query failure, the error body carries nothing from the connection string', async () => {
+    const { deps } = recordingDeps({ identityThrows: true });
+    const res = await createApp(deps).request(PATH, authed, env);
+    expect(res.status).toBe(500);
+    const text = await res.text();
     expect(text).not.toContain('s3cret-pw');
     expect(text).not.toContain('postgresql://');
+    expect(text).not.toContain('ep-recorded-pooler');
   });
 
-  it('needs no X-Tenant-ID: the counts are global', async () => {
-    const { deps } = recordingDeps();
+  it('refuses a valid bearer with no named operator, before querying', async () => {
+    const { deps, calls } = recordingDeps();
+    const res = await createApp(deps).request(PATH, { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } }, env);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    expect(identityQueries(calls)).toHaveLength(0);
+  });
+
+  it('refuses an operator id that names no user, before querying', async () => {
+    const { deps, calls } = recordingDeps({ knownUser: false });
     const res = await createApp(deps).request(PATH, authed, env);
-    expect(res.status).toBe(200);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    expect(identityQueries(calls)).toHaveLength(0);
   });
 
   it('refuses an unauthenticated request before querying', async () => {
