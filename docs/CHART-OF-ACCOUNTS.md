@@ -803,7 +803,6 @@ the closed output set and a rule (R1–R6) below names the input that selects wi
 | `mortgage`, `liability-mortgage` | 2500, 5300, 5090, 5040 — rule R5 | see §7 |
 | `liability-credit_card_payment` | 2040 | — |
 | `liability-deposits-damage`, `security-deposit-refund` | 2010 | — |
-| `liability-arias`, `arias-liability` | 2520 | duplicate pair |
 | `member-contribution` | 3000 | — |
 | `member-distribution`, `distribution` | 3010 | duplicate pair |
 | `transfer` | 1900 | `type='transfer'` |
