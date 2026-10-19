@@ -109,6 +109,16 @@ function summarize(plan: SeedPlan) {
     duplicateCodes: plan.duplicateCodes.length,
     extraneous: plan.extraneous.length,
     statements: plan.inserts.length + plan.updates.length,
+    /**
+     * Whether this run considered the whole chart or a narrowed slice of it.
+     *
+     * Named explicitly rather than left for a consumer to infer from `scope !== null`.
+     * A scoped run can legitimately defer nothing — scope the four tax codes when they
+     * are the only drift and every `deferred` count is zero — so a reader checking the
+     * deferred counts alone would call that a complete apply. This field is the only
+     * honest "is the chart in sync" signal, and it is always present.
+     */
+    coverage: plan.scope === null ? ('whole-chart' as const) : ('scoped' as const),
     // Always present, including on an unscoped run, so the audit artifact for a scoped
     // apply cannot be mistaken for one that brought the whole chart into sync.
     scope: plan.scope,

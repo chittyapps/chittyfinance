@@ -460,6 +460,21 @@ function insertedValues(call: RecordedCall): Record<string, unknown> {
  */
 const UNBOUND_COLUMNS = ['created_at', 'effective_date', 'id', 'metadata', 'updated_at'];
 
+/**
+ * The value drizzle bound for each column of a compiled UPDATE's SET list.
+ *
+ * The UPDATE analogue of insertedValues(). Asserting on SET column NAMES alone cannot
+ * catch a statement that writes the right column with the wrong value, and
+ * `expect(params).toContain(true)` cannot say WHICH column that `true` belongs to.
+ */
+function updatedValues(call: RecordedCall): Record<string, unknown> {
+  const setClause = call.sql.split(/\bset\b/i)[1].split(/\bwhere\b/i)[0];
+  const assignments = [...setClause.matchAll(/"([a-z_]+)" = (\$(\d+)|[^,]+)/g)];
+  return Object.fromEntries(
+    assignments.map((m) => [m[1], m[3] ? call.params[Number(m[3]) - 1] : m[2].trim()]),
+  );
+}
+
 /** The columns a compiled SELECT projects, in order. */
 function selectedColumns(sql: string): string[] {
   const list = sql.slice(sql.search(/\bselect\b/i) + 6, sql.search(/\bfrom\b/i));
@@ -553,6 +568,42 @@ describe('seedChartOfAccounts: the statements it emits', () => {
     expect(
       updates.some((c) => c.sql.split(/\bset\b/i)[1].includes('parent_code')),
     ).toBe(true);
+  });
+
+  it('writes a known multi-column row to a column list named here, not derived from the plan', async () => {
+    // The ABSOLUTE oracle for a multi-column SET list. The assertion above is relational:
+    // it compares the SQL to the same plan the SQL was built from, so a defect that
+    // corrupted changedFields identically in both would survive it. This one names the
+    // four columns literally.
+    //
+    // 4000 is the case: the dev-branch snapshot holds it with the pre-#157 name and
+    // description and no parent_code, so it is the one row in that fixture drifted on
+    // three fields at once.
+    const { calls } = await runApply(devBranchRows());
+    const row = PROJECTED.find((r) => r.code === '4000')!;
+    const call = UPDATES(calls).find((c) => c.params.includes(row.name));
+    expect(call, 'no update binds 4000\'s projected name').toBeDefined();
+    const written = updatedValues(call!);
+    expect(Object.keys(written).sort()).toEqual([
+      'description',
+      'name',
+      'parent_code',
+      'updated_at',
+    ]);
+    // Per column, the VALUE bound — not merely that the column appears.
+    expect(written.name).toBe(row.name);
+    expect(written.description).toBe(row.description);
+    expect(written.parent_code).toBe(row.parentCode);
+    // drizzle serialises the Date before binding, so this is a timestamp string, not a
+    // Date. Asserted as a parseable instant near now rather than merely "a string".
+    expect(typeof written.updated_at).toBe('string');
+    expect(Date.now() - new Date(written.updated_at as string).getTime()).toBeLessThan(60_000);
+    // Non-vacuity for the parent_code assertion: it is a real code, not null.
+    expect(row.parentCode).toBe('4090');
+    // And the columns the seed must never write stay out, by name.
+    for (const column of ['tax_deductible', 'type', 'subtype', 'schedule_e_line', 'is_active', 'modified_by', 'metadata']) {
+      expect(written[column], column).toBeUndefined();
+    }
   });
 
   it('inserts global rows: tenant_id bound null, modified_by the seed', async () => {
@@ -880,9 +931,10 @@ describe('seedChartOfAccounts under a scope: the SQL it emits', () => {
         'tax_deductible',
         'updated_at',
       ]);
-      // The VALUE bound is true, not merely "a column was written" — the exact assertion
-      // the 2026-09-18 hand-written apply would have failed.
-      expect(call.params).toContain(true);
+      // The VALUE bound to tax_deductible specifically is true — not merely that some
+      // `true` appears somewhere in params. This is the exact assertion the 2026-09-18
+      // hand-written apply would have failed.
+      expect(updatedValues(call).tax_deductible).toBe(true);
       expect(call.sql).toMatch(/"id" = \$\d+ and "chart_of_accounts"\."tenant_id" is null/);
     }
     // The hierarchy is still owed, and the plan says so rather than reading as in sync.

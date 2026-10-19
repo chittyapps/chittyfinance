@@ -269,12 +269,21 @@ export function computeSeedPlan(
 
   const resolved = normalizeScope(scope);
   const codeScope = resolved?.codes ? new Set(resolved.codes) : null;
-  // A field scope narrower than the full list forbids inserts; `fields: PERSISTED_FIELDS`
-  // spelled out in full is the unscoped field set and still inserts.
+  // A field scope that does not cover every persisted field forbids inserts; `fields:
+  // PERSISTED_FIELDS` spelled out in full is the unscoped field set and still inserts.
+  //
+  // Set COVERAGE, not array length. Length was a proxy for completeness that happens to
+  // be right only because every persisted field is also an insert column. The two are
+  // behaviourally IDENTICAL today and no test can tell them apart — swapping this back to
+  // `size < PERSISTED_FIELDS.length` keeps the suite green, which is why this is a
+  // readability-and-durability change rather than a bug fix. They diverge the moment
+  // PERSISTED_FIELDS gains a column an INSERT does not write; the insert guard in
+  // server/__tests__/chart-of-accounts-seed.test.ts ('inserts global rows: tenant_id
+  // bound null...') loops PERSISTED_FIELDS and asserts every one is bound, so that
+  // divergence fails a test there rather than silently flipping this branch.
+  const fieldSet = resolved?.fields ? new Set<PersistedField>(resolved.fields) : null;
   const fieldScope =
-    resolved?.fields && resolved.fields.length < PERSISTED_FIELDS.length
-      ? new Set<PersistedField>(resolved.fields)
-      : null;
+    fieldSet && !PERSISTED_FIELDS.every((f) => fieldSet.has(f)) ? fieldSet : null;
 
   const plan: SeedPlan = {
     inserts: [],
