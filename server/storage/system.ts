@@ -450,6 +450,38 @@ export class SystemStorage {
     return { total_cash: totalCash, total_owed: totalOwed, net: totalCash - totalOwed };
   }
 
+  // ── DATABASE IDENTITY ──
+
+  /**
+   * Which physical database this client is connected to, and how much it holds.
+   *
+   * Non-secret identity only — the database name and the Neon endpoint id, never the
+   * connection string — so the DATABASE_URL binding can be verified from outside without
+   * revealing it. Counts are global (no tenant filter): this answers "is the worker on
+   * the production ledger", which is a question about the whole database. Served only
+   * behind service auth (GET /api/admin/database-identity).
+   */
+  async getDatabaseIdentity() {
+    const result = await this.db.execute<{
+      database: string;
+      endpoint_id: string | null;
+      tenant_count: number;
+      transaction_count: number;
+    }>(sql`
+      select current_database() as database,
+             current_setting('neon.endpoint_id', true) as endpoint_id,
+             (select count(*) from ${schema.tenants})::int as tenant_count,
+             (select count(*) from ${schema.transactions})::int as transaction_count
+    `);
+    const [row] = result.rows;
+    return {
+      database: row.database,
+      endpointId: row.endpoint_id,
+      tenantCount: Number(row.tenant_count),
+      transactionCount: Number(row.transaction_count),
+    };
+  }
+
   // ── TENANTS ──
 
   async getTenants() {
