@@ -387,3 +387,27 @@ internalChittyConnectRoutes.get('/internal/chittyconnect/entities/:entity/cash-f
     byCurrency,
   });
 });
+
+/**
+ * Mercury reconciliation contract: fail closed until the governed execution
+ * adapter is connected to durable ledger ingestion. Never claim readiness or
+ * processing merely because the private service binding is reachable.
+ *
+ * These routes deliberately perform no database or provider writes. The
+ * existing private hostname/caller guard applies to both routes.
+ */
+internalChittyConnectRoutes.get('/internal/chittyconnect/mercury-reconciliation/readiness', (c) => {
+  const organizationId = c.req.query('organizationId');
+  if (!organizationId || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(organizationId)) {
+    return c.json({ error: 'invalid_mercury_organization' }, 400);
+  }
+  return c.json({ ready: false, consumer: 'chittyconnect-finance', organizationId,
+    durable: false, error: 'finance_reconciliation_executor_unavailable' }, 503);
+});
+
+internalChittyConnectRoutes.post('/internal/chittyconnect/mercury-reconciliation/consume', (c) => {
+  // A 2xx/processed:true response here would permanently acknowledge an event
+  // before verified reconciliation. The queue must retry instead.
+  return c.json({ processed: false, consumer: 'chittyconnect-finance',
+    error: 'finance_reconciliation_executor_unavailable' }, 503);
+});
