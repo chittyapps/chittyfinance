@@ -1,4 +1,25 @@
 /**
+ * SUPERSEDED — DO NOT PRESENT THIS PACKAGE TO AN OPERATOR.
+ *
+ * Replaced by scripts/coa-change-a-gate-package.ts. This package compiles four UPDATEs over
+ * codes 5015/5025/5055/6050, on the premise that they carry a wrong `tax_deductible`. They
+ * do not: measured 2026-10-21, those four codes hold NO ROW in production — they were never
+ * inserted. The four UPDATEs would have matched zero rows and the apply would have reported
+ * success. `tax_deductible` is identical on all 80 common codes (per-field digest
+ * 7b44da66cdfb on both sides); there is no tax_deductible defect.
+ *
+ * The bug was not in computeSeedPlan. It was in assumedRows() below, which built the
+ * "existing" set by transforming the projection — inverting tax_deductible on the very codes
+ * the package then claimed were drifted. A plan derived from a fabricated `existing` set can
+ * assert anything, including a delta the live table contradicts. The replacement drives its
+ * plan off a DECLARED measured fixture and fails rather than rendering when that fixture and
+ * the authoritative document disagree.
+ *
+ * Kept, not deleted: it and docs/gates/coa-scoped-apply-2026-10-19.md are the record of an
+ * operator gate that was offered, and the evidence for why the derivation changed.
+ *
+ * ---
+ *
  * Produce the §7 gate package for a scoped chart-of-accounts apply.
  *
  * finance-operating-defaults §7 says a production financial write is operator-gated, and
