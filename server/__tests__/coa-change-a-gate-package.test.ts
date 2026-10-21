@@ -14,6 +14,7 @@ import {
   CHANGE_B_SCHEDULE_E,
   CHANGE_A_FIELDS,
   type CompiledStatement,
+  type ChangeAPackage,
 } from '../../scripts/coa-change-a-gate-package';
 import {
   computeSeedPlan,
@@ -38,7 +39,32 @@ const COMMITTED = join(ROOT, 'docs', 'gates', 'coa-change-a-2026-10-21.md');
 /** The five existing rows whose form-line mapping is wrong. Change B, not Change A. */
 const CHANGE_B_CODES = CHANGE_B_SCHEDULE_E.map((d) => d.code);
 
-const pkg = await buildChangeAPackage();
+/**
+ * Captured rather than thrown at module scope.
+ *
+ * A generator that crashes during test COLLECTION means zero tests execute, and vitest
+ * reports "no tests" — which greps as zero failures and reads as a pass in CI. Observed
+ * while mutation-testing G5: breaking the fixture made the whole file report "no tests"
+ * instead of a failed assertion. So the failure is turned into a value here and asserted
+ * by the first test below.
+ */
+async function build(): Promise<{ pkg: ChangeAPackage | null; error: Error | null }> {
+  try {
+    return { pkg: await buildChangeAPackage(), error: null };
+  } catch (e) {
+    return { pkg: null, error: e as Error };
+  }
+}
+const built = await build();
+
+it('the generator runs to completion', () => {
+  // First, so a crashing generator is one loud failure rather than twenty confusing ones
+  // — and never a "no tests" run that reads as green.
+  expect(built.error, built.error ? `generator failed: ${built.error.message}` : undefined)
+    .toBeNull();
+});
+
+const pkg = built.pkg ?? ({ statements: [], plans: {}, markdown: '' } as unknown as ChangeAPackage);
 
 describe('G3 — the package runs with no database and no credential', () => {
   it('builds, and emits the 25 inserts as 10 headers then 15 posting accounts', () => {
