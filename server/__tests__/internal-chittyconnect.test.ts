@@ -110,6 +110,95 @@ describe('private ChittyConnect finance projection', () => {
     expect(body.entities[0].accounts[0].accountNumber).toBeUndefined();
   });
 
+  it('resolves an exact organization-scoped Mercury account without last-four inference', async () => {
+    const organizationId = 'e15f4a46-e328-11ee-9e22-5f2c16c0b48b';
+    const mercuryAccountId = '4ec84552-e56c-11ee-a22a-9b5c98caf948';
+    const tenantId = '98d90754-c886-443a-b769-d6448c39c5fc';
+    const financeAccountId = 'f0eedd21-1000-4000-8000-000000000001';
+    const owner = {
+      ...tenant, id: tenantId, name: 'ARIBIA LLC - MGMT', isActive: true,
+      metadata: { canonicalBusinessIdentity: 'ARIBIA LLC - MGMT' },
+    };
+    const binding = {
+      financeAccountId, tenantId, institution: 'Mercury', isActive: true,
+      externalId: mercuryAccountId,
+      metadata: { mercuryOrganizationId: organizationId, internalNote: 'MUST_NOT_LEAK' },
+    };
+    const lookup = vi.fn(async () => [binding]);
+    const app = makeApp(makeStorage({
+      getTenants: vi.fn(async () => [owner]),
+      getMercuryAccountBindingCandidatesByExternalId: lookup,
+    }));
+    const url = 'https://internal/internal/chittyconnect/mercury/account-binding/' +
+      mercuryAccountId + '?organizationId=' + organizationId +
+      '&tenantId=' + tenantId + '&canonicalBusinessIdentity=' + encodeURIComponent('ARIBIA LLC - MGMT');
+    const res = await app.request(url, { headers: internalHeaders });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      organizationId, accountId: mercuryAccountId, tenantId,
+      canonicalBusinessIdentity: 'ARIBIA LLC - MGMT', financeAccountId,
+    });
+    expect(lookup).toHaveBeenCalledWith(mercuryAccountId);
+  });
+
+  it('rejects missing, duplicate, inactive, or incorrectly attributed Mercury account bindings', async () => {
+    const organizationId = 'e15f4a46-e328-11ee-9e22-5f2c16c0b48b';
+    const mercuryAccountId = '4ec84552-e56c-11ee-a22a-9b5c98caf948';
+    const tenantId = '98d90754-c886-443a-b769-d6448c39c5fc';
+    const owner = {
+      ...tenant, id: tenantId, isActive: true,
+      metadata: { canonicalBusinessIdentity: 'ARIBIA LLC - MGMT' },
+    };
+    const binding = {
+      financeAccountId: 'f0eedd21-1000-4000-8000-000000000001',
+      tenantId, institution: 'Mercury', isActive: true,
+      externalId: mercuryAccountId, metadata: { mercuryOrgId: organizationId },
+    };
+    const url = 'https://internal/internal/chittyconnect/mercury/account-binding/' +
+      mercuryAccountId + '?organizationId=' + organizationId +
+      '&tenantId=' + tenantId + '&canonicalBusinessIdentity=' + encodeURIComponent('ARIBIA LLC - MGMT');
+    const alternatives = [
+      [],
+      [binding, binding],
+      [{ ...binding, isActive: false }],
+      [{ ...binding, institution: 'Wave' }],
+      [{ ...binding, tenantId: 'f0eedd21-1000-4000-8000-000000000002' }],
+      [{ ...binding, externalId: '4ec84552-e56c-11ee-a22a-9b5c98caf949' }],
+      [{ ...binding, metadata: {} }],
+      [{ ...binding, metadata: { mercuryOrgId: '9082ea0c-07a8-11ef-b331-734021561438' } }],
+      [{ ...binding, metadata: { mercuryOrgId: organizationId, mercuryOrganizationId: '9082ea0c-07a8-11ef-b331-734021561438' } }],
+    ];
+    for (const candidates of alternatives) {
+      const app = makeApp(makeStorage({
+        getTenants: vi.fn(async () => [owner]),
+        getMercuryAccountBindingCandidatesByExternalId: vi.fn(async () => candidates),
+      }));
+      const res = await app.request(url, { headers: internalHeaders });
+      expect(res.status).toBe(409);
+    }
+
+    const noCanonical = makeApp(makeStorage({
+      getTenants: vi.fn(async () => [{ ...owner, metadata: {} }]),
+      getMercuryAccountBindingCandidatesByExternalId: vi.fn(async () => [binding]),
+    }));
+    expect((await noCanonical.request(url, { headers: internalHeaders })).status).toBe(409);
+    const dbFailure = makeApp(makeStorage({
+      getTenants: vi.fn(async () => [owner]),
+      getMercuryAccountBindingCandidatesByExternalId: vi.fn(async () => {
+        throw new Error('private_database_credentials_MUST_NOT_LEAK');
+      }),
+    }));
+    const failed = await dbFailure.request(url, { headers: internalHeaders });
+    expect(failed.status).toBe(503);
+    expect(JSON.stringify(await failed.json())).not.toContain('private_database_credentials');
+
+    const publicRes = await makeApp(makeStorage()).request(
+      url.replace('https://internal/', 'https://finance.chitty.cc/'),
+      { headers: internalHeaders },
+    );
+    expect(publicRes.status).toBe(404);
+  });
+
   it('resolves global Mercury source ownership without tenant or DBA guessing', async () => {
     const lookup = vi.fn(async (id: string) => id === 'mercury:source-tx-1'
       ? [{ tenantId: tenant.id, financeAccountId: account.id }] : []);
