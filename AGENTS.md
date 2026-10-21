@@ -38,7 +38,9 @@ Companion to [CHITTY.md](CHITTY.md), [CHARTER.md](CHARTER.md), [SECURITY.md](SEC
 
 ## MCP Capabilities Exposed by ChittyFinance
 
-Static discovery metadata is exposed at `GET /mcp/manifest`; it contains schemas only and grants no authority.\n\nExecution remains mounted at `/mcp`. Resources include:
+Static discovery metadata is exposed at `GET /mcp/manifest`; it contains schemas only and grants no authority.
+
+Execution remains mounted at `/mcp`. Resources include:
 - Financial summaries (tenant-scoped)
 - Transaction queries
 - Property financials (NOI, cap rate, occupancy)
