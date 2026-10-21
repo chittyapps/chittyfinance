@@ -37,6 +37,22 @@ describe('createApp', () => {
     expect(body.name).toBe('ChittyFinance');
   });
 
+  it('serves /mcp/manifest without auth while leaving execution protected', async () => {
+    const app = createApp();
+    const manifestRes = await app.request('/mcp/manifest', {}, env);
+    expect(manifestRes.status).toBe(200);
+    const manifest = await manifestRes.json() as any;
+    expect(manifest.domain).toBe('finance.chitty.cc');
+    expect(manifest.tools.map((tool: any) => tool.name)).toContain('compare-rei-hub-snapshot');
+
+    const executeRes = await app.request('/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    }, env);
+    expect(executeRes.status).toBe(401);
+  });
+
   it('rejects /api/accounts without auth', async () => {
     const app = createApp();
     const res = await app.request('/api/accounts', {}, env);
