@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mcpRoutes } from '../routes/mcp';
+import { getMcpManifest, mcpRoutes } from '../routes/mcp';
 import { Hono } from 'hono';
 import type { HonoEnv } from '../env';
 
@@ -78,6 +78,25 @@ function rpc(app: Hono<HonoEnv>, method: string, params?: Record<string, any>, i
     body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
   }, {} as any);
 }
+
+describe('Code Mode manifest', () => {
+  it('derives static discovery metadata from the executable tool definitions', () => {
+    const manifest = getMcpManifest();
+    expect(manifest.name).toBe('chittyfinance');
+    expect(manifest.domain).toBe('finance.chitty.cc');
+    expect(manifest.tools).toHaveLength(8);
+    expect(manifest.tools.map((tool) => tool.name)).toContain('compare-rei-hub-snapshot');
+    expect(manifest.tools.find((tool) => tool.name === 'compare-rei-hub-snapshot')).toMatchObject({
+      side_effect: 'read',
+      idempotent: true,
+      ontology_type: 'E',
+    });
+    expect(manifest.tools.find((tool) => tool.name === 'create-coa-account')).toMatchObject({
+      side_effect: 'write',
+      ontology_type: 'T',
+    });
+  });
+});
 
 describe('MCP endpoint', () => {
   let app: Hono<HonoEnv>;
