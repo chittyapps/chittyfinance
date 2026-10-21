@@ -97,8 +97,8 @@ export const MEASURED_NAME_DRIFT = { code: '4000', from: 'Rental Income' } as co
 
 /**
  * Per-field aggregate digests measured on both sides for the 80 common codes. `type`,
- * `subtype` and `taxDeductible` are IDENTICAL — which is why Change A emits no statement
- * for them even though two of the three are inside its field scope.
+ * `subtype` and `taxDeductible` are IDENTICAL. `type` and `subtype` are inside Change A's
+ * scope and emit nothing because nothing drifts; `taxDeductible` is outside it by class (§6).
  *
  * Recorded because "there is no tax_deductible defect" is the claim that retires #214, and
  * a claim that retires a shipped package should carry its evidence.
@@ -108,15 +108,60 @@ export const MEASURED_IDENTICAL_FIELDS: ReadonlyArray<{ field: PersistedField; d
 ];
 
 /**
- * CHANGE A's field scope: every persisted field EXCEPT the form-line mapping.
+ * The measured `description` drift: exactly these two codes, out of the 80 common codes.
+ * Every other common code matches the document byte-for-byte. Both are already among the
+ * phase-3 updates (4000: name + parent; 4110: parent), so this adds `description` to their
+ * SET lists and does not change the statement count.
+ *
+ * `from` is NOT production's prior value — that was not captured. It is a marker that
+ * differs from every document description, so the plan sees a drift; the real prior value
+ * is what the §4 snapshot records. An UPDATE binds the DESIRED value, so the marker never
+ * reaches a compiled statement.
+ */
+export const MEASURED_DESCRIPTION_DRIFT_CODES = ['4000', '4110'] as const;
+const DESCRIPTION_DRIFT_MARKER = '<measured: differs from the document; prior value is in the §4 snapshot>';
+
+/**
+ * Production's `parent_code` on each of the 80 existing global rows, MEASURED read-only
+ * (code>parent, NULL = column null). This replaces the earlier assumption that every
+ * existing row held a NULL parent: that assumption made every desired-NULL row look
+ * already-correct, so the 37 CLEARS (production holds a parent, the document says none)
+ * diffed empty and were never compiled — 34 of 71 parent changes, a half-migrated tree in
+ * which 5010 and 5050 stay parented to the POSTING account 5000 (§1.7 violation).
+ */
+export const MEASURED_PARENT_CODES: ReadonlyMap<string, string | null> = new Map(
+  (
+    '1000>NULL 1010>1000 1020>1000 1050>1000 1100>NULL 1110>1100 1500>NULL 1510>1500 1515>1500 1520>1500 1525>1500 1600>NULL 1605>NULL 1610>1600 1615>1600 1620>1600 1625>1600 2000>NULL 2010>2000 2020>2000 2030>2000 2040>2000 2500>NULL 2510>2500 2520>2500 2530>2500 3000>NULL 3010>3000 3020>3000 3030>3000 4000>NULL 4010>4000 4020>4000 4030>4000 4040>4000 4050>4000 4060>4000 4100>NULL 4110>4100 4120>4100 5000>NULL 5010>5000 5020>5000 5030>5000 5040>5000 5050>5000 5060>5000 5070>5000 5080>5000 5090>5000 5100>NULL 5110>5100 5120>5100 5130>5100 5140>5100 5200>NULL 5210>5200 5220>5200 5300>NULL 5310>5300 5320>5300 5330>5300 5400>NULL 5410>5400 5420>5400 5430>5400 6000>NULL 6010>6000 6020>6000 6030>6000 6040>6000 7000>NULL 7010>7000 7020>7000 7030>7000 7040>7000 9000>NULL 9010>9000 9020>9000 9030>9000'
+  )
+    .split(' ')
+    .map((pair): [string, string | null] => {
+      const [code, parent] = pair.split('>');
+      return [code, parent === 'NULL' ? null : parent];
+    }),
+);
+
+/** The 37 measured clears: production holds a parent, the document says none. */
+export const MEASURED_PARENT_CLEARS = '1510 1515 1520 1525 1610 1615 1620 1625 2010 2020 2030 2040 2520 2530 3010 3020 3030 4110 4120 5010 5020 5030 5040 5050 5060 5070 5080 5090 5320 5330 6010 6020 6030 6040 9010 9020 9030'.split(' ');
+
+/**
+ * CHANGE A's field scope: every persisted field EXCEPT the two tax-semantic columns,
+ * `scheduleELine` and `taxDeductible`.
  *
  * Expressed as a SUBTRACTION from PERSISTED_FIELDS rather than as an allow-list, because
  * that is what §6 actually says — structure is everything that is not tax semantics. An
  * allow-list silently drops any column PERSISTED_FIELDS later gains; a subtraction picks it
  * up and forces whoever adds it to decide which class it belongs to.
+ *
+ * `taxDeductible` is subtracted although it emits zero statements today. finance-operating-
+ * defaults §6 separates CLASSES of change, not diffs that happen to be empty: it is the
+ * canonical tax-semantic column, and it is empty only because it was measured identical
+ * across all 80 common codes. If the document changes before the apply runs, a deductibility
+ * write would otherwise ride inside a structural hierarchy review — the §6 failure mode, "a
+ * deductibility change must never ride inside a hierarchy change, where review attention is
+ * on the tree".
  */
 export const CHANGE_A_FIELDS: PersistedField[] = PERSISTED_FIELDS.filter(
-  (f) => f !== 'scheduleELine',
+  (f) => f !== 'scheduleELine' && f !== 'taxDeductible',
 );
 
 // ---------------------------------------------------------------------------
@@ -131,36 +176,30 @@ export const CHANGE_A_FIELDS: PersistedField[] = PERSISTED_FIELDS.filter(
  * synthetic UUID in a gate package is indistinguishable from a real one, and an operator
  * who copies one into a WHERE clause writes nothing and sees success.
  *
- * Three assumptions, each named again in §10 because they bound what this package can show:
- *   - `parent_code` is taken as NULL on all 80. Production's per-row parent values were not
- *     captured. Where a row holds a STRAY parent the document clears to NULL (5050, 9010
- *     were cited as examples), the live apply emits an UPDATE this package does not compile.
- *   - `description` is taken as matching the document on all 80. The description drift was
- *     measured only in aggregate and never isolated to a code list, so the live apply emits
- *     description UPDATEs this package does not compile.
- *   - The 9 measured-identical codes are not identified, so this fixture's drifted-row count
- *     is a LOWER BOUND on the measured 71.
- *
- * None of the three affects a compiled statement's SQL shape, SET list, WHERE clause, or
- * bound value — an UPDATE binds the DESIRED value, which comes from the authoritative
- * projection. They affect only WHICH rows appear. The snapshot in §4 resolves all three.
+ * `parent_code` (MEASURED_PARENT_CODES) and `description`
+ * (MEASURED_DESCRIPTION_DRIFT_CODES) are measured exactly. One assumption remains: the 9
+ * measured-identical codes are not identified, so the drifted-row count is checked against
+ * the measured total only where the measurement is per-row.
  */
 export function measuredExistingRows(): ExistingAccountRow[] {
   const absent = new Set<string>(MISSING_CODES);
   const scheduleEFrom = new Map(CHANGE_B_SCHEDULE_E.map((d) => [d.code, d.from]));
+  const descDrift = new Set<string>(MEASURED_DESCRIPTION_DRIFT_CODES);
   return projectSeedRows()
     .filter((row: SeedAccountRow) => !absent.has(row.code))
     .map((row: SeedAccountRow): ExistingAccountRow => ({
       ...row,
       id: `<snapshot.id for ${row.code}>`,
       isActive: true,
-      // Measured: production holds no parent_code on the rows this package compiles.
-      parentCode: null,
+      // Measured per row (MEASURED_PARENT_CODES); never assumed.
+      parentCode: MEASURED_PARENT_CODES.get(row.code) ?? null,
       // Measured: the five Change B rows carry the wrong form line; everything else matches.
       scheduleELine: scheduleEFrom.has(row.code)
         ? (scheduleEFrom.get(row.code) ?? null)
         : row.scheduleELine,
       name: row.code === MEASURED_NAME_DRIFT.code ? MEASURED_NAME_DRIFT.from : row.name,
+      // Measured: exactly two codes drift on description; the rest match the document.
+      description: descDrift.has(row.code) ? DESCRIPTION_DRIFT_MARKER : row.description,
     }));
 }
 
@@ -180,6 +219,7 @@ export function assertMeasuredState(projected: SeedAccountRow[]): void {
 
   if (projected.length !== 105) fail(`projection holds ${projected.length} accounts, measured 105`);
 
+  const absentSet = new Set<string>(MISSING_CODES);
   const unknown = MISSING_CODES.filter((c) => !byCode.has(c));
   if (unknown.length) fail(`${unknown.length} measured-absent code(s) are not in the chart: ${unknown.join(', ')}`);
   if (new Set(MISSING_CODES).size !== 25) fail(`measured-absent set is ${new Set(MISSING_CODES).size} codes, expected 25`);
@@ -202,6 +242,39 @@ export function assertMeasuredState(projected: SeedAccountRow[]): void {
   if (!nameRow) fail(`${MEASURED_NAME_DRIFT.code} is not in the chart`);
   if (nameRow!.name === MEASURED_NAME_DRIFT.from)
     fail(`${MEASURED_NAME_DRIFT.code} is measured drifted from "${MEASURED_NAME_DRIFT.from}" but the document says the same`);
+
+  if (new Set(MEASURED_DESCRIPTION_DRIFT_CODES).size !== 2)
+    fail('measured description-drift set is not exactly 2 codes');
+  for (const code of MEASURED_DESCRIPTION_DRIFT_CODES) {
+    const row = byCode.get(code);
+    if (!row) fail(`description-drift code ${code} is not in the chart`);
+    if (row!.description === DESCRIPTION_DRIFT_MARKER)
+      fail(`description-drift code ${code} is measured drifted but the document holds the drift marker`);
+    if (absentSet.has(code)) fail(`description-drift code ${code} is measured absent, so it cannot drift`);
+  }
+
+  // The measured parent map must cover exactly the 80 existing codes and must not contradict
+  // the document's shape: every rewire targets a header this change inserts (0 target an
+  // existing code), every clear is a code the document leaves parentless.
+  const existingCodes = projected.map((r) => r.code).filter((c) => !absentSet.has(c)).sort();
+  const measuredCodes = [...MEASURED_PARENT_CODES.keys()].sort();
+  if (existingCodes.join(',') !== measuredCodes.join(','))
+    fail('the measured parent map does not cover exactly the 80 existing codes');
+  const clears: string[] = [];
+  let rewires = 0;
+  for (const code of existingCodes) {
+    const have = MEASURED_PARENT_CODES.get(code) ?? null;
+    const want = byCode.get(code)!.parentCode;
+    if (have === want) continue;
+    if (want === null) clears.push(code);
+    else {
+      rewires++;
+      if (!absentSet.has(want)) fail(`${code} is measured rewired to existing code ${want}; measured 0 such rewires`);
+    }
+  }
+  if (clears.sort().join(',') !== [...MEASURED_PARENT_CLEARS].sort().join(','))
+    fail(`document clears [${clears.join(' ')}] are not the measured 37 clears`);
+  if (rewires !== 34) fail(`${rewires} parent rewires, measured 34`);
 
   // §1.7 integrity, asserted rather than rediscovered.
   const headers = new Set<string>(HEADER_CODES);
@@ -405,6 +478,60 @@ export interface ChangeAPackage {
 
 const sqlList = (codes: readonly string[]): string => codes.map((c) => `'${c}'`).join(', ');
 
+/** A measured value as a SQL literal. `null` is the SQL keyword, never the string 'null'. */
+const sqlLiteral = (v: string | null): string => (v === null ? 'NULL' : `'${v.replace(/'/g, "''")}'`);
+
+/**
+ * The rollback for ONE row phase 3 writes: per row, not a template.
+ *
+ * Restores exactly the columns that row's SET list names, plus `updated_at`. Restoring a
+ * column the apply never wrote would itself be a write.
+ *
+ * `parent_code` and `name` carry their MEASURED prior values, so those statements are
+ * runnable the moment the §4 snapshot supplies the row `id`. `description` does NOT: the
+ * drift was measured as a difference, never as a before-value, so it keeps a placeholder.
+ * Said, not filled with something plausible — a rollback that restores a fabricated prior
+ * description is a second wrong write dressed as a recovery.
+ *
+ * Any other changed field throws. A gate package must not render a rollback it cannot fill.
+ */
+function rollbackStatement(u: { row: SeedAccountRow; changedFields: PersistedField[] }): string[] {
+  const code = u.row.code;
+  const assignments: string[] = [];
+  for (const field of u.changedFields) {
+    if (field === 'parentCode') {
+      assignments.push(`parent_code = ${sqlLiteral(MEASURED_PARENT_CODES.get(code) ?? null)}`);
+    } else if (field === 'name') {
+      if (code !== MEASURED_NAME_DRIFT.code) {
+        throw new Error(
+          `rollback: ${code} changes name, but only ${MEASURED_NAME_DRIFT.code}'s prior name was measured`,
+        );
+      }
+      assignments.push(`name        = ${sqlLiteral(MEASURED_NAME_DRIFT.from)}`);
+    } else if (field === 'description') {
+      assignments.push(`description = <snapshot.description for ${code}>   -- NOT captured; §4 query 1`);
+    } else {
+      throw new Error(
+        `rollback: no measured prior value for ${code}.${field}; this package must not render ` +
+          'a rollback it cannot fill',
+      );
+    }
+  }
+  assignments.push(`updated_at  = '<snapshot.updated_at for ${code}>'`);
+  return [
+    `UPDATE chart_of_accounts                      -- ${code}`,
+    ...assignments.map((a, i) => {
+      const lead = i === 0 ? '   SET' : '      ';
+      const comma = i === assignments.length - 1 ? '' : ',';
+      return a.includes('--')
+        ? `${lead} ${a.replace('   -- ', `${comma}   -- `)}`
+        : `${lead} ${a}${comma}`;
+    }),
+    ` WHERE id = '<snapshot.id for ${code}>' AND tenant_id IS NULL;`,
+    '',
+  ];
+}
+
 export async function buildChangeAPackage(): Promise<ChangeAPackage> {
   const projected = projectSeedRows();
   assertMeasuredState(projected);
@@ -459,7 +586,8 @@ function render(ctx: {
   const parentUpdates = p3.plan.updates.filter((u) => u.changedFields.includes('parentCode'));
   const nameUpdates = p3.plan.updates.filter((u) => u.changedFields.includes('name'));
   const descUpdates = p3.plan.updates.filter((u) => u.changedFields.includes('description'));
-  const documentChildren = projected.filter((r) => r.parentCode !== null).length;
+  const clearCount = parentUpdates.filter((u) => u.row.parentCode === null).length;
+  const rewireCount = parentUpdates.length - clearCount;
 
   out.push(
     '# Chart of accounts — Change A (structural) — §7 gate package',
@@ -486,13 +614,14 @@ function render(ctx: {
     'for 5020?". Put the two in one package and neither question gets asked properly.',
     '',
     'The exclusion is **mechanical, not editorial**: Change A runs under the field scope',
-    `\`PERSISTED_FIELDS minus scheduleELine\` = \`${CHANGE_A_FIELDS.join(', ')}\`. There is no`,
+    `\`PERSISTED_FIELDS minus scheduleELine and taxDeductible\` = \`${CHANGE_A_FIELDS.join(', ')}\`. There is no`,
     'per-code deny-list to keep in sync — the column simply is not in the SET list the seed',
     'can build. The five rows surface below under "deferred", as still-drifted, in this same',
     'artifact, so a reader cannot mistake Change A for "the chart is now in sync".',
     '',
-    '`type`, `subtype` and `taxDeductible` **are** inside Change A\'s scope and emit no',
-    'statement, because they are measured identical across all 80 common codes',
+    '`type` and `subtype` are inside Change A\'s scope and emit no statement, and',
+    '`taxDeductible` is outside it by class (the canonical tax-semantic column, §6) — it',
+    'would emit none either way, because all three are measured identical across all 80 common codes',
     `(\`taxDeductible\` per-field digest \`${MEASURED_IDENTICAL_FIELDS[0].digest}\` on both sides).`,
     '**There is no `tax_deductible` defect.** The earlier package',
     '`scripts/coa-apply-gate-package.ts` (#214) asserted four `tax_deductible` UPDATEs on',
@@ -567,14 +696,18 @@ function render(ctx: {
     'and not merely the plan.',
     '',
     `Breakdown: ${parentUpdates.length} \`parent_code\`, ${nameUpdates.length} \`name\`, ` +
-      `${descUpdates.length} \`description\`. See §10 on why the description count here is a` +
-      ' lower bound.',
+      `${descUpdates.length} \`description\` (exactly ` +
+      `${MEASURED_DESCRIPTION_DRIFT_CODES.map((c) => `\`${c}\``).join(' and ')}, measured; ` +
+      'those rows are also in the parent/name counts, so the total is unchanged).',
     '',
-    `**Where the 37 rewirings are.** The document gives ${documentChildren} accounts a parent.`,
-    `${parentUpdates.length} of them already exist and are rewired by an UPDATE here;`,
-    `${documentChildren - parentUpdates.length} are among the 25 accounts phases 1-2 INSERT, and`,
-    'arrive with their parent already set, so they need no UPDATE. 37 total either way — the',
-    'difference is which statement carries it.',
+    `**The ${parentUpdates.length} parent changes.** Production's per-row \`parent_code\` was measured`,
+    `(read-only), not assumed: ${rewireCount} existing rows are REWIRED to a header phases 1-2 insert,`,
+    `and ${clearCount} are CLEARED (production holds a parent, the document says none), 0 rewired`,
+    'to an existing code. The clears matter: without them 5010 and 5050 stay parented to 5000',
+    'Advertising, a POSTING account, violating CHART-OF-ACCOUNTS §1.7 (a parent must be a',
+    'header; depth exactly 1) while the tree looks migrated. An earlier revision of this',
+    'package assumed every existing parent was NULL, so desired-NULL rows diffed empty and only',
+    '34 of 71 were compiled.',
   ], p3.statements);
 
   out.push(
@@ -648,23 +781,29 @@ function render(ctx: {
 
   h('§7 — rollback recipe');
   out.push(
-    '### The UPDATEs (phase 3) — a true rollback exists',
+    `### The UPDATEs (phase 3) — a true rollback exists, one statement per row`,
     '',
-    'For each row phase 3 wrote, restoring every column it set **and `updated_at`**:',
+    `All ${p3.plan.updates.length}, not a template. Each restores **exactly the columns that row's SET list`,
+    'names** — restoring a column the apply never wrote would itself be a write — plus',
+    '`updated_at`.',
+    '',
+    `Every \`parent_code\` below is the MEASURED prior value, and \`name\` for`,
+    `${MEASURED_NAME_DRIFT.code} is the measured prior \`${MEASURED_NAME_DRIFT.from}\`. So these are runnable as`,
+    'soon as §4 query 1 supplies the row `id` and `updated_at`.',
+    '',
+    '`description` is the exception, stated rather than papered over: its prior value was',
+    'never captured — the drift was measured as a difference, not as a before-value — so the',
+    `two rows that write it (${MEASURED_DESCRIPTION_DRIFT_CODES.map((c) => `\`${c}\``).join(' and ')}) keep a \`<snapshot.description ...>\``,
+    'placeholder and cannot be rolled back until query 1 has run. A rollback that restored a',
+    'plausible-looking prior description would be a second wrong write dressed as a recovery.',
     '',
     '```sql',
-    'UPDATE chart_of_accounts',
-    "   SET name           = <snapshot.name>,",
-    "       description    = <snapshot.description>,",
-    "       parent_code    = <snapshot.parent_code>,   -- NULL restores to NULL",
-    "       updated_at     = '<snapshot.updated_at>'",
-    " WHERE id = '<snapshot.id>' AND tenant_id IS NULL;",
+    ...p3.plan.updates.flatMap((u) => rollbackStatement(u)),
     '```',
     '',
     '`updated_at` is restored deliberately. A rollback that restores the value but not the',
     'timestamp leaves the row looking recently and deliberately set, which corrupts the audit',
-    'trail as surely as the wrong value did. Restore only the columns that row\'s SET list',
-    'actually names — restoring a column the apply never wrote would itself be a write.',
+    'trail as surely as the wrong value did.',
     '',
     '### The INSERTs (phases 1-2) — there is NO true rollback. Stated, not papered over.',
     '',
@@ -774,21 +913,20 @@ function render(ctx: {
     '- **The §4 snapshot has not been taken.** This package contains no claim about what',
     '  production currently holds beyond the measured aggregates below. Every "current value"',
     '  question is open until it is run.',
-    '- **`description` drift was never isolated to a code list.** It was measured only in',
-    `  aggregate, as part of "71 of 80 common codes drifted". So this package compiles`,
-    `  ${descUpdates.length} description UPDATE(s) and the live apply will emit more. The`,
-    '  statement count here is a **lower bound**, and the §2 section says so where it counts',
-    '  them. What is *not* uncertain: the value each description UPDATE binds comes from the',
-    '  authoritative projection, so the digest in §5 is exact even though the statement list',
-    '  is not.',
-    '- **`parent_code` starting values were not captured per row.** The fixture takes all 80 as',
-    '  NULL. Where a row holds a STRAY parent the document clears (5050 and 9010 were cited as',
-    `  examples), the live apply emits an UPDATE this package does not compile. So the`,
-    `  ${parentUpdates.length} compiled \`parent_code\` statements are the rows the document gives`,
-    '  a header, and the clears are additional.',
-    '- **The 9 measured-identical codes are not identified**, so the fixture\'s drifted-row count',
-    '  is a lower bound on the measured 71. The three gaps above are the whole of the',
-    '  difference; the apply recomputes from the live table and is unaffected by any of them.',
+    '- **`description` drift is measured exactly, not bounded.** Production was compared to the',
+    `  document on all 80 common codes: ${MEASURED_DESCRIPTION_DRIFT_CODES.map((c) => `\`${c}\``).join(' and ')} drift,`,
+    '  the other 78 match byte-for-byte. Both are already phase-3 updates, so this package',
+    `  compiles ${descUpdates.length} description write(s) and the statement count is unchanged.`,
+    '  Production\'s prior description for those two is not in this package; §4 records it.',
+    '- **Prior `description` values exist only in the snapshot.** The description drift was',
+    '  measured as a difference, not as a before-value, so this package holds what those two',
+    '  rows will BECOME and not what they are. The §7 rollback for them is therefore unusable',
+    '  until §4 query 1 has run. Every other rollback value here is measured.',
+    `- **The 9 measured-identical codes are not identified by code.** 80 common codes minus the`,
+    `  ${p3.plan.updates.length} compiled here leaves 9, which agrees with the measurement — but the measurement`,
+    '  reported a count, not a list, so the identity of those 9 is inferred from this package',
+    '  rather than confirmed against production. §4 query 1 settles it; the apply recomputes',
+    '  from the live table and is unaffected either way.',
     '- **Tenant-scoped overrides were not checked.** Nothing here can write one — every',
     '  statement is `tenant_id IS NULL` — but whether a tenant holds an override of any of',
     '  these 105 codes, which would then diverge from the global chart, is unknown. Query 3 in',

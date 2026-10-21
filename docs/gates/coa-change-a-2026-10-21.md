@@ -21,13 +21,14 @@ in the right place in the tree?"; a form-line reviewer is asking "is Line 7 the 
 for 5020?". Put the two in one package and neither question gets asked properly.
 
 The exclusion is **mechanical, not editorial**: Change A runs under the field scope
-`PERSISTED_FIELDS minus scheduleELine` = `name, type, subtype, description, taxDeductible, parentCode`. There is no
+`PERSISTED_FIELDS minus scheduleELine and taxDeductible` = `name, type, subtype, description, parentCode`. There is no
 per-code deny-list to keep in sync — the column simply is not in the SET list the seed
 can build. The five rows surface below under "deferred", as still-drifted, in this same
 artifact, so a reader cannot mistake Change A for "the chart is now in sync".
 
-`type`, `subtype` and `taxDeductible` **are** inside Change A's scope and emit no
-statement, because they are measured identical across all 80 common codes
+`type` and `subtype` are inside Change A's scope and emit no statement, and
+`taxDeductible` is outside it by class (the canonical tax-semantic column, §6) — it
+would emit none either way, because all three are measured identical across all 80 common codes
 (`taxDeductible` per-field digest `7b44da66cdfb` on both sides).
 **There is no `tax_deductible` defect.** The earlier package
 `scripts/coa-apply-gate-package.ts` (#214) asserted four `tax_deductible` UPDATEs on
@@ -36,7 +37,7 @@ phase 2. Those UPDATEs would have matched zero rows and reported success.
 
 ## §2 — the compiled statements that will execute, in order
 
-25 INSERT, 34 UPDATE, in three phases.
+25 INSERT, 71 UPDATE, in three phases.
 
 Compiled by drizzle through `seedChartOfAccounts()` — the same code path the Worker
 runs, and the only path that calls `assertDocumentParity()` before writing — against a
@@ -550,20 +551,23 @@ params:
 - `$11` = "seed:chart-of-accounts"
 
 
-### Phase 3 — the 34 structural updates
+### Phase 3 — the 71 structural updates
 
 Computed against the full 105-row table phases 1-2 leave behind, under the
 field scope. Each SET list is exactly that row's changed fields plus `updated_at` —
 built from `changedFields`, not hardcoded, which is what makes the scope affect the SQL
 and not merely the plan.
 
-Breakdown: 34 `parent_code`, 1 `name`, 0 `description`. See §10 on why the description count here is a lower bound.
+Breakdown: 71 `parent_code`, 1 `name`, 2 `description` (exactly `4000` and `4110`, measured; those rows are also in the parent/name counts, so the total is unchanged).
 
-**Where the 37 rewirings are.** The document gives 37 accounts a parent.
-34 of them already exist and are rewired by an UPDATE here;
-3 are among the 25 accounts phases 1-2 INSERT, and
-arrive with their parent already set, so they need no UPDATE. 37 total either way — the
-difference is which statement carries it.
+**The 71 parent changes.** Production's per-row `parent_code` was measured
+(read-only), not assumed: 34 existing rows are REWIRED to a header phases 1-2 insert,
+and 37 are CLEARED (production holds a parent, the document says none), 0 rewired
+to an existing code. The clears matter: without them 5010 and 5050 stay parented to 5000
+Advertising, a POSTING account, violating CHART-OF-ACCOUNTS §1.7 (a parent must be a
+header; depth exactly 1) while the tree looks migrated. An earlier revision of this
+package assumed every existing parent was NULL, so desired-NULL rows diffed empty and only
+34 of 71 were compiled.
 
 **3.1 UPDATE 1000 — SET parent_code, updated_at**
 
@@ -631,7 +635,139 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 1110>"
 
-**3.7 UPDATE 2500 — SET parent_code, updated_at**
+**3.7 UPDATE 1510 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 1510>"
+
+**3.8 UPDATE 1515 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 1515>"
+
+**3.9 UPDATE 1520 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 1520>"
+
+**3.10 UPDATE 1525 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 1525>"
+
+**3.11 UPDATE 1610 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 1610>"
+
+**3.12 UPDATE 1615 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 1615>"
+
+**3.13 UPDATE 1620 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 1620>"
+
+**3.14 UPDATE 1625 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 1625>"
+
+**3.15 UPDATE 2010 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 2010>"
+
+**3.16 UPDATE 2020 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 2020>"
+
+**3.17 UPDATE 2030 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 2030>"
+
+**3.18 UPDATE 2040 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 2040>"
+
+**3.19 UPDATE 2500 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -642,7 +778,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 2500>"
 
-**3.8 UPDATE 2510 — SET parent_code, updated_at**
+**3.20 UPDATE 2510 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -653,19 +789,75 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 2510>"
 
-**3.9 UPDATE 4000 — SET name, parent_code, updated_at**
+**3.21 UPDATE 2520 — SET parent_code, updated_at**
 
 ```sql
-update "chart_of_accounts" set "name" = $1, "parent_code" = $2, "updated_at" = $3 where ("chart_of_accounts"."id" = $4 and "chart_of_accounts"."tenant_id" is null)
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 2520>"
+
+**3.22 UPDATE 2530 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 2530>"
+
+**3.23 UPDATE 3010 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 3010>"
+
+**3.24 UPDATE 3020 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 3020>"
+
+**3.25 UPDATE 3030 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 3030>"
+
+**3.26 UPDATE 4000 — SET name, description, parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "name" = $1, "description" = $2, "parent_code" = $3, "updated_at" = $4 where ("chart_of_accounts"."id" = $5 and "chart_of_accounts"."tenant_id" is null)
 ```
 
 params:
 - `$1` = "Rental Income - Long-Term"
-- `$2` = "4090"
-- `$3` = <apply-time: new Date() stamped at execution>
-- `$4` = "<snapshot.id for 4000>"
+- `$2` = "Base rent received on unfurnished, year-length leases"
+- `$3` = "4090"
+- `$4` = <apply-time: new Date() stamped at execution>
+- `$5` = "<snapshot.id for 4000>"
 
-**3.10 UPDATE 4010 — SET parent_code, updated_at**
+**3.27 UPDATE 4010 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -676,7 +868,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 4010>"
 
-**3.11 UPDATE 4020 — SET parent_code, updated_at**
+**3.28 UPDATE 4020 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -687,7 +879,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 4020>"
 
-**3.12 UPDATE 4030 — SET parent_code, updated_at**
+**3.29 UPDATE 4030 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -698,7 +890,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 4030>"
 
-**3.13 UPDATE 4040 — SET parent_code, updated_at**
+**3.30 UPDATE 4040 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -709,7 +901,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 4040>"
 
-**3.14 UPDATE 4050 — SET parent_code, updated_at**
+**3.31 UPDATE 4050 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -720,7 +912,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 4050>"
 
-**3.15 UPDATE 4060 — SET parent_code, updated_at**
+**3.32 UPDATE 4060 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -731,7 +923,129 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 4060>"
 
-**3.16 UPDATE 5100 — SET parent_code, updated_at**
+**3.33 UPDATE 4110 — SET description, parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "description" = $1, "parent_code" = $2, "updated_at" = $3 where ("chart_of_accounts"."id" = $4 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = "Security deposits retained; income only on forfeiture, otherwise a 2010 liability"
+- `$2` = null
+- `$3` = <apply-time: new Date() stamped at execution>
+- `$4` = "<snapshot.id for 4110>"
+
+**3.34 UPDATE 4120 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 4120>"
+
+**3.35 UPDATE 5010 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5010>"
+
+**3.36 UPDATE 5020 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5020>"
+
+**3.37 UPDATE 5030 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5030>"
+
+**3.38 UPDATE 5040 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5040>"
+
+**3.39 UPDATE 5050 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5050>"
+
+**3.40 UPDATE 5060 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5060>"
+
+**3.41 UPDATE 5070 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5070>"
+
+**3.42 UPDATE 5080 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5080>"
+
+**3.43 UPDATE 5090 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5090>"
+
+**3.44 UPDATE 5100 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -742,7 +1056,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5100>"
 
-**3.17 UPDATE 5110 — SET parent_code, updated_at**
+**3.45 UPDATE 5110 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -753,7 +1067,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5110>"
 
-**3.18 UPDATE 5120 — SET parent_code, updated_at**
+**3.46 UPDATE 5120 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -764,7 +1078,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5120>"
 
-**3.19 UPDATE 5130 — SET parent_code, updated_at**
+**3.47 UPDATE 5130 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -775,7 +1089,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5130>"
 
-**3.20 UPDATE 5140 — SET parent_code, updated_at**
+**3.48 UPDATE 5140 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -786,7 +1100,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5140>"
 
-**3.21 UPDATE 5200 — SET parent_code, updated_at**
+**3.49 UPDATE 5200 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -797,7 +1111,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5200>"
 
-**3.22 UPDATE 5210 — SET parent_code, updated_at**
+**3.50 UPDATE 5210 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -808,7 +1122,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5210>"
 
-**3.23 UPDATE 5220 — SET parent_code, updated_at**
+**3.51 UPDATE 5220 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -819,7 +1133,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5220>"
 
-**3.24 UPDATE 5300 — SET parent_code, updated_at**
+**3.52 UPDATE 5300 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -830,7 +1144,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5300>"
 
-**3.25 UPDATE 5310 — SET parent_code, updated_at**
+**3.53 UPDATE 5310 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -841,7 +1155,29 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5310>"
 
-**3.26 UPDATE 5400 — SET parent_code, updated_at**
+**3.54 UPDATE 5320 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5320>"
+
+**3.55 UPDATE 5330 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 5330>"
+
+**3.56 UPDATE 5400 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -852,7 +1188,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5400>"
 
-**3.27 UPDATE 5410 — SET parent_code, updated_at**
+**3.57 UPDATE 5410 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -863,7 +1199,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5410>"
 
-**3.28 UPDATE 5420 — SET parent_code, updated_at**
+**3.58 UPDATE 5420 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -874,7 +1210,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5420>"
 
-**3.29 UPDATE 5430 — SET parent_code, updated_at**
+**3.59 UPDATE 5430 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -885,7 +1221,51 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 5430>"
 
-**3.30 UPDATE 7000 — SET parent_code, updated_at**
+**3.60 UPDATE 6010 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 6010>"
+
+**3.61 UPDATE 6020 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 6020>"
+
+**3.62 UPDATE 6030 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 6030>"
+
+**3.63 UPDATE 6040 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 6040>"
+
+**3.64 UPDATE 7000 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -896,7 +1276,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 7000>"
 
-**3.31 UPDATE 7010 — SET parent_code, updated_at**
+**3.65 UPDATE 7010 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -907,7 +1287,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 7010>"
 
-**3.32 UPDATE 7020 — SET parent_code, updated_at**
+**3.66 UPDATE 7020 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -918,7 +1298,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 7020>"
 
-**3.33 UPDATE 7030 — SET parent_code, updated_at**
+**3.67 UPDATE 7030 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -929,7 +1309,7 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 7030>"
 
-**3.34 UPDATE 7040 — SET parent_code, updated_at**
+**3.68 UPDATE 7040 — SET parent_code, updated_at**
 
 ```sql
 update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
@@ -940,16 +1320,49 @@ params:
 - `$2` = <apply-time: new Date() stamped at execution>
 - `$3` = "<snapshot.id for 7040>"
 
+**3.69 UPDATE 9010 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 9010>"
+
+**3.70 UPDATE 9020 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 9020>"
+
+**3.71 UPDATE 9030 — SET parent_code, updated_at**
+
+```sql
+update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)
+```
+
+params:
+- `$1` = null
+- `$2` = <apply-time: new Date() stamped at execution>
+- `$3` = "<snapshot.id for 9030>"
+
 
 ### Deferred, in the same artifact
 
 Phase 3's field scope held back 5 row(s), each still drifted after Change A:
 
-- `4110` — nothing written · **still drifted on: scheduleELine**
-- `4120` — nothing written · **still drifted on: scheduleELine**
-- `5020` — nothing written · **still drifted on: scheduleELine**
-- `5030` — nothing written · **still drifted on: scheduleELine**
-- `5080` — nothing written · **still drifted on: scheduleELine**
+- `4110` — written: description, parentCode · **still drifted on: scheduleELine**
+- `4120` — written: parentCode · **still drifted on: scheduleELine**
+- `5020` — written: parentCode · **still drifted on: scheduleELine**
+- `5030` — written: parentCode · **still drifted on: scheduleELine**
+- `5080` — written: parentCode · **still drifted on: scheduleELine**
 
 That is Change B, and it is owed. It is stated here rather than in a separate document
 so that this package cannot be read as "the chart is in sync".
@@ -1001,23 +1414,386 @@ unusable without it.
 
 ## §7 — rollback recipe
 
-### The UPDATEs (phase 3) — a true rollback exists
+### The UPDATEs (phase 3) — a true rollback exists, one statement per row
 
-For each row phase 3 wrote, restoring every column it set **and `updated_at`**:
+All 71, not a template. Each restores **exactly the columns that row's SET list
+names** — restoring a column the apply never wrote would itself be a write — plus
+`updated_at`.
+
+Every `parent_code` below is the MEASURED prior value, and `name` for
+4000 is the measured prior `Rental Income`. So these are runnable as
+soon as §4 query 1 supplies the row `id` and `updated_at`.
+
+`description` is the exception, stated rather than papered over: its prior value was
+never captured — the drift was measured as a difference, not as a before-value — so the
+two rows that write it (`4000` and `4110`) keep a `<snapshot.description ...>`
+placeholder and cannot be rolled back until query 1 has run. A rollback that restored a
+plausible-looking prior description would be a second wrong write dressed as a recovery.
 
 ```sql
-UPDATE chart_of_accounts
-   SET name           = <snapshot.name>,
-       description    = <snapshot.description>,
-       parent_code    = <snapshot.parent_code>,   -- NULL restores to NULL
-       updated_at     = '<snapshot.updated_at>'
- WHERE id = '<snapshot.id>' AND tenant_id IS NULL;
+UPDATE chart_of_accounts                      -- 1000
+   SET parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 1000>'
+ WHERE id = '<snapshot.id for 1000>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1010
+   SET parent_code = '1000',
+       updated_at  = '<snapshot.updated_at for 1010>'
+ WHERE id = '<snapshot.id for 1010>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1020
+   SET parent_code = '1000',
+       updated_at  = '<snapshot.updated_at for 1020>'
+ WHERE id = '<snapshot.id for 1020>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1050
+   SET parent_code = '1000',
+       updated_at  = '<snapshot.updated_at for 1050>'
+ WHERE id = '<snapshot.id for 1050>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1100
+   SET parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 1100>'
+ WHERE id = '<snapshot.id for 1100>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1110
+   SET parent_code = '1100',
+       updated_at  = '<snapshot.updated_at for 1110>'
+ WHERE id = '<snapshot.id for 1110>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1510
+   SET parent_code = '1500',
+       updated_at  = '<snapshot.updated_at for 1510>'
+ WHERE id = '<snapshot.id for 1510>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1515
+   SET parent_code = '1500',
+       updated_at  = '<snapshot.updated_at for 1515>'
+ WHERE id = '<snapshot.id for 1515>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1520
+   SET parent_code = '1500',
+       updated_at  = '<snapshot.updated_at for 1520>'
+ WHERE id = '<snapshot.id for 1520>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1525
+   SET parent_code = '1500',
+       updated_at  = '<snapshot.updated_at for 1525>'
+ WHERE id = '<snapshot.id for 1525>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1610
+   SET parent_code = '1600',
+       updated_at  = '<snapshot.updated_at for 1610>'
+ WHERE id = '<snapshot.id for 1610>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1615
+   SET parent_code = '1600',
+       updated_at  = '<snapshot.updated_at for 1615>'
+ WHERE id = '<snapshot.id for 1615>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1620
+   SET parent_code = '1600',
+       updated_at  = '<snapshot.updated_at for 1620>'
+ WHERE id = '<snapshot.id for 1620>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 1625
+   SET parent_code = '1600',
+       updated_at  = '<snapshot.updated_at for 1625>'
+ WHERE id = '<snapshot.id for 1625>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 2010
+   SET parent_code = '2000',
+       updated_at  = '<snapshot.updated_at for 2010>'
+ WHERE id = '<snapshot.id for 2010>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 2020
+   SET parent_code = '2000',
+       updated_at  = '<snapshot.updated_at for 2020>'
+ WHERE id = '<snapshot.id for 2020>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 2030
+   SET parent_code = '2000',
+       updated_at  = '<snapshot.updated_at for 2030>'
+ WHERE id = '<snapshot.id for 2030>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 2040
+   SET parent_code = '2000',
+       updated_at  = '<snapshot.updated_at for 2040>'
+ WHERE id = '<snapshot.id for 2040>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 2500
+   SET parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 2500>'
+ WHERE id = '<snapshot.id for 2500>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 2510
+   SET parent_code = '2500',
+       updated_at  = '<snapshot.updated_at for 2510>'
+ WHERE id = '<snapshot.id for 2510>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 2520
+   SET parent_code = '2500',
+       updated_at  = '<snapshot.updated_at for 2520>'
+ WHERE id = '<snapshot.id for 2520>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 2530
+   SET parent_code = '2500',
+       updated_at  = '<snapshot.updated_at for 2530>'
+ WHERE id = '<snapshot.id for 2530>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 3010
+   SET parent_code = '3000',
+       updated_at  = '<snapshot.updated_at for 3010>'
+ WHERE id = '<snapshot.id for 3010>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 3020
+   SET parent_code = '3000',
+       updated_at  = '<snapshot.updated_at for 3020>'
+ WHERE id = '<snapshot.id for 3020>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 3030
+   SET parent_code = '3000',
+       updated_at  = '<snapshot.updated_at for 3030>'
+ WHERE id = '<snapshot.id for 3030>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4000
+   SET name        = 'Rental Income',
+       description = <snapshot.description for 4000>,   -- NOT captured; §4 query 1
+       parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 4000>'
+ WHERE id = '<snapshot.id for 4000>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4010
+   SET parent_code = '4000',
+       updated_at  = '<snapshot.updated_at for 4010>'
+ WHERE id = '<snapshot.id for 4010>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4020
+   SET parent_code = '4000',
+       updated_at  = '<snapshot.updated_at for 4020>'
+ WHERE id = '<snapshot.id for 4020>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4030
+   SET parent_code = '4000',
+       updated_at  = '<snapshot.updated_at for 4030>'
+ WHERE id = '<snapshot.id for 4030>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4040
+   SET parent_code = '4000',
+       updated_at  = '<snapshot.updated_at for 4040>'
+ WHERE id = '<snapshot.id for 4040>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4050
+   SET parent_code = '4000',
+       updated_at  = '<snapshot.updated_at for 4050>'
+ WHERE id = '<snapshot.id for 4050>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4060
+   SET parent_code = '4000',
+       updated_at  = '<snapshot.updated_at for 4060>'
+ WHERE id = '<snapshot.id for 4060>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4110
+   SET description = <snapshot.description for 4110>,   -- NOT captured; §4 query 1
+       parent_code = '4100',
+       updated_at  = '<snapshot.updated_at for 4110>'
+ WHERE id = '<snapshot.id for 4110>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 4120
+   SET parent_code = '4100',
+       updated_at  = '<snapshot.updated_at for 4120>'
+ WHERE id = '<snapshot.id for 4120>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5010
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5010>'
+ WHERE id = '<snapshot.id for 5010>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5020
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5020>'
+ WHERE id = '<snapshot.id for 5020>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5030
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5030>'
+ WHERE id = '<snapshot.id for 5030>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5040
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5040>'
+ WHERE id = '<snapshot.id for 5040>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5050
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5050>'
+ WHERE id = '<snapshot.id for 5050>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5060
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5060>'
+ WHERE id = '<snapshot.id for 5060>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5070
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5070>'
+ WHERE id = '<snapshot.id for 5070>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5080
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5080>'
+ WHERE id = '<snapshot.id for 5080>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5090
+   SET parent_code = '5000',
+       updated_at  = '<snapshot.updated_at for 5090>'
+ WHERE id = '<snapshot.id for 5090>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5100
+   SET parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 5100>'
+ WHERE id = '<snapshot.id for 5100>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5110
+   SET parent_code = '5100',
+       updated_at  = '<snapshot.updated_at for 5110>'
+ WHERE id = '<snapshot.id for 5110>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5120
+   SET parent_code = '5100',
+       updated_at  = '<snapshot.updated_at for 5120>'
+ WHERE id = '<snapshot.id for 5120>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5130
+   SET parent_code = '5100',
+       updated_at  = '<snapshot.updated_at for 5130>'
+ WHERE id = '<snapshot.id for 5130>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5140
+   SET parent_code = '5100',
+       updated_at  = '<snapshot.updated_at for 5140>'
+ WHERE id = '<snapshot.id for 5140>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5200
+   SET parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 5200>'
+ WHERE id = '<snapshot.id for 5200>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5210
+   SET parent_code = '5200',
+       updated_at  = '<snapshot.updated_at for 5210>'
+ WHERE id = '<snapshot.id for 5210>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5220
+   SET parent_code = '5200',
+       updated_at  = '<snapshot.updated_at for 5220>'
+ WHERE id = '<snapshot.id for 5220>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5300
+   SET parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 5300>'
+ WHERE id = '<snapshot.id for 5300>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5310
+   SET parent_code = '5300',
+       updated_at  = '<snapshot.updated_at for 5310>'
+ WHERE id = '<snapshot.id for 5310>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5320
+   SET parent_code = '5300',
+       updated_at  = '<snapshot.updated_at for 5320>'
+ WHERE id = '<snapshot.id for 5320>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5330
+   SET parent_code = '5300',
+       updated_at  = '<snapshot.updated_at for 5330>'
+ WHERE id = '<snapshot.id for 5330>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5400
+   SET parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 5400>'
+ WHERE id = '<snapshot.id for 5400>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5410
+   SET parent_code = '5400',
+       updated_at  = '<snapshot.updated_at for 5410>'
+ WHERE id = '<snapshot.id for 5410>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5420
+   SET parent_code = '5400',
+       updated_at  = '<snapshot.updated_at for 5420>'
+ WHERE id = '<snapshot.id for 5420>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 5430
+   SET parent_code = '5400',
+       updated_at  = '<snapshot.updated_at for 5430>'
+ WHERE id = '<snapshot.id for 5430>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 6010
+   SET parent_code = '6000',
+       updated_at  = '<snapshot.updated_at for 6010>'
+ WHERE id = '<snapshot.id for 6010>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 6020
+   SET parent_code = '6000',
+       updated_at  = '<snapshot.updated_at for 6020>'
+ WHERE id = '<snapshot.id for 6020>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 6030
+   SET parent_code = '6000',
+       updated_at  = '<snapshot.updated_at for 6030>'
+ WHERE id = '<snapshot.id for 6030>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 6040
+   SET parent_code = '6000',
+       updated_at  = '<snapshot.updated_at for 6040>'
+ WHERE id = '<snapshot.id for 6040>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 7000
+   SET parent_code = NULL,
+       updated_at  = '<snapshot.updated_at for 7000>'
+ WHERE id = '<snapshot.id for 7000>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 7010
+   SET parent_code = '7000',
+       updated_at  = '<snapshot.updated_at for 7010>'
+ WHERE id = '<snapshot.id for 7010>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 7020
+   SET parent_code = '7000',
+       updated_at  = '<snapshot.updated_at for 7020>'
+ WHERE id = '<snapshot.id for 7020>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 7030
+   SET parent_code = '7000',
+       updated_at  = '<snapshot.updated_at for 7030>'
+ WHERE id = '<snapshot.id for 7030>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 7040
+   SET parent_code = '7000',
+       updated_at  = '<snapshot.updated_at for 7040>'
+ WHERE id = '<snapshot.id for 7040>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 9010
+   SET parent_code = '9000',
+       updated_at  = '<snapshot.updated_at for 9010>'
+ WHERE id = '<snapshot.id for 9010>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 9020
+   SET parent_code = '9000',
+       updated_at  = '<snapshot.updated_at for 9020>'
+ WHERE id = '<snapshot.id for 9020>' AND tenant_id IS NULL;
+
+UPDATE chart_of_accounts                      -- 9030
+   SET parent_code = '9000',
+       updated_at  = '<snapshot.updated_at for 9030>'
+ WHERE id = '<snapshot.id for 9030>' AND tenant_id IS NULL;
+
 ```
 
 `updated_at` is restored deliberately. A rollback that restores the value but not the
 timestamp leaves the row looking recently and deliberately set, which corrupts the audit
-trail as surely as the wrong value did. Restore only the columns that row's SET list
-actually names — restoring a column the apply never wrote would itself be a write.
+trail as surely as the wrong value did.
 
 ### The INSERTs (phases 1-2) — there is NO true rollback. Stated, not papered over.
 
@@ -1080,10 +1856,10 @@ why that is the default failure here.
 
 ## §7 — blast radius
 
-- **Statements:** 59 total — 25 INSERT (10 headers, then 15 posting accounts), 34 UPDATE.
-- **Rows created:** 25. **Rows modified:** 34. All
+- **Statements:** 96 total — 25 INSERT (10 headers, then 15 posting accounts), 71 UPDATE.
+- **Rows created:** 25. **Rows modified:** 71. All
   `tenant_id IS NULL`.
-- **Columns written on an UPDATE:** name, parent_code, updated_at.
+- **Columns written on an UPDATE:** description, name, parent_code, updated_at.
   Every SET list was read off the compiled SQL above, not assumed.
 - **Never written by this path:** `is_active` (an operational decision, not a chart
   definition), `modified_by` on an existing row (a row last touched by a human L4 auditor
@@ -1120,21 +1896,20 @@ The generator fails rather than rendering if any of those stops holding.
 - **The §4 snapshot has not been taken.** This package contains no claim about what
   production currently holds beyond the measured aggregates below. Every "current value"
   question is open until it is run.
-- **`description` drift was never isolated to a code list.** It was measured only in
-  aggregate, as part of "71 of 80 common codes drifted". So this package compiles
-  0 description UPDATE(s) and the live apply will emit more. The
-  statement count here is a **lower bound**, and the §2 section says so where it counts
-  them. What is *not* uncertain: the value each description UPDATE binds comes from the
-  authoritative projection, so the digest in §5 is exact even though the statement list
-  is not.
-- **`parent_code` starting values were not captured per row.** The fixture takes all 80 as
-  NULL. Where a row holds a STRAY parent the document clears (5050 and 9010 were cited as
-  examples), the live apply emits an UPDATE this package does not compile. So the
-  34 compiled `parent_code` statements are the rows the document gives
-  a header, and the clears are additional.
-- **The 9 measured-identical codes are not identified**, so the fixture's drifted-row count
-  is a lower bound on the measured 71. The three gaps above are the whole of the
-  difference; the apply recomputes from the live table and is unaffected by any of them.
+- **`description` drift is measured exactly, not bounded.** Production was compared to the
+  document on all 80 common codes: `4000` and `4110` drift,
+  the other 78 match byte-for-byte. Both are already phase-3 updates, so this package
+  compiles 2 description write(s) and the statement count is unchanged.
+  Production's prior description for those two is not in this package; §4 records it.
+- **Prior `description` values exist only in the snapshot.** The description drift was
+  measured as a difference, not as a before-value, so this package holds what those two
+  rows will BECOME and not what they are. The §7 rollback for them is therefore unusable
+  until §4 query 1 has run. Every other rollback value here is measured.
+- **The 9 measured-identical codes are not identified by code.** 80 common codes minus the
+  71 compiled here leaves 9, which agrees with the measurement — but the measurement
+  reported a count, not a list, so the identity of those 9 is inferred from this package
+  rather than confirmed against production. §4 query 1 settles it; the apply recomputes
+  from the live table and is unaffected either way.
 - **Tenant-scoped overrides were not checked.** Nothing here can write one — every
   statement is `tenant_id IS NULL` — but whether a tenant holds an override of any of
   these 105 codes, which would then diverge from the global chart, is unknown. Query 3 in

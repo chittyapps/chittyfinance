@@ -13,6 +13,8 @@ import {
   MISSING_CODES,
   CHANGE_B_SCHEDULE_E,
   CHANGE_A_FIELDS,
+  MEASURED_PARENT_CODES,
+  MEASURED_PARENT_CLEARS,
   type CompiledStatement,
   type ChangeAPackage,
 } from '../../scripts/coa-change-a-gate-package';
@@ -123,7 +125,7 @@ describe('G3 — the package runs with no database and no credential', () => {
       expect(pkg.markdown, `missing section: ${heading}`).toContain(heading);
     }
     // §10 must name the three gaps that bound what the package can show.
-    expect(pkg.markdown).toContain('never isolated to a code list');
+    expect(pkg.markdown).toContain('Prior `description` values exist only in the snapshot');
     expect(pkg.markdown).toContain('Tenant-scoped overrides were not checked');
     expect(pkg.markdown).toContain('snapshot has not been taken');
     // §7 must not pretend the inserts are reversible.
@@ -136,6 +138,75 @@ describe('G3 — the package runs with no database and no credential', () => {
     // The committed doc is what an operator reads. If it drifts from the generator, the
     // generator is no longer evidence for it.
     expect(readFileSync(COMMITTED, 'utf8')).toBe(pkg.markdown);
+  });
+});
+
+/**
+ * The invariant whose absence hid the defect.
+ *
+ * An earlier revision's fixture assumed every existing row held `parent_code = NULL`. That
+ * assumption AGREED with the desired state on all 37 rows the document parentless, so those
+ * rows diffed to nothing and only 34 of 71 parent changes were compiled. Nothing in the
+ * suite noticed, because nothing asked what tree the compiled statements actually leave
+ * behind — they were checked one at a time, never as a whole.
+ *
+ * These two tests ask that question. The first pins the clears individually; the second
+ * reconstructs the post-Change-A hierarchy and holds it against CHART-OF-ACCOUNTS §1.7.
+ */
+describe('§1.7 — the hierarchy the compiled statements actually leave behind', () => {
+  const updates = () => pkg.statements.filter((s) => s.kind === 'update');
+
+  /** The value an UPDATE binds to `parent_code`: position in the SET list is the param index. */
+  function boundParent(s: CompiledStatement): string | null {
+    const i = s.setColumns.indexOf('parent_code');
+    expect(i, `${s.code} does not set parent_code`).toBeGreaterThanOrEqual(0);
+    // 4110 sets description first, so index-by-position is required, not params[0].
+    return JSON.parse(s.params[i]) as string | null;
+  }
+
+  it('emits an UPDATE binding parent_code to NULL for every one of the measured clears', () => {
+    // The 37 rows where production holds a parent and the document says none. This is the
+    // exact set that diffed empty under the all-NULL fixture.
+    expect(MEASURED_PARENT_CLEARS).toHaveLength(37);
+    const byCode = new Map(updates().map((s) => [s.code, s]));
+    for (const code of MEASURED_PARENT_CLEARS) {
+      const s = byCode.get(code);
+      expect(s, `no UPDATE compiled for measured clear ${code}`).toBeDefined();
+      expect(s!.setColumns, `${code} must set parent_code`).toContain('parent_code');
+      expect(boundParent(s!), `${code} must be cleared to NULL, not re-parented`).toBeNull();
+    }
+    const cleared = updates().filter((s) => s.setColumns.includes('parent_code') && boundParent(s) === null);
+    expect(cleared.map((s) => s.code).sort()).toEqual([...MEASURED_PARENT_CLEARS].sort());
+  });
+
+  it('leaves a tree where every parent is a header at depth exactly 1, equal to the document', () => {
+    // Reconstruct: production's measured parents, overlaid with what the UPDATEs bind, plus
+    // the parents the 25 INSERTed rows arrive with. (Those 25 come from the plan rows rather
+    // than from parsed INSERT params — the defect was in the UPDATE path, and an INSERT
+    // writes every column by definition, so there is nothing for it to omit.)
+    const after = new Map<string, string | null>(MEASURED_PARENT_CODES);
+    for (const s of updates()) {
+      if (s.setColumns.includes('parent_code')) after.set(s.code, boundParent(s));
+    }
+    for (const row of [...pkg.plans.phase1.inserts, ...pkg.plans.phase2.inserts]) {
+      after.set(row.code, row.parentCode);
+    }
+    expect(after.size).toBe(105);
+
+    // §1.7 first, and by itself, so a violation is reported as a violation rather than as a
+    // diff against the projection.
+    const headers = new Set<string>(HEADER_CODES);
+    for (const [code, parent] of after) {
+      if (parent === null) continue;
+      expect(headers, `${code} is parented to ${parent}, which is not a header (§1.7)`)
+        .toContain(parent);
+      expect(after.get(parent) ?? null, `${code} -> ${parent} is depth 2; §1.7 allows exactly 1`)
+        .toBeNull();
+    }
+
+    // And the whole tree equals the document's. Nothing half-migrated, nothing extra.
+    const document = new Map(projectSeedRows().map((r) => [r.code, r.parentCode]));
+    expect([...after.entries()].sort()).toEqual([...document.entries()].sort());
   });
 });
 
@@ -172,9 +243,42 @@ describe('G4 — Change B is provably excluded', () => {
   it('excludes the form-line column by subtracting it from PERSISTED_FIELDS, not by a code list', () => {
     // The mechanism matters: a per-code deny-list has to be kept in sync with the drift,
     // and a code that drifts later is silently included.
-    expect(CHANGE_A_FIELDS).toEqual(PERSISTED_FIELDS.filter((f) => f !== 'scheduleELine'));
+    expect(CHANGE_A_FIELDS).toEqual(
+      PERSISTED_FIELDS.filter((f) => f !== 'scheduleELine' && f !== 'taxDeductible'),
+    );
     expect(CHANGE_A_FIELDS).not.toContain('scheduleELine');
+    expect(CHANGE_A_FIELDS).not.toContain('taxDeductible');
     expect(pkg.plans.phase3.scope?.fields).toEqual(CHANGE_A_FIELDS);
+  });
+
+  it('keeps tax_deductible out of the phase-3 scope and out of every UPDATE SET list (§6)', () => {
+    // Two halves, and only the first can fail on today's data. `taxDeductible` is measured
+    // IDENTICAL across all 80 common codes, so putting it back in scope emits zero SET
+    // entries and the SET-list half alone would pass — a decoration. Mutation-tested: the
+    // scope assertion is what fires. The SET-list half is kept because it is the invariant
+    // that matters the day the document's deductibility changes before the apply runs.
+    expect(pkg.plans.phase3.scope?.fields).not.toContain('taxDeductible');
+
+    // UPDATE SET lists only. An INSERT column list comes from the table definition, so an
+    // omitted column still appears there (rendered `default`) and asserting on it is vacuous.
+    const updates = pkg.statements.filter((s) => s.kind === 'update');
+    expect(updates.length).toBe(71);
+    for (const s of updates) {
+      expect(s.setColumns, `${s.code} must not set tax_deductible`).not.toContain('tax_deductible');
+    }
+  });
+
+  it('writes description on exactly the two measured-drift codes, 4000 and 4110, and no other', () => {
+    const withDesc = pkg.statements
+      .filter((s) => s.kind === 'update' && s.setColumns.includes('description'))
+      .map((s) => s.code)
+      .sort();
+    expect(withDesc).toEqual(['4000', '4110']);
+    // Already among the 71 phase-3 updates, so the statement count does not move.
+    expect(pkg.statements.filter((s) => s.kind === 'update').length).toBe(71);
+    expect(pkg.statements.filter((s) => s.kind === 'insert').length).toBe(25);
+    expect(pkg.markdown).not.toContain('lower bound on the measured 71 description');
+    expect(pkg.markdown).toContain('`description` drift is measured exactly, not bounded');
   });
 
   it('inserting a new account with its form line is not a Change B write', () => {
