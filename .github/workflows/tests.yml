@@ -54,7 +54,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          MIN_TESTS=340
+          # Floor tracks the suite. 719 passing on 2026-10-21; set just below so a
+          # legitimate test removal is a deliberate bump rather than silent erosion.
+          # It was 340 while the suite had grown to 719 — half the tests could have
+          # disappeared without tripping it, which is the failure mode this floor
+          # exists to catch.
+          MIN_TESTS=700
           if [ ! -f .vitest-results.json ]; then
             echo "::error::vitest produced no results file — the suite did not run"
             exit 1
