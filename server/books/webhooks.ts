@@ -464,6 +464,25 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
   }, 410);
 });
 
+/**
+ * True only for a unique violation on the transactions external-id index.
+ *
+ * Deliberately narrow. Matching any unique violation would absorb a collision on a
+ * different constraint and report it as "already ingested"; matching on message text
+ * alone would absorb anything whose message happens to contain the word. So this
+ * requires the SQLSTATE and, when the driver exposes a constraint name, that it is
+ * this index.
+ */
+export function isTransactionExternalIdViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; constraint?: unknown; message?: unknown };
+  if (e.code !== '23505') return false;
+  const named = typeof e.constraint === 'string' ? e.constraint : '';
+  if (named) return named === 'transactions_tenant_external_idx';
+  // Some drivers omit `constraint` and only carry the index name in the message.
+  return typeof e.message === 'string' && e.message.includes('transactions_tenant_external_idx');
+}
+
 // POST /api/webhooks/wave — Wave Accounting webhook with real-time classification
 // Same flow as Mercury: service-auth → zod → KV dedup → classify → ChittySchema advisory → persist
 webhookRoutes.post('/api/webhooks/wave', async (c) => {
@@ -521,23 +540,46 @@ webhookRoutes.post('/api/webhooks/wave', async (c) => {
   const db = createDb(c.env.DATABASE_URL);
   const storage = new SystemStorage(db);
 
+  // The read-then-insert pair below is a check, not a guarantee. Two concurrent
+  // deliveries of the same Wave event — which a retry produces by design — can both
+  // read "no duplicate" and both insert. Before
+  // `transactions_tenant_external_idx` existed, that silently wrote a second
+  // transaction into the books; with it, the loser of the race raises a unique
+  // violation. The constraint is the authority and this read is the fast path, so a
+  // violation here means "already ingested", which is the same 202 the read returns.
   const dupRow = await storage.getTransactionByExternalId(externalId, tx.tenantId);
   if (dupRow) return c.json({ received: true, duplicate: true, transactionId: dupRow.id }, 202);
 
-  const created = await storage.createTransaction({
-    tenantId: tx.tenantId,
-    accountId: tx.accountId,
-    amount: String(tx.amount),
-    type: tx.amount >= 0 ? 'income' : 'expense',
-    category: tx.category ?? null,
-    description: tx.description,
-    date: new Date(tx.postedAt),
-    payee: tx.payee ?? null,
-    externalId,
-    suggestedCoaCode,
-    classificationConfidence,
-    metadata: { source: 'wave_webhook', waveTransactionId: tx.waveTransactionId, eventId },
-  });
+  let created: Awaited<ReturnType<typeof storage.createTransaction>>;
+  try {
+    created = await storage.createTransaction({
+      tenantId: tx.tenantId,
+      accountId: tx.accountId,
+      amount: String(tx.amount),
+      type: tx.amount >= 0 ? 'income' : 'expense',
+      category: tx.category ?? null,
+      description: tx.description,
+      date: new Date(tx.postedAt),
+      payee: tx.payee ?? null,
+      externalId,
+      suggestedCoaCode,
+      classificationConfidence,
+      metadata: { source: 'wave_webhook', waveTransactionId: tx.waveTransactionId, eventId },
+    });
+  } catch (err) {
+    // ONLY the idempotency collision is absorbed. Anything else propagates: a broad
+    // catch here would convert a genuine write failure into a 202 the sender never
+    // retries, which is how an ingest silently loses a transaction.
+    if (!isTransactionExternalIdViolation(err)) throw err;
+    const raced = await storage.getTransactionByExternalId(externalId, tx.tenantId);
+    if (!raced) {
+      // The constraint rejected the row but it is not readable. Do not acknowledge:
+      // claiming success here would drop the event with nothing recorded.
+      throw err;
+    }
+    console.warn('[webhook:wave] idempotency collision absorbed', { eventId, externalId });
+    return c.json({ received: true, duplicate: true, transactionId: raced.id }, 202);
+  }
 
   ledgerLog(c, {
     entityType: 'audit',
