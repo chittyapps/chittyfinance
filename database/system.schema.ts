@@ -3,6 +3,7 @@
 // Uses Neon PostgreSQL with decimal precision for accounting
 
 import { pgTable, uuid, text, timestamp, decimal, boolean, integer, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
@@ -160,6 +161,23 @@ export const transactions = pgTable('transactions', {
   propertyIdx: index('transactions_property_idx').on(table.propertyId),
   coaIdx: index('transactions_coa_idx').on(table.tenantId, table.coaCode),
   unclassifiedIdx: index('transactions_unclassified_idx').on(table.tenantId, table.coaCode),
+  /**
+   * Idempotency for external syncs (Mercury, Wave, and any future provider).
+   *
+   * PARTIAL on purpose: only rows with a non-null `external_id` are constrained, so
+   * hand-entered transactions — which have no external identity — are unaffected. Without
+   * the predicate, every manual row would collide on (tenant_id, NULL) in SQLite-family
+   * engines and the index would be unusable.
+   *
+   * Scoped per tenant because `external_id` is a PROVIDER's identifier, unique only within
+   * that provider's namespace. Two tenants can legitimately hold the same provider id.
+   *
+   * Portable: SQLite (and therefore D1) has supported partial indexes since 3.8.0, so this
+   * does not entrench Postgres — see the startup-mode posture on D1-portable SQL.
+   */
+  tenantExternalIdx: uniqueIndex('transactions_tenant_external_idx')
+    .on(table.tenantId, table.externalId)
+    .where(sql`${table.externalId} IS NOT NULL`),
 }));
 
 export const insertTransactionSchema = createInsertSchema(transactions);
