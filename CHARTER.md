@@ -115,7 +115,7 @@ IT CAN BE LLC (holding)
 ### MCP
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/mcp` | POST | JSON-RPC MCP resources/tools; caller identity via ChittyAuth bearer JWT or legacy service-token compatibility lane; tenant authorization remains membership-scoped; MCP methods label canonical capability + read/suggest/execute intent |
+| `/mcp/manifest` | GET | Static Code Mode schemas only; public metadata, no financial data or execution authority |\n| `/mcp` | POST | JSON-RPC MCP resources/tools; caller identity via ChittyAuth bearer JWT or legacy service-token compatibility lane; tenant authorization remains membership-scoped; MCP methods label canonical capability + read/suggest/execute intent |
 
 ### Financial Data
 | Endpoint | Method | Purpose |
