@@ -87,7 +87,7 @@ interface McpToolDefinition {
   inputSchema: Record<string, any>;
 }
 
-const TOOL_DEFINITIONS: McpToolDefinition[] = [
+export const TOOL_DEFINITIONS: McpToolDefinition[] = [
   {
     name: 'get-property-advice',
     description: 'Get AI-powered financial advice for a specific property.',
@@ -211,6 +211,97 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
 ];
 
 const TOOLS = TOOL_DEFINITIONS.map(({ intent: _intent, ...tool }) => tool);
+
+const CODE_MODE_METADATA: Record<string, {
+  tool_id: string;
+  ontology_type: 'T' | 'E';
+  side_effect: 'read' | 'write' | 'external';
+  cost_class: 'cheap' | 'medium' | 'expensive';
+  idempotent: boolean;
+  latency_budget_ms: number;
+}> = {
+  'get-property-advice': {
+    tool_id: 'finance_e_get_property_advice',
+    ontology_type: 'E',
+    side_effect: 'external',
+    cost_class: 'medium',
+    idempotent: false,
+    latency_budget_ms: 15000,
+  },
+  'compare-rei-hub-snapshot': {
+    tool_id: 'finance_e_compare_rei_hub_snapshot',
+    ontology_type: 'E',
+    side_effect: 'read',
+    cost_class: 'medium',
+    idempotent: true,
+    latency_budget_ms: 10000,
+  },
+  'assign-transaction-property': {
+    tool_id: 'finance_e_assign_transaction_property',
+    ontology_type: 'E',
+    side_effect: 'write',
+    cost_class: 'medium',
+    idempotent: true,
+    latency_budget_ms: 5000,
+  },
+  'classify-transaction': {
+    tool_id: 'finance_e_classify_transaction',
+    ontology_type: 'E',
+    side_effect: 'write',
+    cost_class: 'medium',
+    idempotent: false,
+    latency_budget_ms: 5000,
+  },
+  'reconcile-transaction': {
+    tool_id: 'finance_e_reconcile_transaction',
+    ontology_type: 'E',
+    side_effect: 'write',
+    cost_class: 'medium',
+    idempotent: true,
+    latency_budget_ms: 5000,
+  },
+  'create-coa-account': {
+    tool_id: 'finance_t_create_coa_account',
+    ontology_type: 'T',
+    side_effect: 'write',
+    cost_class: 'medium',
+    idempotent: false,
+    latency_budget_ms: 5000,
+  },
+  'update-coa-account': {
+    tool_id: 'finance_t_update_coa_account',
+    ontology_type: 'T',
+    side_effect: 'write',
+    cost_class: 'medium',
+    idempotent: false,
+    latency_budget_ms: 5000,
+  },
+  'refresh-valuation': {
+    tool_id: 'finance_e_refresh_valuation',
+    ontology_type: 'E',
+    side_effect: 'external',
+    cost_class: 'expensive',
+    idempotent: false,
+    latency_budget_ms: 30000,
+  },
+};
+
+export function getMcpManifest() {
+  return {
+    name: SERVER_INFO.name,
+    version: SERVER_INFO.version,
+    canon: 'chittycanon://gov/governance#core-types',
+    ontology_type: 'A' as const,
+    domain: 'finance.chitty.cc',
+    tools: TOOL_DEFINITIONS.map(({ intent: _intent, ...tool }) => ({
+      ...CODE_MODE_METADATA[tool.name],
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.inputSchema,
+    })),
+    generated_at: new Date().toISOString(),
+  };
+}
 
 // ── Resource Handlers ──
 
