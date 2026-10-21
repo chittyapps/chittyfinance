@@ -464,6 +464,53 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
   }, 410);
 });
 
+const TX_EXTERNAL_ID_INDEX = 'transactions_tenant_external_idx';
+
+/**
+ * True only for a unique violation on the transactions external-id index.
+ *
+ * Deliberately narrow. Matching any unique violation would absorb a collision on a
+ * different constraint and report it as "already ingested"; matching on message text
+ * alone would absorb anything whose message happens to contain the word. So this
+ * requires the SQLSTATE and, when the driver exposes a constraint name, that it is
+ * this index.
+ *
+ * Two shapes are deliberately tolerated, because getting either wrong fails SILENTLY
+ * in opposite directions:
+ *
+ *  - WRAPPED errors. This is the load-bearing case, not a precaution. `drizzle-orm`
+ *    wraps every query failure in `DrizzleQueryError` and hangs the driver error off
+ *    `.cause`, so `code` and `constraint` are NOT on the object that reaches this
+ *    function. `neon-http`'s own `session.js` contains no such wrapping -- it inherits
+ *    it from `pg-core/session.js`, which is why reading the neon-http source alone
+ *    says otherwise. Measured, not inferred: the thrown object is
+ *    `DrizzleQueryError{ query, params, cause }` with `cause.name === 'NeonDbError'`,
+ *    `cause.code === '23505'`. A top-level-only check returns false on EVERY real
+ *    collision -- the absorption silently never fires and the handler 500s exactly as
+ *    it did before -- while a suite of hand-written flat fixtures stays green, because
+ *    none of them ever went through drizzle. The shape test below pins this.
+ *  - UNQUOTED vs QUOTED index names. Postgres emits the name quoted, as
+ *    `violates unique constraint "<name>"`. Matching the bare substring would also
+ *    match an index whose name merely BEGINS with this one (a future
+ *    `..._idx_v2`), absorbing a different collision as "already ingested" -- a 202
+ *    the sender never retries, which loses that transaction. So the fallback
+ *    requires the quoted token.
+ */
+export function isTransactionExternalIdViolation(err: unknown): boolean {
+  // Bounded: a cause chain is walked, never followed in a cycle.
+  for (let cur: unknown = err, depth = 0; cur && typeof cur === 'object' && depth < 5; depth++) {
+    const e = cur as { code?: unknown; constraint?: unknown; message?: unknown; cause?: unknown };
+    if (e.code === '23505') {
+      const named = typeof e.constraint === 'string' ? e.constraint : '';
+      if (named) return named === TX_EXTERNAL_ID_INDEX;
+      // Some drivers omit `constraint` and carry the index name only in the message.
+      return typeof e.message === 'string' && e.message.includes(`"${TX_EXTERNAL_ID_INDEX}"`);
+    }
+    cur = e.cause;
+  }
+  return false;
+}
+
 // POST /api/webhooks/wave — Wave Accounting webhook with real-time classification
 // Same flow as Mercury: service-auth → zod → KV dedup → classify → ChittySchema advisory → persist
 webhookRoutes.post('/api/webhooks/wave', async (c) => {
@@ -521,23 +568,46 @@ webhookRoutes.post('/api/webhooks/wave', async (c) => {
   const db = createDb(c.env.DATABASE_URL);
   const storage = new SystemStorage(db);
 
+  // The read-then-insert pair below is a check, not a guarantee. Two concurrent
+  // deliveries of the same Wave event — which a retry produces by design — can both
+  // read "no duplicate" and both insert. Before
+  // `transactions_tenant_external_idx` existed, that silently wrote a second
+  // transaction into the books; with it, the loser of the race raises a unique
+  // violation. The constraint is the authority and this read is the fast path, so a
+  // violation here means "already ingested", which is the same 202 the read returns.
   const dupRow = await storage.getTransactionByExternalId(externalId, tx.tenantId);
   if (dupRow) return c.json({ received: true, duplicate: true, transactionId: dupRow.id }, 202);
 
-  const created = await storage.createTransaction({
-    tenantId: tx.tenantId,
-    accountId: tx.accountId,
-    amount: String(tx.amount),
-    type: tx.amount >= 0 ? 'income' : 'expense',
-    category: tx.category ?? null,
-    description: tx.description,
-    date: new Date(tx.postedAt),
-    payee: tx.payee ?? null,
-    externalId,
-    suggestedCoaCode,
-    classificationConfidence,
-    metadata: { source: 'wave_webhook', waveTransactionId: tx.waveTransactionId, eventId },
-  });
+  let created: Awaited<ReturnType<typeof storage.createTransaction>>;
+  try {
+    created = await storage.createTransaction({
+      tenantId: tx.tenantId,
+      accountId: tx.accountId,
+      amount: String(tx.amount),
+      type: tx.amount >= 0 ? 'income' : 'expense',
+      category: tx.category ?? null,
+      description: tx.description,
+      date: new Date(tx.postedAt),
+      payee: tx.payee ?? null,
+      externalId,
+      suggestedCoaCode,
+      classificationConfidence,
+      metadata: { source: 'wave_webhook', waveTransactionId: tx.waveTransactionId, eventId },
+    });
+  } catch (err) {
+    // ONLY the idempotency collision is absorbed. Anything else propagates: a broad
+    // catch here would convert a genuine write failure into a 202 the sender never
+    // retries, which is how an ingest silently loses a transaction.
+    if (!isTransactionExternalIdViolation(err)) throw err;
+    const raced = await storage.getTransactionByExternalId(externalId, tx.tenantId);
+    if (!raced) {
+      // The constraint rejected the row but it is not readable. Do not acknowledge:
+      // claiming success here would drop the event with nothing recorded.
+      throw err;
+    }
+    console.warn('[webhook:wave] idempotency collision absorbed', { eventId, externalId });
+    return c.json({ received: true, duplicate: true, transactionId: raced.id }, 202);
+  }
 
   ledgerLog(c, {
     entityType: 'audit',
