@@ -29,7 +29,7 @@ import { forensicRoutes } from './routes/forensics';
 import { valuationRoutes } from './routes/valuation';
 import { portfolioRoutes } from './routes/portfolio';
 import { importRoutes } from './books/import';
-import { mcpRoutes } from './routes/mcp';
+import { getMcpManifest, mcpRoutes } from './routes/mcp';
 import { reportRoutes } from './accounting/reports';
 import { taxRoutes } from './accounting/tax';
 import { googleRoutes, googleCallbackRoute } from './routes/google';
@@ -99,6 +99,10 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/', docRoutes);
   app.route('/', sessionRoutes);
   app.route('/', chittyIdAuthRoutes);
+
+  // Static Code Mode discovery metadata only. Actual /mcp execution remains
+  // behind auth + tenant + execution-context middleware below.
+  app.get('/mcp/manifest', (c) => c.json(getMcpManifest()));
 
   // Redirects (public)
   app.get('/connect', (c) => {
