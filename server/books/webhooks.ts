@@ -464,6 +464,8 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
   }, 410);
 });
 
+const TX_EXTERNAL_ID_INDEX = 'transactions_tenant_external_idx';
+
 /**
  * True only for a unique violation on the transactions external-id index.
  *
@@ -472,15 +474,41 @@ webhookRoutes.post('/api/webhooks/mercury', async (c) => {
  * alone would absorb anything whose message happens to contain the word. So this
  * requires the SQLSTATE and, when the driver exposes a constraint name, that it is
  * this index.
+ *
+ * Two shapes are deliberately tolerated, because getting either wrong fails SILENTLY
+ * in opposite directions:
+ *
+ *  - WRAPPED errors. This is the load-bearing case, not a precaution. `drizzle-orm`
+ *    wraps every query failure in `DrizzleQueryError` and hangs the driver error off
+ *    `.cause`, so `code` and `constraint` are NOT on the object that reaches this
+ *    function. `neon-http`'s own `session.js` contains no such wrapping -- it inherits
+ *    it from `pg-core/session.js`, which is why reading the neon-http source alone
+ *    says otherwise. Measured, not inferred: the thrown object is
+ *    `DrizzleQueryError{ query, params, cause }` with `cause.name === 'NeonDbError'`,
+ *    `cause.code === '23505'`. A top-level-only check returns false on EVERY real
+ *    collision -- the absorption silently never fires and the handler 500s exactly as
+ *    it did before -- while a suite of hand-written flat fixtures stays green, because
+ *    none of them ever went through drizzle. The shape test below pins this.
+ *  - UNQUOTED vs QUOTED index names. Postgres emits the name quoted, as
+ *    `violates unique constraint "<name>"`. Matching the bare substring would also
+ *    match an index whose name merely BEGINS with this one (a future
+ *    `..._idx_v2`), absorbing a different collision as "already ingested" -- a 202
+ *    the sender never retries, which loses that transaction. So the fallback
+ *    requires the quoted token.
  */
 export function isTransactionExternalIdViolation(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: unknown; constraint?: unknown; message?: unknown };
-  if (e.code !== '23505') return false;
-  const named = typeof e.constraint === 'string' ? e.constraint : '';
-  if (named) return named === 'transactions_tenant_external_idx';
-  // Some drivers omit `constraint` and only carry the index name in the message.
-  return typeof e.message === 'string' && e.message.includes('transactions_tenant_external_idx');
+  // Bounded: a cause chain is walked, never followed in a cycle.
+  for (let cur: unknown = err, depth = 0; cur && typeof cur === 'object' && depth < 5; depth++) {
+    const e = cur as { code?: unknown; constraint?: unknown; message?: unknown; cause?: unknown };
+    if (e.code === '23505') {
+      const named = typeof e.constraint === 'string' ? e.constraint : '';
+      if (named) return named === TX_EXTERNAL_ID_INDEX;
+      // Some drivers omit `constraint` and carry the index name only in the message.
+      return typeof e.message === 'string' && e.message.includes(`"${TX_EXTERNAL_ID_INDEX}"`);
+    }
+    cur = e.cause;
+  }
+  return false;
 }
 
 // POST /api/webhooks/wave — Wave Accounting webhook with real-time classification
