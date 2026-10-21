@@ -41,6 +41,7 @@ import { allocationRoutes } from './accounting/allocations';
 import { classificationRoutes } from './routes/classification';
 import { emailRoutes } from './routes/email';
 import { createAdminSeedRoutes } from './routes/admin-seed';
+import { adminDatabaseRoutes } from './routes/admin-database';
 import { internalChittyConnectRoutes } from './routes/internal-chittyconnect';
 import { reiHubRoutes } from './routes/rei-hub';
 import { createDb } from './db/connection';
@@ -192,6 +193,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/', leaseRoutes);
   app.route('/', mcpRoutes);
   app.route('/', createAdminSeedRoutes(deps.chartDocument));
+  app.route('/', adminDatabaseRoutes);
 
   // ── Fallback: try static assets, then 404 ──
   app.all('*', async (c) => {
