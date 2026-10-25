@@ -26,6 +26,7 @@ import {
   computeSeedPlan,
   projectSeedRows,
   PERSISTED_FIELDS,
+  type PersistedField,
 } from '../../database/seeds/chart-of-accounts';
 
 /**
@@ -505,7 +506,7 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       'update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 ' +
       'where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)';
     const REAL_PARAMS = ['1090', new Date(), '<snapshot.id for 1000>'];
-    const PLAN_UPDATE = { id: '<snapshot.id for 1000>', changedFields: ['parentCode'] as never };
+    const PLAN_UPDATE = { id: '<snapshot.id for 1000>', changedFields: ['parentCode'] as PersistedField[] };
 
     it('accepts the statement the generator actually compiles', () => {
       expect(reconcileCompiledUpdate('ctx', REAL_SQL, REAL_PARAMS, PLAN_UPDATE)).toEqual([
@@ -534,6 +535,20 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       expect(() =>
         reconcileCompiledUpdate('ctx', extra, ['1090', true, new Date(), '<snapshot.id for 1000>'], PLAN_UPDATE),
       ).toThrow(/UNDECLARED: is_active/);
+    });
+
+    it('reports MISSING and UNDECLARED together when both occur', () => {
+      const both =
+        'update "chart_of_accounts" set "is_active" = $1, "updated_at" = $2 ' +
+        'where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)';
+      let msg = '';
+      try {
+        reconcileCompiledUpdate('ctx', both, [true, new Date(), '<snapshot.id for 1000>'], PLAN_UPDATE);
+      } catch (e) {
+        msg = (e as Error).message;
+      }
+      expect(msg).toMatch(/MISSING: parent_code/);
+      expect(msg).toMatch(/UNDECLARED: is_active/);
     });
 
     it('rejects a statement reconciled against the wrong plan entry', () => {

@@ -562,12 +562,19 @@ async function compilePhase(
     if (kind === 'update') {
       // §2: the plan is reconciled against the compiled statement column by column, not by
       // statement count. The count check above cannot see a dropped column.
-      cols = reconcileCompiledUpdate(
-        `phase ${phase}, statement ${i + 1} (code ${code})`,
-        c.sql,
-        c.params,
-        plan.updates[i - plan.inserts.length],
-      );
+      const context = `phase ${phase}, statement ${i + 1} (code ${code})`;
+      const planUpdate = plan.updates[i - plan.inserts.length];
+      if (!planUpdate) {
+        // The positional pairing assumes inserts-then-updates in plan order. If that ever
+        // breaks, the index runs off the end — and without this the failure surfaces as a
+        // TypeError on `.id` with no context, which is the least useful shape it could take.
+        throw new Error(
+          `${context}: no plan update at position ${i - plan.inserts.length} ` +
+            `(${plan.updates.length} update(s) in the plan). The statement-to-plan pairing ` +
+            `has drifted; this package must not render either.`,
+        );
+      }
+      cols = reconcileCompiledUpdate(context, c.sql, c.params, planUpdate);
     }
     return { phase, kind, code, sql: c.sql, params: c.params.map(renderParam), setColumns: cols };
   });
