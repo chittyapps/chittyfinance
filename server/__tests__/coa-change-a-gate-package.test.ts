@@ -6,6 +6,10 @@ import {
   measuredExistingRows,
   expectedPostChangeARows,
   digestRows,
+  parseCompiledUpdate,
+  assertSetColumnsMatchPlan,
+  reconcileCompiledUpdate,
+  fieldToColumn,
   normaliseForDigest,
   assertMeasuredState,
   HEADER_CODES,
@@ -22,6 +26,7 @@ import {
   computeSeedPlan,
   projectSeedRows,
   PERSISTED_FIELDS,
+  type PersistedField,
 } from '../../database/seeds/chart-of-accounts';
 
 /**
@@ -482,6 +487,139 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       expect(pkg.markdown).toContain('octet_length(coalesce(name,\'\'))::text');
       expect(pkg.markdown).not.toMatch(/\bstring_agg\([^)]*\blength\(/);
       expect(pkg.markdown).toContain('ORDER BY code COLLATE "C"');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // §2 — "a plan is not a write". Reconciled COLUMN BY COLUMN, not by count.
+  //
+  // Until this landed, the plan and the compiled SQL were reconciled only by statement
+  // count, which cannot see a dropped column: the statement still exists, still runs, and
+  // leaves the old value in place. That is the 2026-09-18 failure verbatim.
+  // -------------------------------------------------------------------------
+  describe('§2 plan-vs-SQL column reconciliation', () => {
+    // The REAL shape drizzle compiles for this seed, captured from the generator. Every
+    // test below starts from this string rather than a hand-fed column array, because the
+    // first round of this work was reviewed as "the tests validate the helper, not the
+    // control" — a wrong parse or a wrong statement-to-plan index passed all of them.
+    const REAL_SQL =
+      'update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 ' +
+      'where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)';
+    const REAL_PARAMS = ['1090', new Date(), '<snapshot.id for 1000>'];
+    const PLAN_UPDATE = { id: '<snapshot.id for 1000>', changedFields: ['parentCode'] as PersistedField[] };
+
+    it('accepts the statement the generator actually compiles', () => {
+      expect(reconcileCompiledUpdate('ctx', REAL_SQL, REAL_PARAMS, PLAN_UPDATE)).toEqual([
+        'parent_code',
+        'updated_at',
+      ]);
+    });
+
+    it('rejects a compiled UPDATE that dropped a planned column', () => {
+      // The 2026-09-18 failure, in the shape it would actually arrive in: the statement is
+      // valid SQL, runs without error, and leaves parent_code at its old value.
+      const dropped =
+        'update "chart_of_accounts" set "updated_at" = $1 ' +
+        'where ("chart_of_accounts"."id" = $2 and "chart_of_accounts"."tenant_id" is null)';
+      expect(() =>
+        reconcileCompiledUpdate('ctx', dropped, [new Date(), '<snapshot.id for 1000>'], PLAN_UPDATE),
+      ).toThrow(/MISSING: parent_code/);
+    });
+
+    it('rejects a compiled UPDATE that writes an undeclared column', () => {
+      // §7 builds the operator's blast radius from this list, so an undeclared column is a
+      // column written without being shown to the person gating the write.
+      const extra =
+        'update "chart_of_accounts" set "parent_code" = $1, "is_active" = $2, "updated_at" = $3 ' +
+        'where ("chart_of_accounts"."id" = $4 and "chart_of_accounts"."tenant_id" is null)';
+      expect(() =>
+        reconcileCompiledUpdate('ctx', extra, ['1090', true, new Date(), '<snapshot.id for 1000>'], PLAN_UPDATE),
+      ).toThrow(/UNDECLARED: is_active/);
+    });
+
+    it('reports MISSING and UNDECLARED together when both occur', () => {
+      const both =
+        'update "chart_of_accounts" set "is_active" = $1, "updated_at" = $2 ' +
+        'where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)';
+      let msg = '';
+      try {
+        reconcileCompiledUpdate('ctx', both, [true, new Date(), '<snapshot.id for 1000>'], PLAN_UPDATE);
+      } catch (e) {
+        msg = (e as Error).message;
+      }
+      expect(msg).toMatch(/MISSING: parent_code/);
+      expect(msg).toMatch(/UNDECLARED: is_active/);
+    });
+
+    it('rejects a statement reconciled against the wrong plan entry', () => {
+      // compilePhase pairs statements to plan entries positionally. Two updates setting the
+      // same columns would otherwise reconcile against each other and pass while verifying
+      // the wrong row; the bound id makes the positional assumption an assertion.
+      expect(() =>
+        reconcileCompiledUpdate('ctx', REAL_SQL, ['1090', new Date(), '<snapshot.id for 9999>'], PLAN_UPDATE),
+      ).toThrow(/statement updates id .* but is reconciled against plan entry/);
+    });
+
+    it('refuses any statement outside the expected shape, rather than guessing', () => {
+      // A naive split on /\bset\b/i mis-parses every one of these. Each must refuse to
+      // render instead of returning a confident, wrong column list.
+      const hostile = [
+        // the word "set" inside a value
+        'update "chart_of_accounts" set "name" = \'Asset set aside\' where ("chart_of_accounts"."id" = $1 and "chart_of_accounts"."tenant_id" is null)',
+        // a CTE whose own WHERE precedes the SET
+        'with prev as (select 1 where true) update "chart_of_accounts" set "name" = $1 where ("chart_of_accounts"."id" = $2 and "chart_of_accounts"."tenant_id" is null)',
+        // a different table
+        'update "other_table" set "name" = $1 where ("other_table"."id" = $2 and "other_table"."tenant_id" is null)',
+        // tenant scope dropped — would reach tenant overrides
+        'update "chart_of_accounts" set "name" = $1 where ("chart_of_accounts"."id" = $2)',
+        'not sql at all',
+      ];
+      for (const sql of hostile) {
+        expect(() => parseCompiledUpdate(sql, 'ctx'), sql).toThrow(/does not match the expected shape|unparseable SET/);
+      }
+    });
+
+    it('rejects a column assigned twice, which set-equality alone would miss', () => {
+      const dup =
+        'update "chart_of_accounts" set "parent_code" = $1, "parent_code" = $2, "updated_at" = $3 ' +
+        'where ("chart_of_accounts"."id" = $4 and "chart_of_accounts"."tenant_id" is null)';
+      expect(() => parseCompiledUpdate(dup, 'ctx')).toThrow(/assigned more than once: parent_code/);
+    });
+
+    it('throws on a plan field with no column mapping, rather than inventing one', () => {
+      // Five of the seven persisted fields are single words where camelCase and snake_case
+      // coincide, so a silent fallthrough appeared to work. A new field like taxYear would
+      // have returned "taxYear", never matched "tax_year", and reported a phantom MISSING.
+      expect(() => fieldToColumn('taxYear')).toThrow(/no column mapping/);
+      for (const f of PERSISTED_FIELDS) expect(() => fieldToColumn(f)).not.toThrow();
+    });
+
+    it('every UPDATE in the real package sets exactly its plan entry plus updated_at', () => {
+      // Pins the REAL compiled package, not the helper. The earlier version of this test
+      // asserted only that updated_at was present and the columns were unique, which a
+      // no-op control satisfies — the same "validates the helper, not the control" gap that
+      // drove the second round of this PR, left half-closed. This recomputes the expected
+      // SET list from each statement's own plan entry and compares it.
+      const byCode = new Map<string, PersistedField[]>();
+      for (const plan of [pkg.plans.phase1, pkg.plans.phase2, pkg.plans.phase3]) {
+        for (const u of plan.updates) byCode.set(`${u.row.code}`, u.changedFields);
+      }
+      const updates = pkg.statements.filter((s: CompiledStatement) => s.kind === 'update');
+      expect(updates.length).toBeGreaterThan(0);
+      for (const s of updates) {
+        const changed = byCode.get(s.code);
+        expect(changed, `no plan update for code ${s.code}`).toBeDefined();
+        const expected = [...new Set([...changed!.map(fieldToColumn), 'updated_at'])].sort();
+        expect([...s.setColumns].sort(), `code ${s.code}`).toEqual(expected);
+      }
+    });
+
+    it('throws with context when the statement-to-plan index runs off the end', () => {
+      // Covers the compilePhase guard added after the round-two review. Reproduced at the
+      // helper's own boundary: an undefined plan entry must never reach .id as a TypeError.
+      expect(() =>
+        reconcileCompiledUpdate('ctx', REAL_SQL, REAL_PARAMS, undefined as never),
+      ).toThrow();
     });
   });
 });

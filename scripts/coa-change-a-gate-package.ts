@@ -326,9 +326,169 @@ function renderParam(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function setColumns(sql: string): string[] {
-  const clause = sql.split(/\bset\b/i)[1]?.split(/\bwhere\b/i)[0] ?? '';
-  return [...clause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]);
+/**
+ * The exact shape drizzle compiles for this seed's UPDATE. Anchored end to end on purpose.
+ *
+ * The first version of this check split on /\bset\b/i and scraped /"([a-z_]+)" = /g. A
+ * separated review broke it on paper in four ways — the word "set" inside a value, a
+ * mixed-case or digit-bearing identifier, a value containing `" = `, and a CTE whose own
+ * WHERE precedes the SET — and in the misalignment cases it returns a confident, wrong
+ * column list rather than failing. A verifier that can misparse the thing it verifies is
+ * not a verifier.
+ *
+ * So the statement must match this shape in full or the package refuses to render. Any
+ * future statement shape becomes a loud failure here, which is the correct place for it:
+ * the alternative is a gate that quietly stops checking.
+ *
+ * This DELIBERATELY couples to drizzle's current output — the parenthesised WHERE, the
+ * quoting, the `, ` separator. A drizzle upgrade will break it, and the test that feeds in
+ * the real compiled statement is the canary. When that test fails after a bump, the regex
+ * needs updating to the new shape; it does not mean the check should be relaxed.
+ */
+const UPDATE_SHAPE =
+  /^update "chart_of_accounts" set (.+?) where \("chart_of_accounts"\."id" = \$(\d+) and "chart_of_accounts"\."tenant_id" is null\)$/;
+
+/** Every SET assignment is `"col" = $n`. Drizzle parameterises every value, so a literal
+ *  here — the case that defeats a naive scrape — cannot occur without failing this. */
+const SET_ASSIGNMENT = /^"([a-z_]+)" = \$(\d+)$/;
+
+export interface ParsedUpdate {
+  columns: string[];
+  /** 1-based placeholder index of the id in the WHERE clause. */
+  idParam: number;
+}
+
+/**
+ * Parse a compiled UPDATE, failing closed on anything unexpected.
+ *
+ * The previous implementation ended `?? ''` and returned `[]` when the split found no SET,
+ * so an unparseable statement read as "writes nothing": an empty blast radius in §7 and a
+ * rollback that restores nothing.
+ */
+export function parseCompiledUpdate(sql: string, context: string): ParsedUpdate {
+  const m = UPDATE_SHAPE.exec(sql.trim());
+  if (!m) {
+    throw new Error(
+      `${context}: the compiled UPDATE does not match the expected shape ` +
+        `\`update "chart_of_accounts" set ... where (id = $n and tenant_id is null)\`. ` +
+        `Refusing to render rather than guess at its columns. Statement was: ${sql}`,
+    );
+  }
+  const columns = m[1].split(', ').map((pair) => {
+    const a = SET_ASSIGNMENT.exec(pair.trim());
+    if (!a) {
+      throw new Error(
+        `${context}: unparseable SET assignment \`${pair.trim()}\`; refusing to render. ` +
+          `Each assignment must be \`"col" = $n\` with a lowercase/underscore column name — ` +
+          `a column carrying a digit (e.g. \`line_2\`) trips this and needs SET_ASSIGNMENT widened, ` +
+          `not the check loosened.`,
+      );
+    }
+    return a[1];
+  });
+  if (columns.length === 0) {
+    throw new Error(`${context}: SET clause parsed to zero columns; refusing to render.`);
+  }
+  const duplicated = [...new Set(columns.filter((c, i) => columns.indexOf(c) !== i))];
+  if (duplicated.length > 0) {
+    // Set-equality downstream would not see this. Drizzle cannot emit it from an object's
+    // keys, which is exactly why an occurrence would mean the statement is not what we
+    // think it is.
+    throw new Error(`${context}: column(s) assigned more than once: ${duplicated.join(', ')}.`);
+  }
+  return { columns, idParam: Number(m[2]) };
+}
+
+/**
+ * camelCase plan field -> snake_case column.
+ *
+ * THROWS on an unmapped field rather than returning it unchanged. The fallthrough version
+ * happened to work only because five of the seven persisted fields are single words where
+ * camelCase and snake_case coincide; a new field such as `taxYear` would have returned
+ * `taxYear`, never matched `tax_year`, and reported a permanent phantom MISSING.
+ *
+ * Resolved on call, not at module load: `READBACK_COLUMNS` is declared further down, and a
+ * module-level const here hits the temporal dead zone and takes the whole test FILE down at
+ * collection — which vitest reports as "no tests", the zero-failures-reads-as-green shape
+ * this package guards against elsewhere.
+ */
+export function fieldToColumn(field: string): string {
+  for (const [column, mapped] of Object.entries(READBACK_COLUMNS)) {
+    if (mapped === field) return column;
+  }
+  throw new Error(
+    `no column mapping for plan field "${field}". Add it to READBACK_COLUMNS; a field the ` +
+      `reconciliation cannot name is a field it cannot check.`,
+  );
+}
+
+/**
+ * §2, column by column — "enumerate every column the plan says it sets, and confirm each
+ * one appears in the statement."
+ *
+ * Until this existed the plan and the compiled SQL were reconciled by statement COUNT
+ * alone. A column the plan claims but the statement omits keeps the count intact, writes
+ * nothing, and raises no error: exactly the 2026-09-18 failure this package was written to
+ * retire, one level up. The seed builds the SET list from `changedFields` plus
+ * `updated_at`, so the two sets must be equal — not merely overlapping.
+ *
+ * Equality in BOTH directions on purpose. A missing column is the §2 failure; an extra one
+ * means the statement writes something the plan never declared, which §7's blast radius
+ * would under-report to the operator gating the write.
+ */
+export function assertSetColumnsMatchPlan(
+  context: string,
+  parsed: string[],
+  changedFields: readonly PersistedField[],
+): void {
+  const expected = new Set<string>(changedFields.map((f) => fieldToColumn(f)));
+  expected.add('updated_at');
+  const actual = new Set(parsed);
+  const missing = [...expected].filter((c) => !actual.has(c)).sort();
+  const extra = [...actual].filter((c) => !expected.has(c)).sort();
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `${context}: the compiled SET list does not match the plan. ` +
+        `Plan claims [${[...expected].sort().join(', ')}]; SQL sets [${[...actual].sort().join(', ')}].` +
+        (missing.length ? ` MISSING: ${missing.join(', ')}.` : '') +
+        (extra.length ? ` UNDECLARED: ${extra.join(', ')}.` : '') +
+        ' A plan is not a write (§2); this package must not render either.',
+    );
+  }
+}
+
+/**
+ * The whole per-statement §2 check, in ONE place so that what the tests exercise and what
+ * `compilePhase` runs cannot drift apart.
+ *
+ * The first round of this work was reviewed as "the tests validate the helper, not the
+ * control": every rejection test hand-fed arrays to the column comparison, so a wrong
+ * parse or a wrong statement-to-plan index would have passed all of them. This function is
+ * the control, it takes the raw compiled statement, and the tests drive it.
+ *
+ * It also closes the statement/plan pairing: `compilePhase` matches positionally
+ * (`i - plan.inserts.length`), which assumes inserts-then-updates in plan order. Comparing
+ * the id bound in the WHERE clause against the plan entry's id makes that assumption an
+ * assertion. Without it, two updates that happen to set the same columns could reconcile
+ * against each other's plan entry and pass while verifying the wrong row.
+ */
+export function reconcileCompiledUpdate(
+  context: string,
+  sql: string,
+  params: readonly unknown[],
+  planUpdate: { id: string; changedFields: readonly PersistedField[] },
+): string[] {
+  const { columns, idParam } = parseCompiledUpdate(sql, context);
+  assertSetColumnsMatchPlan(context, columns, planUpdate.changedFields);
+  const boundId = params[idParam - 1];
+  if (boundId !== planUpdate.id) {
+    throw new Error(
+      `${context}: the statement updates id ${JSON.stringify(boundId)} but is reconciled ` +
+        `against plan entry ${JSON.stringify(planUpdate.id)}. The positional statement-to-plan ` +
+        `match has drifted; this package must not render either.`,
+    );
+  }
+  return columns;
 }
 
 const READBACK_COLUMNS: Record<string, keyof ExistingAccountRow> = {
@@ -408,14 +568,25 @@ async function compilePhase(
     if (kind === 'insert' !== /^\s*insert/i.test(c.sql)) {
       throw new Error(`phase ${phase}: statement ${i + 1} is a ${kind} in the plan and not in the SQL`);
     }
-    return {
-      phase,
-      kind,
-      code,
-      sql: c.sql,
-      params: c.params.map(renderParam),
-      setColumns: kind === 'update' ? setColumns(c.sql) : [],
-    };
+    let cols: string[] = [];
+    if (kind === 'update') {
+      // §2: the plan is reconciled against the compiled statement column by column, not by
+      // statement count. The count check above cannot see a dropped column.
+      const context = `phase ${phase}, statement ${i + 1} (code ${code})`;
+      const planUpdate = plan.updates[i - plan.inserts.length];
+      if (!planUpdate) {
+        // The positional pairing assumes inserts-then-updates in plan order. If that ever
+        // breaks, the index runs off the end — and without this the failure surfaces as a
+        // TypeError on `.id` with no context, which is the least useful shape it could take.
+        throw new Error(
+          `${context}: no plan update at position ${i - plan.inserts.length} ` +
+            `(${plan.updates.length} update(s) in the plan). The statement-to-plan pairing ` +
+            `has drifted; this package must not render either.`,
+        );
+      }
+      cols = reconcileCompiledUpdate(context, c.sql, c.params, planUpdate);
+    }
+    return { phase, kind, code, sql: c.sql, params: c.params.map(renderParam), setColumns: cols };
   });
   return { plan, statements };
 }
