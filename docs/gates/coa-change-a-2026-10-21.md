@@ -1832,18 +1832,18 @@ so the digest and the plan cannot disagree about what "equal" means:
 
 ```sql
 SELECT count(*) AS rows,
-       substr(md5(string_agg(
+       substr(encode(sha256(convert_to(string_agg(
          code || ':' || coalesce(name,'') || ':' || coalesce(description,'')
               || ':' || coalesce(parent_code,'') || ':' || coalesce(schedule_e_line,'')
-              || ':' || tax_deductible::text, ',' ORDER BY code)), 1, 12) AS digest
+              || ':' || tax_deductible::text, ',' ORDER BY code), 'UTF8')), 'hex'), 1, 12) AS digest
   FROM chart_of_accounts
  WHERE tenant_id IS NULL;
 ```
 
 | after | rows | digest |
 |---|---|---|
-| **Change A** (what this package delivers) | 105 | `f7cd982cbb00` |
-| Change A **+ Change B** (the document in full) | 105 | `2db91a8332bb` |
+| **Change A** (what this package delivers) | 105 | `5eba5626a9eb` |
+| Change A **+ Change B** (the document in full) | 105 | `cd0887961daf` |
 
 **Check against the first row, not the second.** The second is the projection's own
 digest and it is the post-Change-B state: after a fully successful Change A it will NOT

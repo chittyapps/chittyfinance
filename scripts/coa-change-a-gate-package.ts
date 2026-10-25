@@ -434,7 +434,19 @@ export function normaliseForDigest(value: string | boolean | null): string {
   return value;
 }
 
-/** md5 of `code:name:description:parent:schedule_e:tax_deductible` joined by ',' ordered by code. */
+/**
+ * sha256 of `code:name:description:parent:schedule_e:tax_deductible` joined by ','
+ * ordered by code, truncated to 12 hex.
+ *
+ * sha256 and not md5: this digest is §5's authority — "reconcile AFTER, by digest, not by
+ * reading the list" — so it is the one thing standing between a partially-applied chart and
+ * a clean bill of health. A collision-broken hash is the wrong primitive for that job, and
+ * CodeQL flags it high (js/weak-cryptographic-algorithm).
+ *
+ * The Postgres statement emitted in §5 MUST use the same algorithm. The two are compared
+ * against each other, so changing one alone turns a correct apply into an apparent failure —
+ * the trap §5 already warns about for the Change-A vs Change-B digests.
+ */
 export function digestRows(rows: SeedAccountRow[]): string {
   const body = [...rows]
     .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))
@@ -449,7 +461,7 @@ export function digestRows(rows: SeedAccountRow[]): string {
       ].join(':'),
     )
     .join(',');
-  return createHash('md5').update(body).digest('hex').slice(0, 12);
+  return createHash('sha256').update(body).digest('hex').slice(0, 12);
 }
 
 /**
@@ -843,10 +855,10 @@ function render(ctx: {
     '',
     '```sql',
     'SELECT count(*) AS rows,',
-    '       substr(md5(string_agg(',
+    '       substr(encode(sha256(convert_to(string_agg(',
     "         code || ':' || coalesce(name,'') || ':' || coalesce(description,'')",
     "              || ':' || coalesce(parent_code,'') || ':' || coalesce(schedule_e_line,'')",
-    "              || ':' || tax_deductible::text, ',' ORDER BY code)), 1, 12) AS digest",
+    "              || ':' || tax_deductible::text, ',' ORDER BY code), 'UTF8')), 'hex'), 1, 12) AS digest",
     '  FROM chart_of_accounts',
     ' WHERE tenant_id IS NULL;',
     '```',
