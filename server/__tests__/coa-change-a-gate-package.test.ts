@@ -9,6 +9,7 @@ import {
   parseCompiledUpdate,
   assertSetColumnsMatchPlan,
   reconcileCompiledUpdate,
+  reconcileCompiledInsert,
   fieldToColumn,
   normaliseForDigest,
   assertMeasuredState,
@@ -620,6 +621,212 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       expect(() =>
         reconcileCompiledUpdate('ctx', REAL_SQL, REAL_PARAMS, undefined as never),
       ).toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // §2 for INSERTs (#229). An INSERT's column list comes from the table definition, so
+  // column presence proves nothing — every column is always named. What separates a
+  // supplied value from an omitted one is the VALUES list: `$n` versus `default`.
+  // -------------------------------------------------------------------------
+  describe('§2 plan-vs-SQL value reconciliation for INSERTs', () => {
+    // The real statement the generator compiles, captured from it.
+    const COLS =
+      '"id", "tenant_id", "code", "name", "type", "subtype", "description", ' +
+      '"schedule_e_line", "tax_deductible", "parent_code", "is_active", "effective_date", ' +
+      '"modified_by", "metadata", "created_at", "updated_at"';
+    const sqlWith = (values: string) =>
+      `insert into "chart_of_accounts" (${COLS}) values (${values}) returning "id"`;
+    const REAL_VALUES =
+      'default, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, default, $11, default, default, default';
+    const ROW = {
+      code: '1090',
+      name: 'Cash',
+      type: 'asset',
+      subtype: 'header',
+      description: 'Header: rolls up the cash and bank accounts. Holds no transaction',
+      scheduleELine: null,
+      taxDeductible: false,
+      parentCode: null,
+    } as never;
+    const REAL_PARAMS = [
+      null, '1090', 'Cash', 'asset', 'header',
+      'Header: rolls up the cash and bank accounts. Holds no transaction',
+      null, false, null, true, 'seed:chart-of-accounts',
+    ];
+
+    it('accepts the statement the generator actually compiles', () => {
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), REAL_PARAMS, ROW)).not.toThrow();
+    });
+
+    it('rejects a planned column left to a database default', () => {
+      // The INSERT form of the 2026-09-18 failure: valid SQL, runs without error, writes
+      // the column's default instead of the planned value.
+      const dropped = REAL_VALUES.replace('$6, ', 'default, ');
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(dropped), REAL_PARAMS, ROW)).toThrow(
+        /column "description" is `default`.*not a bound parameter/s,
+      );
+    });
+
+    it('rejects a bound value that differs from the plan row', () => {
+      const wrong = [...REAL_PARAMS];
+      wrong[2] = 'Cash ';
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), wrong, ROW)).toThrow(
+        /column "name" is bound to "Cash " but the plan row says "Cash"/,
+      );
+    });
+
+    it('distinguishes a planned NULL from an omitted column', () => {
+      // scheduleELine is legitimately null here. A check that treated "null" and "absent"
+      // alike would bless the omission; this one must accept the bound null and reject the
+      // default in the same position.
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), REAL_PARAMS, ROW)).not.toThrow();
+      const omitted = REAL_VALUES.replace('$7, ', 'default, ');
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(omitted), REAL_PARAMS, ROW)).toThrow(
+        /column "schedule_e_line" is `default`/,
+      );
+    });
+
+    it('rejects a non-NULL tenant_id, which would write a tenant override', () => {
+      const scoped = [...REAL_PARAMS];
+      scoped[0] = 'b5fa96af-10eb-4d47-b9af-8fcb2ce24f81';
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), scoped, ROW)).toThrow(
+        /tenant_id is bound to .* not NULL/,
+      );
+    });
+
+    it('rejects a database-managed column that the statement binds', () => {
+      // created_at bound means the statement writes something the plan never described.
+      const bindsCreatedAt = REAL_VALUES.replace(
+        'default, $11, default, default, default',
+        'default, $11, default, $12, default',
+      );
+      expect(() =>
+        reconcileCompiledInsert('ctx', sqlWith(bindsCreatedAt), [...REAL_PARAMS, 'x'], ROW),
+      ).toThrow(/column "created_at" is `\$12`.*not `default`/s);
+    });
+
+    it('refuses any statement outside the expected shape', () => {
+      for (const sql of [
+        'insert into "other_table" ("id") values (default) returning "id"',
+        'insert into "chart_of_accounts" ("id") values (default)',
+        'not sql at all',
+      ]) {
+        expect(() => reconcileCompiledInsert('ctx', sql, REAL_PARAMS, ROW), sql).toThrow(
+          /does not match the expected shape|does not name column/,
+        );
+      }
+    });
+
+    it('re-runs the real control over all 25 real INSERTs', () => {
+      // The first version of this test only counted statements and checked codes. It did
+      // not call reconcileCompiledInsert, so it passed under a no-op — false assurance
+      // against the exact regression it was named for. It now re-runs the control itself,
+      // over the real compiled SQL and the real unrendered parameters.
+      const inserts = pkg.statements.filter((s: CompiledStatement) => s.kind === 'insert');
+      expect(inserts.length).toBe(MISSING_CODES.length);
+      expect(new Set(inserts.map((s: CompiledStatement) => s.code))).toEqual(new Set(MISSING_CODES));
+      const rowByCode = new Map(
+        [pkg.plans.phase1, pkg.plans.phase2, pkg.plans.phase3]
+          .flatMap((p) => p.inserts)
+          .map((r) => [r.code, r]),
+      );
+      let checked = 0;
+      for (const st of inserts) {
+        const row = rowByCode.get(st.code);
+        expect(row, `no plan insert for code ${st.code}`).toBeDefined();
+        reconcileCompiledInsert(`re-check ${st.code}`, st.sql, st.rawParams, row!);
+        checked += 1;
+      }
+      expect(checked).toBe(MISSING_CODES.length);
+
+      // Running the control over VALID statements cannot detect a disabled control — it
+      // only ever speaks by throwing, so silence is indistinguishable from absence. This
+      // was the second miss on the same point in this PR. Corrupt a REAL compiled
+      // statement and require a rejection, so the test dies with the control.
+      const sample = inserts[0];
+      const corrupted = sample.sql.replace(/\$3,/, 'default,');
+      expect(corrupted, 'the sample statement did not contain $3 to corrupt').not.toBe(sample.sql);
+      expect(() =>
+        reconcileCompiledInsert('no-op canary', corrupted, sample.rawParams, rowByCode.get(sample.code)!),
+      ).toThrow();
+    });
+
+    it('rejects a statement paired with the wrong plan row', () => {
+      // compilePhase pairs positionally and, unlike the UPDATE path, has no id to
+      // cross-check — Postgres assigns it. The bound `code` is the pin: codes are unique,
+      // so a shifted index compares one statement's code against another row's.
+      const otherRow = { ...(ROW as Record<string, unknown>), code: '9999' } as never;
+      expect(() =>
+        reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), REAL_PARAMS, otherRow),
+      ).toThrow(/column "code" is bound to "1090" but the plan row says "9999"/);
+    });
+
+    it('rejects an undefined plan value rather than matching it to a bound NULL', () => {
+      // `(a ?? null) === (b ?? null)` would have collapsed undefined into null here, so a
+      // renamed or dropped plan field passed BECAUSE the plan had lost it.
+      const missingField = { ...(ROW as Record<string, unknown>) };
+      delete missingField.scheduleELine;
+      expect(() =>
+        reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), REAL_PARAMS, missingField as never),
+      ).toThrow(/no value for "schedule_e_line" \(undefined, not null\)/);
+    });
+
+    it('fails closed on a column it knows nothing about', () => {
+      // Schema growth must not slip a written column past unexamined. The first version of
+      // this test added the column WITHOUT a value, so the column/value count guard fired
+      // first and the regex accepted either message — it never reached the check it was
+      // named for. Counts now match, so only the unknown-column guard can fail it.
+      const grown = sqlWith(REAL_VALUES.replace('default, $11', 'default, $11, default'))
+        .replace('"modified_by", ', '"modified_by", "region_id", ');
+      expect(() => reconcileCompiledInsert('ctx', grown, REAL_PARAMS, ROW)).toThrow(
+        /knows nothing about: region_id/,
+      );
+    });
+
+    it('rejects a dropped or altered modified_by', () => {
+      // It sat in the known-column set and was checked by nothing: drop it from the seed's
+      // .values() and it becomes `default`, silently losing the attribution saying a
+      // machine wrote the row.
+      const dropped = REAL_VALUES.replace('$11,', 'default,');
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(dropped), REAL_PARAMS, ROW)).toThrow(
+        /column "modified_by" is `default`/,
+      );
+      const altered = [...REAL_PARAMS];
+      altered[10] = 'someone-else';
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), altered, ROW)).toThrow(
+        /modified_by is bound to "someone-else"/,
+      );
+    });
+
+    it('rejects is_active bound false', () => {
+      // The branch existed and nothing exercised it. A seeded account arriving inactive is
+      // invisible to every picker that filters on is_active.
+      const inactive = [...REAL_PARAMS];
+      inactive[9] = false;
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), inactive, ROW)).toThrow(
+        /is_active is bound to false, not true/,
+      );
+    });
+
+    it('never renders a raw parameter into the document', () => {
+      // rawParams rides on the exported CompiledStatement so tests can re-run the control.
+      // If the renderer ever spread a statement wholesale, real values would land in the
+      // operator's gate document unredacted alongside the <apply-time> placeholders.
+      expect(pkg.markdown).not.toContain('<apply-time: new Date() stamped at execution>"');
+      const anyInsert = pkg.statements.find((s: CompiledStatement) => s.kind === 'insert')!;
+      const dateParam = anyInsert.rawParams.find((p: unknown) => p instanceof Date);
+      if (dateParam) expect(pkg.markdown).not.toContain(String(dateParam));
+    });
+
+    it('rejects two columns sharing a placeholder', () => {
+      // Would make one column silently read the other's value. Checked for uniqueness
+      // only, not contiguity: demanding 1..k with no gaps fires on a legitimately omitted
+      // column and masks the specific "left to a database default" error with a generic one.
+      const shared = REAL_VALUES.replace('$3,', '$2,');
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(shared), REAL_PARAMS, ROW)).toThrow(
+        /placeholder\(s\) \$2 appear more than once/,
+      );
     });
   });
 });
