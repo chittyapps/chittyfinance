@@ -435,32 +435,57 @@ export function normaliseForDigest(value: string | boolean | null): string {
 }
 
 /**
- * sha256 of `code:name:description:parent:schedule_e:tax_deductible` joined by ','
- * ordered by code, truncated to 12 hex.
+ * Length-prefixed field encoding: `<utf8 byte length>:<value>`.
+ *
+ * The previous encoding joined fields with `':'` and rows with `','` and escaped nothing,
+ * so it was NOT injective: `name="Repairs: Interior"` with an empty description produced the
+ * same bytes as `name="Repairs"` with `description="Interior"`. Measured 2026-10-25 against
+ * production, 14 of 80 global rows carry a `:` or a `,` in `name` or `description`, so this
+ * was reachable, not theoretical. A §5 digest that two different chart states can share
+ * cannot do §5's job — tell a partially-applied chart from a clean one.
+ *
+ * Byte length, not `String.length`: Postgres `octet_length()` counts bytes and JavaScript
+ * `.length` counts UTF-16 code units, and the two disagree on any non-BMP character. The
+ * emitted SQL in §5 must use `octet_length`, never `length`.
+ */
+function digestField(value: string | boolean | null): string {
+  const s = normaliseForDigest(value);
+  return `${Buffer.byteLength(s, 'utf8')}:${s}`;
+}
+
+/**
+ * sha256 over the length-prefixed fields `code,name,description,parent,schedule_e,
+ * tax_deductible` in that order, rows ordered by code, truncated to 12 hex.
+ *
+ * Length prefixes make the concatenation self-delimiting, so no separator is needed between
+ * fields or rows and no value can be mistaken for a boundary. Arity is fixed at six.
  *
  * sha256 and not md5: this digest is §5's authority — "reconcile AFTER, by digest, not by
  * reading the list" — so it is the one thing standing between a partially-applied chart and
  * a clean bill of health. A collision-broken hash is the wrong primitive for that job, and
  * CodeQL flags it high (js/weak-cryptographic-algorithm).
  *
- * The Postgres statement emitted in §5 MUST use the same algorithm. The two are compared
- * against each other, so changing one alone turns a correct apply into an apparent failure —
- * the trap §5 already warns about for the Change-A vs Change-B digests.
+ * The Postgres statement emitted in §5 MUST produce the same bytes. The two are compared
+ * against each other, so changing one alone turns a correct apply into an apparent failure.
+ * Agreement between the two is necessary and NOT sufficient: both can implement the same
+ * ambiguous encoding and agree, which is exactly how the delimiter collision above survived
+ * a live three-row cross-check. `digestRows` is pinned against a literal computed by running
+ * the emitted SQL on the database, and against an injectivity case, in the test suite.
  */
 export function digestRows(rows: SeedAccountRow[]): string {
   const body = [...rows]
     .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))
     .map((r) =>
       [
-        r.code,
-        normaliseForDigest(r.name),
-        normaliseForDigest(r.description),
-        normaliseForDigest(r.parentCode),
-        normaliseForDigest(r.scheduleELine),
-        normaliseForDigest(r.taxDeductible),
-      ].join(':'),
+        digestField(r.code),
+        digestField(r.name),
+        digestField(r.description),
+        digestField(r.parentCode),
+        digestField(r.scheduleELine),
+        digestField(r.taxDeductible),
+      ].join(''),
     )
-    .join(',');
+    .join('');
   return createHash('sha256').update(body).digest('hex').slice(0, 12);
 }
 
@@ -851,14 +876,22 @@ function render(ctx: {
     'reliably confirms what they expect to see.',
     '',
     'Same normalisation as the derivation — `NULL` → `\'\'`, boolean → `\'true\'`/`\'false\'` —',
-    'so the digest and the plan cannot disagree about what "equal" means:',
+    'so the digest and the plan cannot disagree about what "equal" means. Each field is',
+    'length-prefixed `<bytes>:<value>` so the encoding is injective: without that, a `:` or a',
+    '`,` inside a name or description shifts a field boundary and two different charts hash',
+    'alike. Fourteen of the eighty live rows carry one of those characters today, so this is',
+    'the difference between §5 working and §5 only appearing to:',
     '',
     '```sql',
     'SELECT count(*) AS rows,',
     '       substr(encode(sha256(convert_to(string_agg(',
-    "         code || ':' || coalesce(name,'') || ':' || coalesce(description,'')",
-    "              || ':' || coalesce(parent_code,'') || ':' || coalesce(schedule_e_line,'')",
-    "              || ':' || tax_deductible::text, ',' ORDER BY code), 'UTF8')), 'hex'), 1, 12) AS digest",
+    "            octet_length(coalesce(code,''))::text            || ':' || coalesce(code,'')",
+    "         || octet_length(coalesce(name,''))::text            || ':' || coalesce(name,'')",
+    "         || octet_length(coalesce(description,''))::text     || ':' || coalesce(description,'')",
+    "         || octet_length(coalesce(parent_code,''))::text     || ':' || coalesce(parent_code,'')",
+    "         || octet_length(coalesce(schedule_e_line,''))::text || ':' || coalesce(schedule_e_line,'')",
+    "         || octet_length(coalesce(tax_deductible::text,''))::text || ':' || coalesce(tax_deductible::text,'')",
+    "         , '' ORDER BY code COLLATE \"C\"), 'UTF8')), 'hex'), 1, 12) AS digest",
     '  FROM chart_of_accounts',
     ' WHERE tenant_id IS NULL;',
     '```',

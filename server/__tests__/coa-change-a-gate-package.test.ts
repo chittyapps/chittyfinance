@@ -417,4 +417,55 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
     expect(pkg.markdown).toContain(digestRows(afterA));
     expect(pkg.markdown).toContain('Check against the first row, not the second.');
   });
+
+  // -------------------------------------------------------------------------
+  // §5 DIGEST — pinned against an EXTERNAL oracle, and against injectivity.
+  //
+  // Every other digest assertion in this file recomputes its expectation with
+  // `digestRows` itself, so a wrong encoder makes the markdown and the expectation wrong
+  // together and the test still passes. That is how the delimiter collision below survived
+  // a live three-row cross-check and 24 green guards. These two tests are the ones that can
+  // actually fail.
+  // -------------------------------------------------------------------------
+  describe('§5 digest encoding', () => {
+    // Deliberately adversarial: a ':' in a name, a ',' in both a name and a description,
+    // multi-byte UTF-8 (where Postgres octet_length and JS String.length disagree), a NULL
+    // boolean, and an empty string.
+    const ORACLE_ROWS = [
+      { code: '5015', name: 'Repairs: Interior', description: null, parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true },
+      { code: '5016', name: 'Repairs', description: 'Interior', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true },
+      { code: '5017', name: 'Comma, Name', description: 'desc, with comma', parentCode: null, scheduleELine: null, taxDeductible: false },
+      { code: '5018', name: 'Ünïcøde ☕ naïve', description: 'multi-byte: ☕', parentCode: '5000', scheduleELine: null, taxDeductible: null },
+      { code: '5019', name: '', description: null, parentCode: null, scheduleELine: null, taxDeductible: true },
+    ] as unknown as Parameters<typeof digestRows>[0];
+
+    it('matches a literal produced by running the emitted SQL on the database', () => {
+      // NOT recomputed with digestRows. This literal was produced by executing the §5
+      // statement this generator emits against Neon project solitary-rice-14149088 on
+      // 2026-10-25, over exactly the rows above supplied as a VALUES list. If the TypeScript
+      // encoder and the emitted SQL ever diverge, this fails — which is the whole point:
+      // the two agreeing with each other proves only that they compute the same function.
+      expect(digestRows(ORACLE_ROWS)).toBe('bd8c7c8a2851');
+    });
+
+    it('is injective across a delimiter moving between fields', () => {
+      // Under the previous encoding — fields joined by ':' and rows by ',' with no escaping
+      // — these two rows both produced 9bf5650f06cd. Two materially different charts, one
+      // digest, and §5 would have called a partially-applied chart clean. Measured against
+      // production the same day: 14 of 80 live rows carry a ':' or a ',' in name or
+      // description, so this was reachable, not theoretical.
+      const a = [{ code: '5015', name: 'Repairs:Interior', description: '', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true }];
+      const b = [{ code: '5015', name: 'Repairs', description: 'Interior:', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true }];
+      expect(digestRows(a as never)).not.toBe(digestRows(b as never));
+    });
+
+    it('emits SQL that length-prefixes by BYTES, not characters', () => {
+      // length() counts characters and octet_length() counts bytes; they disagree on any
+      // non-BMP character, and JS Buffer.byteLength matches the latter. An SQL side built on
+      // length() would pass every ASCII fixture and diverge on the first emoji.
+      expect(pkg.markdown).toContain('octet_length(coalesce(name,\'\'))::text');
+      expect(pkg.markdown).not.toMatch(/\bstring_agg\([^)]*\blength\(/);
+      expect(pkg.markdown).toContain('ORDER BY code COLLATE "C"');
+    });
+  });
 });

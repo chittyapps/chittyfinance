@@ -1828,22 +1828,30 @@ Eyeballing a list is how the original drift survived: a human reading eighty row
 reliably confirms what they expect to see.
 
 Same normalisation as the derivation — `NULL` → `''`, boolean → `'true'`/`'false'` —
-so the digest and the plan cannot disagree about what "equal" means:
+so the digest and the plan cannot disagree about what "equal" means. Each field is
+length-prefixed `<bytes>:<value>` so the encoding is injective: without that, a `:` or a
+`,` inside a name or description shifts a field boundary and two different charts hash
+alike. Fourteen of the eighty live rows carry one of those characters today, so this is
+the difference between §5 working and §5 only appearing to:
 
 ```sql
 SELECT count(*) AS rows,
        substr(encode(sha256(convert_to(string_agg(
-         code || ':' || coalesce(name,'') || ':' || coalesce(description,'')
-              || ':' || coalesce(parent_code,'') || ':' || coalesce(schedule_e_line,'')
-              || ':' || tax_deductible::text, ',' ORDER BY code), 'UTF8')), 'hex'), 1, 12) AS digest
+            octet_length(coalesce(code,''))::text            || ':' || coalesce(code,'')
+         || octet_length(coalesce(name,''))::text            || ':' || coalesce(name,'')
+         || octet_length(coalesce(description,''))::text     || ':' || coalesce(description,'')
+         || octet_length(coalesce(parent_code,''))::text     || ':' || coalesce(parent_code,'')
+         || octet_length(coalesce(schedule_e_line,''))::text || ':' || coalesce(schedule_e_line,'')
+         || octet_length(coalesce(tax_deductible::text,''))::text || ':' || coalesce(tax_deductible::text,'')
+         , '' ORDER BY code COLLATE "C"), 'UTF8')), 'hex'), 1, 12) AS digest
   FROM chart_of_accounts
  WHERE tenant_id IS NULL;
 ```
 
 | after | rows | digest |
 |---|---|---|
-| **Change A** (what this package delivers) | 105 | `5eba5626a9eb` |
-| Change A **+ Change B** (the document in full) | 105 | `cd0887961daf` |
+| **Change A** (what this package delivers) | 105 | `f27f6b23b1ee` |
+| Change A **+ Change B** (the document in full) | 105 | `6415a039fd05` |
 
 **Check against the first row, not the second.** The second is the projection's own
 digest and it is the post-Change-B state: after a fully successful Change A it will NOT
