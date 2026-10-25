@@ -303,6 +303,9 @@ export interface CompiledStatement {
   params: string[];
   /** The columns in an UPDATE's SET list, read off the compiled SQL. Empty for an INSERT. */
   setColumns: string[];
+  /** Unrendered bound parameters, so a test can re-run the real reconciliation over the
+   *  real compiled package rather than asserting a proxy for it. Not rendered anywhere. */
+  rawParams: readonly unknown[];
 }
 
 /**
@@ -479,7 +482,11 @@ const INSERT_SHAPE =
  * Asserts, for each statement:
  *   - every persisted field in the plan row is bound to a parameter, not left `default`;
  *   - the bound value equals the planned value, `null` included;
- *   - `code` likewise;
+ *   - `code` likewise — and this doubles as the statement-to-plan PIN. `compilePhase`
+ *     pairs positionally (`plan.inserts[i]`, inserts assumed first) and, unlike the UPDATE
+ *     path, there is no id to cross-check because Postgres assigns it. Comparing the bound
+ *     `code` against the plan row's code pins the pairing anyway: codes are unique, so a
+ *     shifted index compares statement A's code against plan row B's and throws;
  *   - `tenant_id` is bound to NULL. A non-null tenant_id writes a tenant override instead
  *     of a global row — not a §2 failure but a worse one, and this is the only place the
  *     compiled statement is read;
@@ -516,6 +523,28 @@ export function reconcileCompiledInsert(
     );
   }
 
+  // Placeholders must be 1..k, each used once. `bound()` reads params[n-1] off the index
+  // in the values list, which is only meaningful if that mapping is a bijection. Drizzle
+  // emits them in order today; nothing here depended on that being true until now.
+  const placeholders = values
+    .map((v) => /^\$(\d+)$/.exec(v))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => Number(m[1]));
+  const repeated = [...new Set(placeholders.filter((n, i) => placeholders.indexOf(n) !== i))];
+  if (repeated.length > 0) {
+    // Uniqueness only — NOT contiguity from 1. An earlier version also demanded
+    // 1..params.length with no gaps, which fires on exactly the omission the specific
+    // checks below are there to describe: replace a bound column with `default` and the
+    // remaining placeholders have a gap. That masked the precise error with a generic one.
+    // `bound()` range-checks each index, so uniqueness is what is actually load-bearing:
+    // two columns sharing a placeholder would make one of them read the other's value.
+    throw new Error(
+      `${context}: placeholder(s) $${repeated.join(', $')} appear more than once in the ` +
+        `values list. Two columns sharing a parameter makes every value read below ` +
+        `suspect; refusing to render.`,
+    );
+  }
+
   /** The value expression for a column, or throw if the column is absent entirely. */
   const slot = (column: string): string => {
     const i = columns.indexOf(column);
@@ -542,7 +571,10 @@ export function reconcileCompiledInsert(
     }
     return params[n - 1];
   };
-  const same = (a: unknown, b: unknown): boolean => (a ?? null) === (b ?? null);
+  // NOT `(a ?? null) === (b ?? null)`. That collapses undefined into null, so a plan field
+  // that had been renamed or dropped would read as undefined and silently match a bound
+  // NULL — the check passing precisely because the plan lost the field.
+  const same = (a: unknown, b: unknown): boolean => a === b;
 
   // Every planned field must be bound, and bound to the planned value.
   const planned: Array<[string, unknown]> = [
@@ -550,6 +582,12 @@ export function reconcileCompiledInsert(
     ...PERSISTED_FIELDS.map((f) => [fieldToColumn(f), row[f]] as [string, unknown]),
   ];
   for (const [column, expected] of planned) {
+    if (expected === undefined) {
+      throw new Error(
+        `${context}: the plan row has no value for "${column}" (undefined, not null). A ` +
+          `renamed or dropped plan field must not reconcile against a bound NULL.`,
+      );
+    }
     const actual = bound(column);
     if (!same(actual, expected)) {
       throw new Error(
@@ -571,8 +609,30 @@ export function reconcileCompiledInsert(
     throw new Error(`${context}: is_active is bound to ${JSON.stringify(bound('is_active'))}, not true.`);
   }
 
+  // The column universe must be EXACTLY what this check knows about. Without this, a
+  // column added to the table later is value-checked by nothing and asserted `default` by
+  // nothing, while columns.length === values.length still holds — so a newly written
+  // column would pass unexamined. Fail closed on schema growth instead: a new column makes
+  // this throw until someone decides which list it belongs in.
+  const DB_MANAGED = ['id', 'created_at', 'updated_at', 'effective_date', 'metadata'];
+  const known = new Set<string>([
+    ...planned.map(([c]) => c),
+    'tenant_id',
+    'is_active',
+    'modified_by',
+    ...DB_MANAGED,
+  ]);
+  const unknown = columns.filter((c) => !known.has(c)).sort();
+  if (unknown.length > 0) {
+    throw new Error(
+      `${context}: the INSERT names column(s) this check knows nothing about: ` +
+        `${unknown.join(', ')}. Add each to the planned set or to DB_MANAGED — an ` +
+        `unclassified column is one nothing verifies. Refusing to render.`,
+    );
+  }
+
   // Columns the seed leaves to the database must stay there.
-  for (const column of ['id', 'created_at', 'updated_at', 'effective_date', 'metadata']) {
+  for (const column of DB_MANAGED) {
     const v = slot(column);
     if (v !== 'default') {
       throw new Error(
@@ -722,7 +782,15 @@ async function compilePhase(
       }
       cols = reconcileCompiledUpdate(context, c.sql, c.params, planUpdate);
     }
-    return { phase, kind, code, sql: c.sql, params: c.params.map(renderParam), setColumns: cols };
+    return {
+      phase,
+      kind,
+      code,
+      sql: c.sql,
+      params: c.params.map(renderParam),
+      setColumns: cols,
+      rawParams: c.params,
+    };
   });
   return { plan, statements };
 }

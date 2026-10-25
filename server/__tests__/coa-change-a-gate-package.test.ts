@@ -718,12 +718,76 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       }
     });
 
-    it('every INSERT in the real package reconciles — all 25 of them', () => {
+    it('re-runs the real control over all 25 real INSERTs', () => {
+      // The first version of this test only counted statements and checked codes. It did
+      // not call reconcileCompiledInsert, so it passed under a no-op — false assurance
+      // against the exact regression it was named for. It now re-runs the control itself,
+      // over the real compiled SQL and the real unrendered parameters.
       const inserts = pkg.statements.filter((s: CompiledStatement) => s.kind === 'insert');
       expect(inserts.length).toBe(MISSING_CODES.length);
-      // The generator throws on any mismatch, so reaching here with a built package is the
-      // assertion; this pins the COUNT so a scope change cannot quietly stop checking them.
       expect(new Set(inserts.map((s: CompiledStatement) => s.code))).toEqual(new Set(MISSING_CODES));
+      const rowByCode = new Map(
+        [pkg.plans.phase1, pkg.plans.phase2, pkg.plans.phase3]
+          .flatMap((p) => p.inserts)
+          .map((r) => [r.code, r]),
+      );
+      let checked = 0;
+      for (const st of inserts) {
+        const row = rowByCode.get(st.code);
+        expect(row, `no plan insert for code ${st.code}`).toBeDefined();
+        reconcileCompiledInsert(`re-check ${st.code}`, st.sql, st.rawParams, row!);
+        checked += 1;
+      }
+      expect(checked).toBe(MISSING_CODES.length);
+
+      // Running the control over VALID statements cannot detect a disabled control — it
+      // only ever speaks by throwing, so silence is indistinguishable from absence. This
+      // was the second miss on the same point in this PR. Corrupt a REAL compiled
+      // statement and require a rejection, so the test dies with the control.
+      const sample = inserts[0];
+      const corrupted = sample.sql.replace(/\$3,/, 'default,');
+      expect(corrupted, 'the sample statement did not contain $3 to corrupt').not.toBe(sample.sql);
+      expect(() =>
+        reconcileCompiledInsert('no-op canary', corrupted, sample.rawParams, rowByCode.get(sample.code)!),
+      ).toThrow();
+    });
+
+    it('rejects a statement paired with the wrong plan row', () => {
+      // compilePhase pairs positionally and, unlike the UPDATE path, has no id to
+      // cross-check — Postgres assigns it. The bound `code` is the pin: codes are unique,
+      // so a shifted index compares one statement's code against another row's.
+      const otherRow = { ...(ROW as Record<string, unknown>), code: '9999' } as never;
+      expect(() =>
+        reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), REAL_PARAMS, otherRow),
+      ).toThrow(/column "code" is bound to "1090" but the plan row says "9999"/);
+    });
+
+    it('rejects an undefined plan value rather than matching it to a bound NULL', () => {
+      // `(a ?? null) === (b ?? null)` would have collapsed undefined into null here, so a
+      // renamed or dropped plan field passed BECAUSE the plan had lost it.
+      const missingField = { ...(ROW as Record<string, unknown>) };
+      delete missingField.scheduleELine;
+      expect(() =>
+        reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), REAL_PARAMS, missingField as never),
+      ).toThrow(/no value for "schedule_e_line" \(undefined, not null\)/);
+    });
+
+    it('fails closed on a column it knows nothing about', () => {
+      // Schema growth must not slip a written column past unexamined.
+      const grown = sqlWith(REAL_VALUES).replace('"metadata", ', '"metadata", "region_id", ');
+      expect(() => reconcileCompiledInsert('ctx', grown, REAL_PARAMS, ROW)).toThrow(
+        /names 17 column\(s\) but supplies 16|knows nothing about: region_id/,
+      );
+    });
+
+    it('rejects two columns sharing a placeholder', () => {
+      // Would make one column silently read the other's value. Checked for uniqueness
+      // only, not contiguity: demanding 1..k with no gaps fires on a legitimately omitted
+      // column and masks the specific "left to a database default" error with a generic one.
+      const shared = REAL_VALUES.replace('$3,', '$2,');
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(shared), REAL_PARAMS, ROW)).toThrow(
+        /placeholder\(s\) \$2 appear more than once/,
+      );
     });
   });
 });
