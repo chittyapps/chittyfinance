@@ -773,11 +773,50 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
     });
 
     it('fails closed on a column it knows nothing about', () => {
-      // Schema growth must not slip a written column past unexamined.
-      const grown = sqlWith(REAL_VALUES).replace('"metadata", ', '"metadata", "region_id", ');
+      // Schema growth must not slip a written column past unexamined. The first version of
+      // this test added the column WITHOUT a value, so the column/value count guard fired
+      // first and the regex accepted either message — it never reached the check it was
+      // named for. Counts now match, so only the unknown-column guard can fail it.
+      const grown = sqlWith(REAL_VALUES.replace('default, $11', 'default, $11, default'))
+        .replace('"modified_by", ', '"modified_by", "region_id", ');
       expect(() => reconcileCompiledInsert('ctx', grown, REAL_PARAMS, ROW)).toThrow(
-        /names 17 column\(s\) but supplies 16|knows nothing about: region_id/,
+        /knows nothing about: region_id/,
       );
+    });
+
+    it('rejects a dropped or altered modified_by', () => {
+      // It sat in the known-column set and was checked by nothing: drop it from the seed's
+      // .values() and it becomes `default`, silently losing the attribution saying a
+      // machine wrote the row.
+      const dropped = REAL_VALUES.replace('$11,', 'default,');
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(dropped), REAL_PARAMS, ROW)).toThrow(
+        /column "modified_by" is `default`/,
+      );
+      const altered = [...REAL_PARAMS];
+      altered[10] = 'someone-else';
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), altered, ROW)).toThrow(
+        /modified_by is bound to "someone-else"/,
+      );
+    });
+
+    it('rejects is_active bound false', () => {
+      // The branch existed and nothing exercised it. A seeded account arriving inactive is
+      // invisible to every picker that filters on is_active.
+      const inactive = [...REAL_PARAMS];
+      inactive[9] = false;
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), inactive, ROW)).toThrow(
+        /is_active is bound to false, not true/,
+      );
+    });
+
+    it('never renders a raw parameter into the document', () => {
+      // rawParams rides on the exported CompiledStatement so tests can re-run the control.
+      // If the renderer ever spread a statement wholesale, real values would land in the
+      // operator's gate document unredacted alongside the <apply-time> placeholders.
+      expect(pkg.markdown).not.toContain('<apply-time: new Date() stamped at execution>"');
+      const anyInsert = pkg.statements.find((s: CompiledStatement) => s.kind === 'insert')!;
+      const dateParam = anyInsert.rawParams.find((p: unknown) => p instanceof Date);
+      if (dateParam) expect(pkg.markdown).not.toContain(String(dateParam));
     });
 
     it('rejects two columns sharing a placeholder', () => {

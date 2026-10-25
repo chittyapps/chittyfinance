@@ -32,6 +32,7 @@
 import { createHash } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/neon-http';
 import {
+  MODIFIED_BY,
   computeSeedPlan,
   projectSeedRows,
   seedChartOfAccounts,
@@ -545,6 +546,29 @@ export function reconcileCompiledInsert(
     );
   }
 
+  // The column universe must be EXACTLY what this check knows about. Without this, a
+  // column added to the table later is value-checked by nothing and asserted `default` by
+  // nothing, while columns.length === values.length still holds — so a newly written
+  // column would pass unexamined. Fail closed on schema growth instead: a new column makes
+  // this throw until someone decides which list it belongs in.
+  const DB_MANAGED = ['id', 'created_at', 'updated_at', 'effective_date', 'metadata'];
+  const known = new Set<string>([
+    'code',
+    ...PERSISTED_FIELDS.map((f) => fieldToColumn(f)),
+    'tenant_id',
+    'is_active',
+    'modified_by',
+    ...DB_MANAGED,
+  ]);
+  const unknown = columns.filter((c) => !known.has(c)).sort();
+  if (unknown.length > 0) {
+    throw new Error(
+      `${context}: the INSERT names column(s) this check knows nothing about: ` +
+        `${unknown.join(', ')}. Add each to the planned set or to DB_MANAGED — an ` +
+        `unclassified column is one nothing verifies. Refusing to render.`,
+    );
+  }
+
   /** The value expression for a column, or throw if the column is absent entirely. */
   const slot = (column: string): string => {
     const i = columns.indexOf(column);
@@ -605,30 +629,17 @@ export function reconcileCompiledInsert(
         `This statement would create a tenant override rather than a global account.`,
     );
   }
+  // modified_by was in the known set and checked by nothing: drop it from the seed's
+  // .values() and it becomes `default`, silently losing the attribution that says a
+  // machine wrote the row. Same silent-wrong-write class this whole function targets.
+  if (bound('modified_by') !== MODIFIED_BY) {
+    throw new Error(
+      `${context}: modified_by is bound to ${JSON.stringify(bound('modified_by'))}, not ` +
+        `${JSON.stringify(MODIFIED_BY)}. The row's attribution is part of what the apply writes.`,
+    );
+  }
   if (bound('is_active') !== true) {
     throw new Error(`${context}: is_active is bound to ${JSON.stringify(bound('is_active'))}, not true.`);
-  }
-
-  // The column universe must be EXACTLY what this check knows about. Without this, a
-  // column added to the table later is value-checked by nothing and asserted `default` by
-  // nothing, while columns.length === values.length still holds — so a newly written
-  // column would pass unexamined. Fail closed on schema growth instead: a new column makes
-  // this throw until someone decides which list it belongs in.
-  const DB_MANAGED = ['id', 'created_at', 'updated_at', 'effective_date', 'metadata'];
-  const known = new Set<string>([
-    ...planned.map(([c]) => c),
-    'tenant_id',
-    'is_active',
-    'modified_by',
-    ...DB_MANAGED,
-  ]);
-  const unknown = columns.filter((c) => !known.has(c)).sort();
-  if (unknown.length > 0) {
-    throw new Error(
-      `${context}: the INSERT names column(s) this check knows nothing about: ` +
-        `${unknown.join(', ')}. Add each to the planned set or to DB_MANAGED — an ` +
-        `unclassified column is one nothing verifies. Refusing to render.`,
-    );
   }
 
   // Columns the seed leaves to the database must stay there.

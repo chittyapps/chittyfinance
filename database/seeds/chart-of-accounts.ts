@@ -404,7 +404,7 @@ export function formatSeedPlan(plan: SeedPlan): string {
   return lines.join('\n');
 }
 
-const MODIFIED_BY = 'seed:chart-of-accounts';
+export const MODIFIED_BY = 'seed:chart-of-accounts';
 
 /** One audit record for one written row. */
 export interface SeedAuditEvent {
