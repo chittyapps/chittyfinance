@@ -210,7 +210,7 @@ export function errorHandler(err: Error, req: Request, res: ExpressResponse, _ne
     return res.status(400).json({
       error: 'Validation failed',
       code: 'VALIDATION_ERROR',
-      details: (err as any).errors,
+      details: (err as any).issues ?? (err as any).errors,
     });
   }
 

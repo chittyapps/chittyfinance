@@ -212,7 +212,7 @@ forensicRoutes.get('/api/forensics/investigations/:id', async (c) => {
 forensicRoutes.post('/api/forensics/investigations', async (c) => {
   const body = await c.req.json();
   const parsed = createInvestigationSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'Invalid investigation data', errors: parsed.error.errors }, 400);
+  if (!parsed.success) return c.json({ error: 'Invalid investigation data', errors: parsed.error.issues }, 400);
 
   const db = getDb(c.env);
   const userId = parseInt(c.get('userId') || '0', 10);
@@ -240,7 +240,7 @@ forensicRoutes.patch('/api/forensics/investigations/:id/status', async (c) => {
 
   const body = await c.req.json();
   const parsed = updateStatusSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'Invalid status value', errors: parsed.error.errors }, 400);
+  if (!parsed.success) return c.json({ error: 'Invalid status value', errors: parsed.error.issues }, 400);
 
   const db = getDb(c.env);
   const userId = parseInt(c.get('userId') || '0', 10);
@@ -271,7 +271,7 @@ forensicRoutes.post('/api/forensics/investigations/:id/evidence', async (c) => {
 
   const body = await c.req.json();
   const parsed = addEvidenceSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'Invalid evidence data', errors: parsed.error.errors }, 400);
+  if (!parsed.success) return c.json({ error: 'Invalid evidence data', errors: parsed.error.issues }, 400);
 
   const db = getDb(c.env);
   const userId = parseInt(c.get('userId') || '0', 10);
@@ -315,7 +315,7 @@ forensicRoutes.post('/api/forensics/evidence/:id/custody', async (c) => {
 
   const body = await c.req.json();
   const parsed = custodyUpdateSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'Invalid custody update data', errors: parsed.error.errors }, 400);
+  if (!parsed.success) return c.json({ error: 'Invalid custody update data', errors: parsed.error.issues }, 400);
 
   const db = getDb(c.env);
   const userId = parseInt(c.get('userId') || '0', 10);
@@ -581,7 +581,7 @@ forensicRoutes.post('/api/forensics/investigations/:id/flow-of-funds', async (c)
 
   const body = await c.req.json();
   const parsed = insertForensicFlowOfFundsSchema.safeParse({ ...body, investigationId: id });
-  if (!parsed.success) return c.json({ error: 'Invalid flow of funds data', errors: parsed.error.errors }, 400);
+  if (!parsed.success) return c.json({ error: 'Invalid flow of funds data', errors: parsed.error.issues }, 400);
 
   const db = getDb(c.env);
   const [flow] = await db.insert(forensicFlowOfFunds).values(parsed.data).returning();
@@ -736,7 +736,7 @@ forensicRoutes.post('/api/forensics/investigations/:id/reports', async (c) => {
 
   const body = await c.req.json();
   const parsed = insertForensicReportSchema.safeParse({ ...body, investigationId: id });
-  if (!parsed.success) return c.json({ error: 'Invalid forensic report data', errors: parsed.error.errors }, 400);
+  if (!parsed.success) return c.json({ error: 'Invalid forensic report data', errors: parsed.error.issues }, 400);
 
   const db = getDb(c.env);
   const [report] = await db.insert(forensicReports).values(parsed.data).returning();
