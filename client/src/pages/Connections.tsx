@@ -481,12 +481,21 @@ export default function Connections() {
   // OAuth callback handler
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('wave') === 'connected' || params.get('google') === 'connected') {
+    if (params.get('wave') === 'error') {
+      const reason = params.get('reason');
+      const message = reason === 'business_selection_required'
+        ? 'Multiple Wave businesses were found. An explicit business-to-tenant mapping is required before connecting.'
+        : reason === 'no_businesses'
+          ? 'No Wave businesses were returned for this account.'
+          : 'Wave authorization did not complete. Check the integration configuration and retry.';
+      toast({ title: 'Wave connection failed', description: message, variant: 'destructive' });
+      window.history.replaceState({}, '', '/connections');
+    } else if (params.get('wave') === 'connected' || params.get('google') === 'connected') {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/status'] });
       window.history.replaceState({}, '', '/connections');
     }
-  }, [queryClient]);
+  }, [queryClient, toast]);
 
   const disconnectMutation = useMutation({
     mutationFn: async (integrationId: number) => {
