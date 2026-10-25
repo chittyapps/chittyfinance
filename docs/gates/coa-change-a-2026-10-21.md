@@ -1839,6 +1839,8 @@ SELECT count(*) AS rows,
        substr(encode(sha256(convert_to(string_agg(
             octet_length(coalesce(code,''))::text            || ':' || coalesce(code,'')
          || octet_length(coalesce(name,''))::text            || ':' || coalesce(name,'')
+         || octet_length(coalesce(type,''))::text            || ':' || coalesce(type,'')
+         || octet_length(coalesce(subtype,''))::text         || ':' || coalesce(subtype,'')
          || octet_length(coalesce(description,''))::text     || ':' || coalesce(description,'')
          || octet_length(coalesce(parent_code,''))::text     || ':' || coalesce(parent_code,'')
          || octet_length(coalesce(schedule_e_line,''))::text || ':' || coalesce(schedule_e_line,'')
@@ -1850,8 +1852,8 @@ SELECT count(*) AS rows,
 
 | after | rows | digest |
 |---|---|---|
-| **Change A** (what this package delivers) | 105 | `f27f6b23b1ee` |
-| Change A **+ Change B** (the document in full) | 105 | `6415a039fd05` |
+| **Change A** (what this package delivers) | 105 | `0fb83ade80f1` |
+| Change A **+ Change B** (the document in full) | 105 | `1b77414d2a24` |
 
 **Check against the first row, not the second.** The second is the projection's own
 digest and it is the post-Change-B state: after a fully successful Change A it will NOT

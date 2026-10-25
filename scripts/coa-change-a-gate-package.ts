@@ -454,8 +454,15 @@ function digestField(value: string | boolean | null): string {
 }
 
 /**
- * sha256 over the length-prefixed fields `code,name,description,parent,schedule_e,
- * tax_deductible` in that order, rows ordered by code, truncated to 12 hex.
+ * sha256 over the length-prefixed fields `code,name,type,subtype,description,parent,
+ * schedule_e,tax_deductible` in that order, rows ordered by code, truncated to 12 hex.
+ *
+ * `type` and `subtype` are in the digest because Change A WRITES them (CHANGE_A_FIELDS is
+ * PERSISTED_FIELDS minus the two tax-semantic fields). §5 requires the reconciliation to
+ * read every column the change claimed to set; they were omitted, so a post-apply drift in
+ * either would have reconciled as clean. `schedule_e_line` and `tax_deductible` are read
+ * though Change A does not write them — deliberately, so Change B's outstanding drift stays
+ * visible in the digest.
  *
  * Length prefixes make the concatenation self-delimiting, so no separator is needed between
  * fields or rows and no value can be mistaken for a boundary. Arity is fixed at six.
@@ -479,6 +486,8 @@ export function digestRows(rows: SeedAccountRow[]): string {
       [
         digestField(r.code),
         digestField(r.name),
+        digestField(r.type),
+        digestField(r.subtype),
         digestField(r.description),
         digestField(r.parentCode),
         digestField(r.scheduleELine),
@@ -887,6 +896,8 @@ function render(ctx: {
     '       substr(encode(sha256(convert_to(string_agg(',
     "            octet_length(coalesce(code,''))::text            || ':' || coalesce(code,'')",
     "         || octet_length(coalesce(name,''))::text            || ':' || coalesce(name,'')",
+    "         || octet_length(coalesce(type,''))::text            || ':' || coalesce(type,'')",
+    "         || octet_length(coalesce(subtype,''))::text         || ':' || coalesce(subtype,'')",
     "         || octet_length(coalesce(description,''))::text     || ':' || coalesce(description,'')",
     "         || octet_length(coalesce(parent_code,''))::text     || ':' || coalesce(parent_code,'')",
     "         || octet_length(coalesce(schedule_e_line,''))::text || ':' || coalesce(schedule_e_line,'')",

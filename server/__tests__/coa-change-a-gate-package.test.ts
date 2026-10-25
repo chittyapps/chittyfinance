@@ -432,11 +432,11 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
     // multi-byte UTF-8 (where Postgres octet_length and JS String.length disagree), a NULL
     // boolean, and an empty string.
     const ORACLE_ROWS = [
-      { code: '5015', name: 'Repairs: Interior', description: null, parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true },
-      { code: '5016', name: 'Repairs', description: 'Interior', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true },
-      { code: '5017', name: 'Comma, Name', description: 'desc, with comma', parentCode: null, scheduleELine: null, taxDeductible: false },
-      { code: '5018', name: 'Ünïcøde ☕ naïve', description: 'multi-byte: ☕', parentCode: '5000', scheduleELine: null, taxDeductible: null },
-      { code: '5019', name: '', description: null, parentCode: null, scheduleELine: null, taxDeductible: true },
+      { code: '5015', name: 'Repairs: Interior', type: 'expense', subtype: 'operating', description: null, parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true },
+      { code: '5016', name: 'Repairs', type: 'expense', subtype: 'operating', description: 'Interior', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true },
+      { code: '5017', name: 'Comma, Name', type: 'expense', subtype: null, description: 'desc, with comma', parentCode: null, scheduleELine: null, taxDeductible: false },
+      { code: '5018', name: 'Ünïcøde ☕ naïve', type: 'asset', subtype: 'current', description: 'multi-byte: ☕', parentCode: '5000', scheduleELine: null, taxDeductible: null },
+      { code: '5019', name: '', type: null, subtype: null, description: null, parentCode: null, scheduleELine: null, taxDeductible: true },
     ] as unknown as Parameters<typeof digestRows>[0];
 
     it('matches a literal produced by running the emitted SQL on the database', () => {
@@ -445,7 +445,7 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       // 2026-10-25, over exactly the rows above supplied as a VALUES list. If the TypeScript
       // encoder and the emitted SQL ever diverge, this fails — which is the whole point:
       // the two agreeing with each other proves only that they compute the same function.
-      expect(digestRows(ORACLE_ROWS)).toBe('bd8c7c8a2851');
+      expect(digestRows(ORACLE_ROWS)).toBe('b8e27fa6dc98');
     });
 
     it('is injective across a delimiter moving between fields', () => {
@@ -454,9 +454,25 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       // digest, and §5 would have called a partially-applied chart clean. Measured against
       // production the same day: 14 of 80 live rows carry a ':' or a ',' in name or
       // description, so this was reachable, not theoretical.
-      const a = [{ code: '5015', name: 'Repairs:Interior', description: '', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true }];
-      const b = [{ code: '5015', name: 'Repairs', description: 'Interior:', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true }];
+      const a = [{ code: '5015', name: 'Repairs:Interior', type: 'expense', subtype: null, description: '', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true }];
+      const b = [{ code: '5015', name: 'Repairs', type: 'expense', subtype: null, description: 'Interior:', parentCode: '5000', scheduleELine: 'Line 14', taxDeductible: true }];
       expect(digestRows(a as never)).not.toBe(digestRows(b as never));
+    });
+
+    it('reads every column Change A writes (§5) — type and subtype included', () => {
+      // §5: "Reconciliation reads every column the change claimed to set." §10: "a column
+      // never read is a column never verified." Change A writes name, type, subtype,
+      // description and parentCode; the digest originally read neither type nor subtype, so
+      // a post-apply drift in either reconciled as clean. This asserts the two sets line up,
+      // so adding a field to CHANGE_A_FIELDS without adding it to the digest fails here.
+      const digested = new Set(['name', 'type', 'subtype', 'description', 'parentCode']);
+      for (const f of CHANGE_A_FIELDS) {
+        expect(digested.has(f), `CHANGE_A_FIELDS has "${f}" but the §5 digest does not read it`).toBe(true);
+      }
+      expect([...digested].every((f) => (CHANGE_A_FIELDS as string[]).includes(f))).toBe(true);
+      for (const col of ['type', 'subtype']) {
+        expect(pkg.markdown).toContain(`octet_length(coalesce(${col},''))::text`);
+      }
     });
 
     it('emits SQL that length-prefixes by BYTES, not characters', () => {
