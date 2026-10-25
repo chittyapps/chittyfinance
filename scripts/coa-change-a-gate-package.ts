@@ -339,6 +339,11 @@ function renderParam(value: unknown): string {
  * So the statement must match this shape in full or the package refuses to render. Any
  * future statement shape becomes a loud failure here, which is the correct place for it:
  * the alternative is a gate that quietly stops checking.
+ *
+ * This DELIBERATELY couples to drizzle's current output — the parenthesised WHERE, the
+ * quoting, the `, ` separator. A drizzle upgrade will break it, and the test that feeds in
+ * the real compiled statement is the canary. When that test fails after a bump, the regex
+ * needs updating to the new shape; it does not mean the check should be relaxed.
  */
 const UPDATE_SHAPE =
   /^update "chart_of_accounts" set (.+?) where \("chart_of_accounts"\."id" = \$(\d+) and "chart_of_accounts"\."tenant_id" is null\)$/;
@@ -372,7 +377,12 @@ export function parseCompiledUpdate(sql: string, context: string): ParsedUpdate 
   const columns = m[1].split(', ').map((pair) => {
     const a = SET_ASSIGNMENT.exec(pair.trim());
     if (!a) {
-      throw new Error(`${context}: unparseable SET assignment \`${pair.trim()}\`; refusing to render.`);
+      throw new Error(
+        `${context}: unparseable SET assignment \`${pair.trim()}\`; refusing to render. ` +
+          `Each assignment must be \`"col" = $n\` with a lowercase/underscore column name — ` +
+          `a column carrying a digit (e.g. \`line_2\`) trips this and needs SET_ASSIGNMENT widened, ` +
+          `not the check loosened.`,
+      );
     }
     return a[1];
   });

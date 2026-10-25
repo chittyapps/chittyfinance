@@ -594,13 +594,32 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       for (const f of PERSISTED_FIELDS) expect(() => fieldToColumn(f)).not.toThrow();
     });
 
-    it('every UPDATE in the real compiled package passes the control', () => {
+    it('every UPDATE in the real package sets exactly its plan entry plus updated_at', () => {
+      // Pins the REAL compiled package, not the helper. The earlier version of this test
+      // asserted only that updated_at was present and the columns were unique, which a
+      // no-op control satisfies — the same "validates the helper, not the control" gap that
+      // drove the second round of this PR, left half-closed. This recomputes the expected
+      // SET list from each statement's own plan entry and compares it.
+      const byCode = new Map<string, PersistedField[]>();
+      for (const plan of [pkg.plans.phase1, pkg.plans.phase2, pkg.plans.phase3]) {
+        for (const u of plan.updates) byCode.set(`${u.row.code}`, u.changedFields);
+      }
       const updates = pkg.statements.filter((s: CompiledStatement) => s.kind === 'update');
       expect(updates.length).toBeGreaterThan(0);
       for (const s of updates) {
-        expect(s.setColumns).toContain('updated_at');
-        expect(new Set(s.setColumns).size).toBe(s.setColumns.length);
+        const changed = byCode.get(s.code);
+        expect(changed, `no plan update for code ${s.code}`).toBeDefined();
+        const expected = [...new Set([...changed!.map(fieldToColumn), 'updated_at'])].sort();
+        expect([...s.setColumns].sort(), `code ${s.code}`).toEqual(expected);
       }
+    });
+
+    it('throws with context when the statement-to-plan index runs off the end', () => {
+      // Covers the compilePhase guard added after the round-two review. Reproduced at the
+      // helper's own boundary: an undefined plan entry must never reach .id as a TypeError.
+      expect(() =>
+        reconcileCompiledUpdate('ctx', REAL_SQL, REAL_PARAMS, undefined as never),
+      ).toThrow();
     });
   });
 });
