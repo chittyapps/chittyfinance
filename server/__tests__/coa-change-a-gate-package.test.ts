@@ -9,6 +9,7 @@ import {
   parseCompiledUpdate,
   assertSetColumnsMatchPlan,
   reconcileCompiledUpdate,
+  reconcileCompiledInsert,
   fieldToColumn,
   normaliseForDigest,
   assertMeasuredState,
@@ -620,6 +621,109 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       expect(() =>
         reconcileCompiledUpdate('ctx', REAL_SQL, REAL_PARAMS, undefined as never),
       ).toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // §2 for INSERTs (#229). An INSERT's column list comes from the table definition, so
+  // column presence proves nothing — every column is always named. What separates a
+  // supplied value from an omitted one is the VALUES list: `$n` versus `default`.
+  // -------------------------------------------------------------------------
+  describe('§2 plan-vs-SQL value reconciliation for INSERTs', () => {
+    // The real statement the generator compiles, captured from it.
+    const COLS =
+      '"id", "tenant_id", "code", "name", "type", "subtype", "description", ' +
+      '"schedule_e_line", "tax_deductible", "parent_code", "is_active", "effective_date", ' +
+      '"modified_by", "metadata", "created_at", "updated_at"';
+    const sqlWith = (values: string) =>
+      `insert into "chart_of_accounts" (${COLS}) values (${values}) returning "id"`;
+    const REAL_VALUES =
+      'default, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, default, $11, default, default, default';
+    const ROW = {
+      code: '1090',
+      name: 'Cash',
+      type: 'asset',
+      subtype: 'header',
+      description: 'Header: rolls up the cash and bank accounts. Holds no transaction',
+      scheduleELine: null,
+      taxDeductible: false,
+      parentCode: null,
+    } as never;
+    const REAL_PARAMS = [
+      null, '1090', 'Cash', 'asset', 'header',
+      'Header: rolls up the cash and bank accounts. Holds no transaction',
+      null, false, null, true, 'seed:chart-of-accounts',
+    ];
+
+    it('accepts the statement the generator actually compiles', () => {
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), REAL_PARAMS, ROW)).not.toThrow();
+    });
+
+    it('rejects a planned column left to a database default', () => {
+      // The INSERT form of the 2026-09-18 failure: valid SQL, runs without error, writes
+      // the column's default instead of the planned value.
+      const dropped = REAL_VALUES.replace('$6, ', 'default, ');
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(dropped), REAL_PARAMS, ROW)).toThrow(
+        /column "description" is `default`.*not a bound parameter/s,
+      );
+    });
+
+    it('rejects a bound value that differs from the plan row', () => {
+      const wrong = [...REAL_PARAMS];
+      wrong[2] = 'Cash ';
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), wrong, ROW)).toThrow(
+        /column "name" is bound to "Cash " but the plan row says "Cash"/,
+      );
+    });
+
+    it('distinguishes a planned NULL from an omitted column', () => {
+      // scheduleELine is legitimately null here. A check that treated "null" and "absent"
+      // alike would bless the omission; this one must accept the bound null and reject the
+      // default in the same position.
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), REAL_PARAMS, ROW)).not.toThrow();
+      const omitted = REAL_VALUES.replace('$7, ', 'default, ');
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(omitted), REAL_PARAMS, ROW)).toThrow(
+        /column "schedule_e_line" is `default`/,
+      );
+    });
+
+    it('rejects a non-NULL tenant_id, which would write a tenant override', () => {
+      const scoped = [...REAL_PARAMS];
+      scoped[0] = 'b5fa96af-10eb-4d47-b9af-8fcb2ce24f81';
+      expect(() => reconcileCompiledInsert('ctx', sqlWith(REAL_VALUES), scoped, ROW)).toThrow(
+        /tenant_id is bound to .* not NULL/,
+      );
+    });
+
+    it('rejects a database-managed column that the statement binds', () => {
+      // created_at bound means the statement writes something the plan never described.
+      const bindsCreatedAt = REAL_VALUES.replace(
+        'default, $11, default, default, default',
+        'default, $11, default, $12, default',
+      );
+      expect(() =>
+        reconcileCompiledInsert('ctx', sqlWith(bindsCreatedAt), [...REAL_PARAMS, 'x'], ROW),
+      ).toThrow(/column "created_at" is `\$12`.*not `default`/s);
+    });
+
+    it('refuses any statement outside the expected shape', () => {
+      for (const sql of [
+        'insert into "other_table" ("id") values (default) returning "id"',
+        'insert into "chart_of_accounts" ("id") values (default)',
+        'not sql at all',
+      ]) {
+        expect(() => reconcileCompiledInsert('ctx', sql, REAL_PARAMS, ROW), sql).toThrow(
+          /does not match the expected shape|does not name column/,
+        );
+      }
+    });
+
+    it('every INSERT in the real package reconciles — all 25 of them', () => {
+      const inserts = pkg.statements.filter((s: CompiledStatement) => s.kind === 'insert');
+      expect(inserts.length).toBe(MISSING_CODES.length);
+      // The generator throws on any mismatch, so reaching here with a built package is the
+      // assertion; this pins the COUNT so a scope change cannot quietly stop checking them.
+      expect(new Set(inserts.map((s: CompiledStatement) => s.code))).toEqual(new Set(MISSING_CODES));
     });
   });
 });
