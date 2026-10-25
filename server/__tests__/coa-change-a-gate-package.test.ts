@@ -6,6 +6,8 @@ import {
   measuredExistingRows,
   expectedPostChangeARows,
   digestRows,
+  setColumns,
+  assertSetColumnsMatchPlan,
   normaliseForDigest,
   assertMeasuredState,
   HEADER_CODES,
@@ -482,6 +484,54 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
       expect(pkg.markdown).toContain('octet_length(coalesce(name,\'\'))::text');
       expect(pkg.markdown).not.toMatch(/\bstring_agg\([^)]*\blength\(/);
       expect(pkg.markdown).toContain('ORDER BY code COLLATE "C"');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // §2 — "a plan is not a write". Reconciled COLUMN BY COLUMN, not by count.
+  //
+  // Until this landed, the plan and the compiled SQL were reconciled only by statement
+  // count, which cannot see a dropped column: the statement still exists, still runs, and
+  // leaves the old value in place. That is the 2026-09-18 failure verbatim.
+  // -------------------------------------------------------------------------
+  describe('§2 plan-vs-SQL column reconciliation', () => {
+    it('every compiled UPDATE sets exactly its changedFields plus updated_at', () => {
+      const updates = pkg.statements.filter((s: CompiledStatement) => s.kind === 'update');
+      expect(updates.length).toBeGreaterThan(0);
+      for (const s of updates) {
+        expect(s.setColumns).toContain('updated_at');
+        expect(s.setColumns.length).toBeGreaterThan(1);
+      }
+    });
+
+    it('rejects a SET list that omits a column the plan claims', () => {
+      expect(() =>
+        assertSetColumnsMatchPlan('ctx', ['updated_at'], ['parentCode'] as never),
+      ).toThrow(/MISSING: parent_code/);
+    });
+
+    it('rejects a SET list that writes a column the plan never declared', () => {
+      expect(() =>
+        assertSetColumnsMatchPlan('ctx', ['parent_code', 'is_active', 'updated_at'], ['parentCode'] as never),
+      ).toThrow(/UNDECLARED: is_active/);
+      // An undeclared write is not a harmless extra: §7 shows the operator a blast radius
+      // built from this list, so a column missing from it is a column written unannounced.
+    });
+
+    it('accepts the exact match, both directions', () => {
+      expect(() =>
+        assertSetColumnsMatchPlan('ctx', ['parent_code', 'name', 'updated_at'], ['parentCode', 'name'] as never),
+      ).not.toThrow();
+    });
+
+    it('fails closed when the SET clause cannot be parsed', () => {
+      // The previous implementation ended `?? ''` and returned [], so an unparseable
+      // statement read as "writes nothing" — rendered as an empty blast radius and a
+      // rollback that restores nothing.
+      expect(() => setColumns('UPDATE "chart_of_accounts" WHERE "id" = $1', 'ctx')).toThrow(
+        /no SET clause|zero columns/,
+      );
+      expect(() => setColumns('not sql at all', 'ctx')).toThrow(/no SET clause/);
     });
   });
 });

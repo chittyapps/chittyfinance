@@ -326,9 +326,76 @@ function renderParam(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function setColumns(sql: string): string[] {
-  const clause = sql.split(/\bset\b/i)[1]?.split(/\bwhere\b/i)[0] ?? '';
-  return [...clause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]);
+/**
+ * The columns an UPDATE actually sets, read off the compiled SQL.
+ *
+ * FAILS CLOSED. The previous version ended `?? ''` and returned `[]` when the split found
+ * no SET — so a parse failure read as "this statement writes nothing", which §7's blast
+ * radius would then render as an empty column list and the rollback would restore nothing.
+ * An unparseable statement is a reason to refuse to render the package, not to describe it
+ * as harmless.
+ */
+export function setColumns(sql: string, context: string): string[] {
+  const parts = sql.split(/\bset\b/i);
+  if (parts.length < 2) {
+    throw new Error(`${context}: no SET clause found in the compiled UPDATE; refusing to render.`);
+  }
+  const clause = parts[1].split(/\bwhere\b/i)[0];
+  const cols = [...clause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]);
+  if (cols.length === 0) {
+    throw new Error(`${context}: SET clause parsed to zero columns; refusing to render.`);
+  }
+  return cols;
+}
+
+/**
+ * camelCase plan field -> snake_case column, inverted from the readback map.
+ *
+ * Resolved on call, not at module load: `READBACK_COLUMNS` is declared further down the
+ * file, and a module-level const here hits the temporal dead zone and takes the whole test
+ * FILE down at collection — which vitest reports as "no tests", the zero-failures-reads-as-
+ * green shape this package already guards against elsewhere.
+ */
+function fieldToColumn(field: string): string {
+  for (const [column, mapped] of Object.entries(READBACK_COLUMNS)) {
+    if (mapped === field) return column;
+  }
+  return field;
+}
+
+/**
+ * §2, column by column — "enumerate every column the plan says it sets, and confirm each
+ * one appears in the statement."
+ *
+ * Until this existed the plan and the compiled SQL were reconciled by statement COUNT
+ * alone. A column the plan claims but the statement omits keeps the count intact, writes
+ * nothing, and raises no error: exactly the 2026-09-18 failure this package was written to
+ * retire, one level up. The seed builds the SET list from `changedFields` plus
+ * `updated_at`, so the two sets must be equal — not merely overlapping.
+ *
+ * Equality in BOTH directions on purpose. A missing column is the §2 failure; an extra one
+ * means the statement writes something the plan never declared, which §7's blast radius
+ * would under-report to the operator gating the write.
+ */
+export function assertSetColumnsMatchPlan(
+  context: string,
+  parsed: string[],
+  changedFields: readonly PersistedField[],
+): void {
+  const expected = new Set<string>(changedFields.map((f) => fieldToColumn(f)));
+  expected.add('updated_at');
+  const actual = new Set(parsed);
+  const missing = [...expected].filter((c) => !actual.has(c)).sort();
+  const extra = [...actual].filter((c) => !expected.has(c)).sort();
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `${context}: the compiled SET list does not match the plan. ` +
+        `Plan claims [${[...expected].sort().join(', ')}]; SQL sets [${[...actual].sort().join(', ')}].` +
+        (missing.length ? ` MISSING: ${missing.join(', ')}.` : '') +
+        (extra.length ? ` UNDECLARED: ${extra.join(', ')}.` : '') +
+        ' A plan is not a write (§2); this package must not render either.',
+    );
+  }
 }
 
 const READBACK_COLUMNS: Record<string, keyof ExistingAccountRow> = {
@@ -408,14 +475,19 @@ async function compilePhase(
     if (kind === 'insert' !== /^\s*insert/i.test(c.sql)) {
       throw new Error(`phase ${phase}: statement ${i + 1} is a ${kind} in the plan and not in the SQL`);
     }
-    return {
-      phase,
-      kind,
-      code,
-      sql: c.sql,
-      params: c.params.map(renderParam),
-      setColumns: kind === 'update' ? setColumns(c.sql) : [],
-    };
+    let cols: string[] = [];
+    if (kind === 'update') {
+      const context = `phase ${phase}, statement ${i + 1} (code ${code})`;
+      cols = setColumns(c.sql, context);
+      // §2: the plan is reconciled against the compiled statement column by column, not by
+      // statement count. The count check above cannot see a dropped column.
+      assertSetColumnsMatchPlan(
+        context,
+        cols,
+        plan.updates[i - plan.inserts.length].changedFields,
+      );
+    }
+    return { phase, kind, code, sql: c.sql, params: c.params.map(renderParam), setColumns: cols };
   });
   return { plan, statements };
 }
