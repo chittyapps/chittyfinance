@@ -30,17 +30,29 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['**/*.test.{ts,tsx}'],
-    // '**/node_modules/**', not 'node_modules/**'. The unanchored form only matches the
-    // top-level directory, so a nested one — a git worktree parked under .claude/worktrees,
-    // a vendored package, any checkout inside the repo — has its dependencies' own test
-    // files collected and run. Measured 2026-10-25 in the primary checkout: one stray
-    // worktree contributed 48 third-party test files and roughly 4,900 tests, several of
-    // which FAIL, so `npm run test:run` went red for reasons that had nothing to do with
-    // this repo and the real result was buried in the noise.
+    // Two separate leaks, both measured in the primary checkout on 2026-10-25 with a git
+    // worktree another session had parked under .claude/worktrees:
     //
-    // CI was never affected (it checks out clean), which is why this survived: the trap is
-    // local only, and a local red suite is exactly where someone stops trusting the suite.
-    exclude: ['dist/**', '**/node_modules/**'],
+    //   1. 'node_modules/**' matches ONLY the top-level directory. The stray worktree's
+    //      node_modules holds symlinked children pointing back at the root install, so
+    //      1,369 third-party test files (pg-protocol, stripe-js, ...) were collected and
+    //      several FAILED.
+    //   2. The worktree is a full checkout of THIS repo, so its own 48 test files were
+    //      collected too — 628 duplicate tests of our own suite. Excluding node_modules
+    //      alone leaves these, and because they pass they inflate the count silently
+    //      rather than reddening it, which is the worse failure of the two.
+    //
+    // Measured, in the primary checkout:
+    //   ['dist/**', 'node_modules/**']                        -> 5,642 tests, 1 failed
+    //   ['dist/**', '**/node_modules/**']                      -> 1,394 tests, all passed
+    //   ['dist/**', '**/node_modules/**', '.claude/**']        ->   766 tests, all passed
+    //
+    // 766 is the real suite. CI never saw any of this: it checks out clean, so neither a
+    // nested node_modules nor a nested worktree exists there. That is why it survived —
+    // the trap is local only, and a local suite that is red for unrelated reasons, or
+    // green while running a stale checkout's copy of itself, is how a suite stops meaning
+    // anything.
+    exclude: ['dist/**', '**/node_modules/**', '.claude/**'],
     env: {
       // Prevent real network calls to chitty.cc during test runs.
       // ledger-client skips registry.chitty.cc lookup when CHITTY_LEDGER_BASE is set.
