@@ -327,40 +327,89 @@ function renderParam(value: unknown): string {
 }
 
 /**
- * The columns an UPDATE actually sets, read off the compiled SQL.
+ * The exact shape drizzle compiles for this seed's UPDATE. Anchored end to end on purpose.
  *
- * FAILS CLOSED. The previous version ended `?? ''` and returned `[]` when the split found
- * no SET — so a parse failure read as "this statement writes nothing", which §7's blast
- * radius would then render as an empty column list and the rollback would restore nothing.
- * An unparseable statement is a reason to refuse to render the package, not to describe it
- * as harmless.
+ * The first version of this check split on /\bset\b/i and scraped /"([a-z_]+)" = /g. A
+ * separated review broke it on paper in four ways — the word "set" inside a value, a
+ * mixed-case or digit-bearing identifier, a value containing `" = `, and a CTE whose own
+ * WHERE precedes the SET — and in the misalignment cases it returns a confident, wrong
+ * column list rather than failing. A verifier that can misparse the thing it verifies is
+ * not a verifier.
+ *
+ * So the statement must match this shape in full or the package refuses to render. Any
+ * future statement shape becomes a loud failure here, which is the correct place for it:
+ * the alternative is a gate that quietly stops checking.
  */
-export function setColumns(sql: string, context: string): string[] {
-  const parts = sql.split(/\bset\b/i);
-  if (parts.length < 2) {
-    throw new Error(`${context}: no SET clause found in the compiled UPDATE; refusing to render.`);
-  }
-  const clause = parts[1].split(/\bwhere\b/i)[0];
-  const cols = [...clause.matchAll(/"([a-z_]+)" = /g)].map((m) => m[1]);
-  if (cols.length === 0) {
-    throw new Error(`${context}: SET clause parsed to zero columns; refusing to render.`);
-  }
-  return cols;
+const UPDATE_SHAPE =
+  /^update "chart_of_accounts" set (.+?) where \("chart_of_accounts"\."id" = \$(\d+) and "chart_of_accounts"\."tenant_id" is null\)$/;
+
+/** Every SET assignment is `"col" = $n`. Drizzle parameterises every value, so a literal
+ *  here — the case that defeats a naive scrape — cannot occur without failing this. */
+const SET_ASSIGNMENT = /^"([a-z_]+)" = \$(\d+)$/;
+
+export interface ParsedUpdate {
+  columns: string[];
+  /** 1-based placeholder index of the id in the WHERE clause. */
+  idParam: number;
 }
 
 /**
- * camelCase plan field -> snake_case column, inverted from the readback map.
+ * Parse a compiled UPDATE, failing closed on anything unexpected.
  *
- * Resolved on call, not at module load: `READBACK_COLUMNS` is declared further down the
- * file, and a module-level const here hits the temporal dead zone and takes the whole test
- * FILE down at collection — which vitest reports as "no tests", the zero-failures-reads-as-
- * green shape this package already guards against elsewhere.
+ * The previous implementation ended `?? ''` and returned `[]` when the split found no SET,
+ * so an unparseable statement read as "writes nothing": an empty blast radius in §7 and a
+ * rollback that restores nothing.
  */
-function fieldToColumn(field: string): string {
+export function parseCompiledUpdate(sql: string, context: string): ParsedUpdate {
+  const m = UPDATE_SHAPE.exec(sql.trim());
+  if (!m) {
+    throw new Error(
+      `${context}: the compiled UPDATE does not match the expected shape ` +
+        `\`update "chart_of_accounts" set ... where (id = $n and tenant_id is null)\`. ` +
+        `Refusing to render rather than guess at its columns. Statement was: ${sql}`,
+    );
+  }
+  const columns = m[1].split(', ').map((pair) => {
+    const a = SET_ASSIGNMENT.exec(pair.trim());
+    if (!a) {
+      throw new Error(`${context}: unparseable SET assignment \`${pair.trim()}\`; refusing to render.`);
+    }
+    return a[1];
+  });
+  if (columns.length === 0) {
+    throw new Error(`${context}: SET clause parsed to zero columns; refusing to render.`);
+  }
+  const duplicated = [...new Set(columns.filter((c, i) => columns.indexOf(c) !== i))];
+  if (duplicated.length > 0) {
+    // Set-equality downstream would not see this. Drizzle cannot emit it from an object's
+    // keys, which is exactly why an occurrence would mean the statement is not what we
+    // think it is.
+    throw new Error(`${context}: column(s) assigned more than once: ${duplicated.join(', ')}.`);
+  }
+  return { columns, idParam: Number(m[2]) };
+}
+
+/**
+ * camelCase plan field -> snake_case column.
+ *
+ * THROWS on an unmapped field rather than returning it unchanged. The fallthrough version
+ * happened to work only because five of the seven persisted fields are single words where
+ * camelCase and snake_case coincide; a new field such as `taxYear` would have returned
+ * `taxYear`, never matched `tax_year`, and reported a permanent phantom MISSING.
+ *
+ * Resolved on call, not at module load: `READBACK_COLUMNS` is declared further down, and a
+ * module-level const here hits the temporal dead zone and takes the whole test FILE down at
+ * collection — which vitest reports as "no tests", the zero-failures-reads-as-green shape
+ * this package guards against elsewhere.
+ */
+export function fieldToColumn(field: string): string {
   for (const [column, mapped] of Object.entries(READBACK_COLUMNS)) {
     if (mapped === field) return column;
   }
-  return field;
+  throw new Error(
+    `no column mapping for plan field "${field}". Add it to READBACK_COLUMNS; a field the ` +
+      `reconciliation cannot name is a field it cannot check.`,
+  );
 }
 
 /**
@@ -396,6 +445,40 @@ export function assertSetColumnsMatchPlan(
         ' A plan is not a write (§2); this package must not render either.',
     );
   }
+}
+
+/**
+ * The whole per-statement §2 check, in ONE place so that what the tests exercise and what
+ * `compilePhase` runs cannot drift apart.
+ *
+ * The first round of this work was reviewed as "the tests validate the helper, not the
+ * control": every rejection test hand-fed arrays to the column comparison, so a wrong
+ * parse or a wrong statement-to-plan index would have passed all of them. This function is
+ * the control, it takes the raw compiled statement, and the tests drive it.
+ *
+ * It also closes the statement/plan pairing: `compilePhase` matches positionally
+ * (`i - plan.inserts.length`), which assumes inserts-then-updates in plan order. Comparing
+ * the id bound in the WHERE clause against the plan entry's id makes that assumption an
+ * assertion. Without it, two updates that happen to set the same columns could reconcile
+ * against each other's plan entry and pass while verifying the wrong row.
+ */
+export function reconcileCompiledUpdate(
+  context: string,
+  sql: string,
+  params: readonly unknown[],
+  planUpdate: { id: string; changedFields: readonly PersistedField[] },
+): string[] {
+  const { columns, idParam } = parseCompiledUpdate(sql, context);
+  assertSetColumnsMatchPlan(context, columns, planUpdate.changedFields);
+  const boundId = params[idParam - 1];
+  if (boundId !== planUpdate.id) {
+    throw new Error(
+      `${context}: the statement updates id ${JSON.stringify(boundId)} but is reconciled ` +
+        `against plan entry ${JSON.stringify(planUpdate.id)}. The positional statement-to-plan ` +
+        `match has drifted; this package must not render either.`,
+    );
+  }
+  return columns;
 }
 
 const READBACK_COLUMNS: Record<string, keyof ExistingAccountRow> = {
@@ -477,14 +560,13 @@ async function compilePhase(
     }
     let cols: string[] = [];
     if (kind === 'update') {
-      const context = `phase ${phase}, statement ${i + 1} (code ${code})`;
-      cols = setColumns(c.sql, context);
       // §2: the plan is reconciled against the compiled statement column by column, not by
       // statement count. The count check above cannot see a dropped column.
-      assertSetColumnsMatchPlan(
-        context,
-        cols,
-        plan.updates[i - plan.inserts.length].changedFields,
+      cols = reconcileCompiledUpdate(
+        `phase ${phase}, statement ${i + 1} (code ${code})`,
+        c.sql,
+        c.params,
+        plan.updates[i - plan.inserts.length],
       );
     }
     return { phase, kind, code, sql: c.sql, params: c.params.map(renderParam), setColumns: cols };

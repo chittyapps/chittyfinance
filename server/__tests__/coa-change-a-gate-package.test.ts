@@ -6,8 +6,10 @@ import {
   measuredExistingRows,
   expectedPostChangeARows,
   digestRows,
-  setColumns,
+  parseCompiledUpdate,
   assertSetColumnsMatchPlan,
+  reconcileCompiledUpdate,
+  fieldToColumn,
   normaliseForDigest,
   assertMeasuredState,
   HEADER_CODES,
@@ -495,43 +497,95 @@ describe('§5 — the digest uses the derivation\'s own normalisation', () => {
   // leaves the old value in place. That is the 2026-09-18 failure verbatim.
   // -------------------------------------------------------------------------
   describe('§2 plan-vs-SQL column reconciliation', () => {
-    it('every compiled UPDATE sets exactly its changedFields plus updated_at', () => {
+    // The REAL shape drizzle compiles for this seed, captured from the generator. Every
+    // test below starts from this string rather than a hand-fed column array, because the
+    // first round of this work was reviewed as "the tests validate the helper, not the
+    // control" — a wrong parse or a wrong statement-to-plan index passed all of them.
+    const REAL_SQL =
+      'update "chart_of_accounts" set "parent_code" = $1, "updated_at" = $2 ' +
+      'where ("chart_of_accounts"."id" = $3 and "chart_of_accounts"."tenant_id" is null)';
+    const REAL_PARAMS = ['1090', new Date(), '<snapshot.id for 1000>'];
+    const PLAN_UPDATE = { id: '<snapshot.id for 1000>', changedFields: ['parentCode'] as never };
+
+    it('accepts the statement the generator actually compiles', () => {
+      expect(reconcileCompiledUpdate('ctx', REAL_SQL, REAL_PARAMS, PLAN_UPDATE)).toEqual([
+        'parent_code',
+        'updated_at',
+      ]);
+    });
+
+    it('rejects a compiled UPDATE that dropped a planned column', () => {
+      // The 2026-09-18 failure, in the shape it would actually arrive in: the statement is
+      // valid SQL, runs without error, and leaves parent_code at its old value.
+      const dropped =
+        'update "chart_of_accounts" set "updated_at" = $1 ' +
+        'where ("chart_of_accounts"."id" = $2 and "chart_of_accounts"."tenant_id" is null)';
+      expect(() =>
+        reconcileCompiledUpdate('ctx', dropped, [new Date(), '<snapshot.id for 1000>'], PLAN_UPDATE),
+      ).toThrow(/MISSING: parent_code/);
+    });
+
+    it('rejects a compiled UPDATE that writes an undeclared column', () => {
+      // §7 builds the operator's blast radius from this list, so an undeclared column is a
+      // column written without being shown to the person gating the write.
+      const extra =
+        'update "chart_of_accounts" set "parent_code" = $1, "is_active" = $2, "updated_at" = $3 ' +
+        'where ("chart_of_accounts"."id" = $4 and "chart_of_accounts"."tenant_id" is null)';
+      expect(() =>
+        reconcileCompiledUpdate('ctx', extra, ['1090', true, new Date(), '<snapshot.id for 1000>'], PLAN_UPDATE),
+      ).toThrow(/UNDECLARED: is_active/);
+    });
+
+    it('rejects a statement reconciled against the wrong plan entry', () => {
+      // compilePhase pairs statements to plan entries positionally. Two updates setting the
+      // same columns would otherwise reconcile against each other and pass while verifying
+      // the wrong row; the bound id makes the positional assumption an assertion.
+      expect(() =>
+        reconcileCompiledUpdate('ctx', REAL_SQL, ['1090', new Date(), '<snapshot.id for 9999>'], PLAN_UPDATE),
+      ).toThrow(/statement updates id .* but is reconciled against plan entry/);
+    });
+
+    it('refuses any statement outside the expected shape, rather than guessing', () => {
+      // A naive split on /\bset\b/i mis-parses every one of these. Each must refuse to
+      // render instead of returning a confident, wrong column list.
+      const hostile = [
+        // the word "set" inside a value
+        'update "chart_of_accounts" set "name" = \'Asset set aside\' where ("chart_of_accounts"."id" = $1 and "chart_of_accounts"."tenant_id" is null)',
+        // a CTE whose own WHERE precedes the SET
+        'with prev as (select 1 where true) update "chart_of_accounts" set "name" = $1 where ("chart_of_accounts"."id" = $2 and "chart_of_accounts"."tenant_id" is null)',
+        // a different table
+        'update "other_table" set "name" = $1 where ("other_table"."id" = $2 and "other_table"."tenant_id" is null)',
+        // tenant scope dropped — would reach tenant overrides
+        'update "chart_of_accounts" set "name" = $1 where ("chart_of_accounts"."id" = $2)',
+        'not sql at all',
+      ];
+      for (const sql of hostile) {
+        expect(() => parseCompiledUpdate(sql, 'ctx'), sql).toThrow(/does not match the expected shape|unparseable SET/);
+      }
+    });
+
+    it('rejects a column assigned twice, which set-equality alone would miss', () => {
+      const dup =
+        'update "chart_of_accounts" set "parent_code" = $1, "parent_code" = $2, "updated_at" = $3 ' +
+        'where ("chart_of_accounts"."id" = $4 and "chart_of_accounts"."tenant_id" is null)';
+      expect(() => parseCompiledUpdate(dup, 'ctx')).toThrow(/assigned more than once: parent_code/);
+    });
+
+    it('throws on a plan field with no column mapping, rather than inventing one', () => {
+      // Five of the seven persisted fields are single words where camelCase and snake_case
+      // coincide, so a silent fallthrough appeared to work. A new field like taxYear would
+      // have returned "taxYear", never matched "tax_year", and reported a phantom MISSING.
+      expect(() => fieldToColumn('taxYear')).toThrow(/no column mapping/);
+      for (const f of PERSISTED_FIELDS) expect(() => fieldToColumn(f)).not.toThrow();
+    });
+
+    it('every UPDATE in the real compiled package passes the control', () => {
       const updates = pkg.statements.filter((s: CompiledStatement) => s.kind === 'update');
       expect(updates.length).toBeGreaterThan(0);
       for (const s of updates) {
         expect(s.setColumns).toContain('updated_at');
-        expect(s.setColumns.length).toBeGreaterThan(1);
+        expect(new Set(s.setColumns).size).toBe(s.setColumns.length);
       }
-    });
-
-    it('rejects a SET list that omits a column the plan claims', () => {
-      expect(() =>
-        assertSetColumnsMatchPlan('ctx', ['updated_at'], ['parentCode'] as never),
-      ).toThrow(/MISSING: parent_code/);
-    });
-
-    it('rejects a SET list that writes a column the plan never declared', () => {
-      expect(() =>
-        assertSetColumnsMatchPlan('ctx', ['parent_code', 'is_active', 'updated_at'], ['parentCode'] as never),
-      ).toThrow(/UNDECLARED: is_active/);
-      // An undeclared write is not a harmless extra: §7 shows the operator a blast radius
-      // built from this list, so a column missing from it is a column written unannounced.
-    });
-
-    it('accepts the exact match, both directions', () => {
-      expect(() =>
-        assertSetColumnsMatchPlan('ctx', ['parent_code', 'name', 'updated_at'], ['parentCode', 'name'] as never),
-      ).not.toThrow();
-    });
-
-    it('fails closed when the SET clause cannot be parsed', () => {
-      // The previous implementation ended `?? ''` and returned [], so an unparseable
-      // statement read as "writes nothing" — rendered as an empty blast radius and a
-      // rollback that restores nothing.
-      expect(() => setColumns('UPDATE "chart_of_accounts" WHERE "id" = $1', 'ctx')).toThrow(
-        /no SET clause|zero columns/,
-      );
-      expect(() => setColumns('not sql at all', 'ctx')).toThrow(/no SET clause/);
     });
   });
 });
