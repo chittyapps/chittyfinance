@@ -22,8 +22,8 @@ const mercuryEventSchema = z.object({
   resourceVersion: z.number().optional(),
   occurredAt: z.string().optional(),
   changedPaths: z.array(z.string()).optional(),
-  mergePatch: z.record(z.unknown()).optional(),
-  previousValues: z.record(z.unknown()).nullable().optional(),
+  mergePatch: z.record(z.string(), z.unknown()).optional(),
+  previousValues: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 /**
@@ -721,7 +721,7 @@ const waveNativeEventSchema = z.object({
   event_id: z.string(),
   event_type: z.string(), // e.g. 'invoice.overdue', 'invoice.viewed', 'invoice.approved'
   business_id: z.string(),
-  data: z.record(z.unknown()),
+  data: z.record(z.string(), z.unknown()),
 });
 
 // PUT /api/webhooks/wave/:tenantId/:businessId/secret — store per-(tenant, business) webhook secret

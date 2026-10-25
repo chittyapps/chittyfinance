@@ -64,7 +64,7 @@
     "date-fns": "^3.6.0",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.2",
-    "drizzle-zod": "^0.7.0",
+    "drizzle-zod": "^0.8.3",
     "embla-carousel-react": "^8.3.0",
     "express": "^4.21.2",
     "express-session": "^1.18.1",
@@ -91,8 +91,7 @@
     "vaul": "^1.1.0",
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
-    "zod": "^3.23.8",
-    "zod-validation-error": "^3.4.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260302.0",
@@ -154,7 +153,9 @@
       "nanoid@<4": ">=3.3.18 <4",
       "nanoid@>=4": ">=5.1.16 <6",
       "proxy-addr": ">=2.0.8",
-      "follow-redirects": ">=1.16.1 <2"
+      "follow-redirects": ">=1.16.1 <2",
+      "body-parser@<2": ">=1.20.9 <2",
+      "body-parser@>=2": ">=2.4.0 <3"
     }
   },
   "description": "Multi-entity financial management with Plaid banking integration"
