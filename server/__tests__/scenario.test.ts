@@ -15,12 +15,12 @@ const TEST_TOKEN = 'test-service-token';
 const TENANT_ID = 'b5fa96af-10eb-4d47-b9af-8fcb2ce24f81'; // IT CAN BE LLC
 
 // Valid UUIDs for mock entities (Zod validates UUID format from drizzle-zod)
-const PROP_1 = '11111111-1111-1111-1111-111111111111';
+const PROP_1 = '11111111-1111-4111-8111-111111111111';
 const PROP_2 = '22222222-2222-2222-2222-222222222222';
 const PROP_NEW = '33333333-3333-3333-3333-333333333333';
-const UNIT_1 = 'aaaa1111-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const UNIT_1 = 'aaaa1111-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const UNIT_NEW = 'bbbb2222-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-const UNIT_FOREIGN = 'cccc3333-cccc-cccc-cccc-cccccccccccc';
+const UNIT_FOREIGN = 'cccc3333-cccc-4ccc-8ccc-cccccccccccc';
 const LEASE_1 = 'dddd4444-dddd-dddd-dddd-dddddddddddd';
 const LEASE_NEW = 'eeee5555-eeee-eeee-eeee-eeeeeeeeeeee';
 const ACCT_1 = 'ffff6666-ffff-ffff-ffff-ffffffffffff';
